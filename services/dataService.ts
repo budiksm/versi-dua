@@ -14,7 +14,7 @@ import {
   RedemptionStatus 
 } from '../types';
 
-import { db } from '../firebaseConfig';
+import { db, connectToFirebase } from '../firebaseConfig';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // --- SYNC STATUS MANAGEMENT ---
@@ -51,7 +51,6 @@ const INITIAL_INCIDENTS: MasterIncidentType[] = [
   { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
 ];
 
-// UPDATED RULES SESUAI REQUEST
 const INITIAL_RULES: CoachingRule[] = [
   { id: 'r1', minPoints: 0, maxPoints: 19, statusLabel: 'Normal', color: 'bg-green-100 text-green-800' },
   { id: 'r2', minPoints: 20, maxPoints: 39, statusLabel: 'Pembinaan Wali Kelas', color: 'bg-yellow-100 text-yellow-800' },
@@ -77,9 +76,7 @@ const syncToCloud = async (collectionName: string, data: any) => {
   
   notifyListeners('SYNCING');
   try {
-    // Basic check for undefined in array which Firestore hates
     const cleanData = JSON.parse(JSON.stringify(data)); 
-    
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
     notifyListeners('SAVED');
     console.log(`[Cloud] Synced ${collectionName} successfully.`);
@@ -87,16 +84,12 @@ const syncToCloud = async (collectionName: string, data: any) => {
     console.error(`[Cloud] Failed to sync ${collectionName}:`, error);
     
     let errorMsg = error.message || "Unknown error";
-    
-    // Translate common errors
     if (error.code === 'permission-denied') {
-        errorMsg = "IZIN DITOLAK (Permission Denied). Cek Tab 'Rules' di Console Firebase Anda.";
+        errorMsg = "IZIN DITOLAK. Aplikasi perlu restart untuk update keamanan.";
     } else if (error.code === 'resource-exhausted') {
         errorMsg = "Dokumen terlalu besar (>1MB).";
     } else if (error.code === 'unavailable') {
         errorMsg = "Koneksi ke server Firestore gagal (Offline).";
-    } else if (error.code === 'invalid-argument') {
-        errorMsg = "Format data tidak valid (Invalid Argument).";
     }
     
     notifyListeners('ERROR', errorMsg);
@@ -107,7 +100,7 @@ export const DataService = {
   // --- SYNC SUBSCRIPTION ---
   subscribeToSync: (callback: (state: SyncState, time: Date | null, error: string | null) => void) => {
     syncListeners.push(callback);
-    callback(currentSyncState, lastSyncTime, lastError); // Initial call
+    callback(currentSyncState, lastSyncTime, lastError);
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
@@ -117,6 +110,11 @@ export const DataService = {
         console.warn("DB not initialized, running offline.");
         return false;
     }
+
+    // --- LANGKAH PENTING: KONEKSI AMAN ---
+    // Kita melakukan koneksi 'handshake' ke Firebase sebelum meminta data.
+    // Ini memastikan kita punya 'tiket masuk' yang valid (Auth Token).
+    await connectToFirebase();
 
     try {
       const collections = [
@@ -145,7 +143,7 @@ export const DataService = {
     } catch (e: any) {
       console.error("Gagal sinkronisasi data awal:", e);
       let msg = e.message;
-      if(e.code === 'permission-denied') msg = "Izin Baca Ditolak. Cek Rules.";
+      if(e.code === 'permission-denied') msg = "Izin Baca Ditolak. Pastikan Rules sudah diupdate.";
       notifyListeners('ERROR', msg);
       return false;
     }
@@ -189,11 +187,14 @@ export const DataService = {
   saveCounselingSessions: (data: CounselingSession[]) => { saveToStorage('counseling', data); syncToCloud('counseling', data); },
   saveSanctions: (data: StudentSanction[]) => { saveToStorage('sanctions', data); syncToCloud('sanctions', data); },
 
-  // --- AUTH ---
+  // --- AUTH LOGIC (Aplikasi) ---
+  // Login ini hanya mengecek data di koleksi 'teachers'.
+  // Keamanan database ditangani oleh connectToFirebase() di atas.
   login: (username: string, password: string): Teacher | null => {
     const teachers = DataService.getTeachers(); 
     let user = teachers.find(t => t.username === username && t.password === password);
     
+    // Fallback Admin Recovery jika database kosong/error
     if (!user) {
         const defaultAdmin = INITIAL_TEACHERS.find(t => t.roles.includes(Role.ADMIN));
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {

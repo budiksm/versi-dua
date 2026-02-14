@@ -1,6 +1,12 @@
 
 import { initializeApp } from "firebase/app";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from "firebase/firestore";
+import { getAuth, signInAnonymously } from "firebase/auth";
 
 // --- AREA KONFIGURASI UTAMA ---
 const hardcodedConfig = {
@@ -25,16 +31,13 @@ const getStoredConfig = () => {
 };
 
 // Cek apakah user sudah mengisi hardcoded config dengan benar
-// Kunci Firebase selalu dimulai dengan "AIza"
 const isHardcodedFilled = hardcodedConfig.apiKey && hardcodedConfig.apiKey.startsWith("AIza");
 
 let firebaseConfig = null;
 const stored = getStoredConfig();
 
-// LOGIKA BARU YANG LEBIH KUAT:
 if (isHardcodedFilled) {
-  // Jika kode hardcoded sudah diisi dengan benar, KITA PAKAI ITU.
-  // Kita abaikan/hapus konfigurasi manual yang mungkin rusak di LocalStorage agar tidak konflik.
+  // Selalu prioritaskan hardcoded config jika valid
   if (localStorage.getItem('firebase_manual_config')) {
      console.log("⚠️ Membersihkan konfigurasi manual lama demi konfigurasi hardcoded yang valid.");
      localStorage.removeItem('firebase_manual_config');
@@ -45,7 +48,6 @@ if (isHardcodedFilled) {
   firebaseConfig = stored;
   console.log("ℹ️ Menggunakan Konfigurasi: MANUAL (LocalStorage)");
 } else {
-  // Coba ambil dari Environment Variable sebagai cadangan terakhir
   const env = (import.meta as any).env || {};
   if (env.VITE_FIREBASE_API_KEY) {
     firebaseConfig = {
@@ -61,28 +63,44 @@ if (isHardcodedFilled) {
 }
 
 let db: any = null;
+let auth: any = null;
+
+// Fungsi untuk melakukan Handshake keamanan ke Firebase
+const connectToFirebase = async () => {
+    if (!auth) return false;
+    try {
+        // Melakukan login sistem di belakang layar
+        // Ini membuat request.auth di Rules menjadi TIDAK null
+        await signInAnonymously(auth);
+        console.log("🔐 Terhubung ke Database dengan Aman (System Auth)");
+        return true;
+    } catch (error) {
+        console.error("Gagal koneksi Auth:", error);
+        return false;
+    }
+};
 
 try {
   if (!firebaseConfig || !firebaseConfig.apiKey) {
     console.error("❌ FATAL: Tidak ada konfigurasi Firebase yang ditemukan.");
   } else {
     const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
     
-    // Opsional: Aktifkan persistensi offline (cache)
-    // Ini membantu jika koneksi internet putus-nyambung
-    // enableIndexedDbPersistence(db).catch((err) => {
-    //    if (err.code == 'failed-precondition') {
-    //        console.log('Persistence failed: Multiple tabs open');
-    //    } else if (err.code == 'unimplemented') {
-    //        console.log('Persistence is not available in this browser');
-    //    }
-    // });
+    // Inisialisasi Auth System
+    auth = getAuth(app);
+
+    // Inisialisasi Database dengan fitur Enterprise:
+    // 1. experimentalForceLongPolling: Menembus firewall/proxy sekolah yang memblokir WebSocket.
+    // 2. persistentLocalCache: Menyimpan data di laptop agar tidak hilang saat internet mati.
+    db = initializeFirestore(app, {
+      experimentalForceLongPolling: true, 
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
     
-    console.log("🔥 Firebase initialized successfully!");
+    console.log("🔥 Firebase initialized (Mode Stabil & Offline Aktif)!");
   }
 } catch (error) {
   console.error("🔥 Firebase initialization error:", error);
 }
 
-export { db };
+export { db, auth, connectToFirebase };
