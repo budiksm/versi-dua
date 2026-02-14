@@ -6,12 +6,12 @@ import { getFirestore } from "firebase/firestore";
 // Agar "Otomatis" jalan, ganti tulisan di bawah ini dengan kode dari Firebase Console.
 // Biarkan tanda kutipnya.
 const hardcodedConfig = {
-  apiKey: "ISI_DENGAN_API_KEY_ANDA",
-  authDomain: "ISI_DENGAN_PROJECT_ID.firebaseapp.com",
-  projectId: "ISI_DENGAN_PROJECT_ID",
-  storageBucket: "ISI_DENGAN_PROJECT_ID.appspot.com",
-  messagingSenderId: "ISI_DENGAN_SENDER_ID",
-  appId: "ISI_DENGAN_APP_ID"
+  apiKey: "AIzaSyAycrr3a5Hg5IgWdSxRNcSbuqY_rROeY3w",
+  authDomain: "versi-dua.firebaseapp.com",
+  projectId: "versi-dua",
+  storageBucket: "versi-dua.firebasestorage.app",
+  messagingSenderId: "281459589879",
+  appId: "1:281459589879:web:635863542ba731bbe849f2"
 };
 
 // ------------------------------------------------------------------
