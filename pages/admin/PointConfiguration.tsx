@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
 import { MasterCategory, MasterIncidentType, CoachingRule, IncidentTypeCategory } from '../../types';
-import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, Pencil } from 'lucide-react';
+import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, Pencil, Database, RotateCcw } from 'lucide-react';
 
 const PointConfiguration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'CATEGORY' | 'INCIDENT' | 'RULES'>('INCIDENT');
@@ -15,6 +16,8 @@ const PointConfiguration: React.FC = () => {
   const [showCatModal, setShowCatModal] = useState(false);
   const [showIncModal, setShowIncModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showDbConfigModal, setShowDbConfigModal] = useState(false);
+  
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
@@ -34,8 +37,22 @@ const PointConfiguration: React.FC = () => {
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
 
+  // DB Config State
+  const [dbConfigJson, setDbConfigJson] = useState('');
+
   useEffect(() => {
     refreshData();
+    
+    // Load existing config string for display
+    const stored = localStorage.getItem('firebase_manual_config');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setDbConfigJson(JSON.stringify(parsed, null, 2));
+      } catch (e) {
+        setDbConfigJson(stored);
+      }
+    }
   }, []);
 
   const refreshData = () => {
@@ -126,6 +143,31 @@ const PointConfiguration: React.FC = () => {
       const updated = incidents.filter(i => i.id !== id);
       DataService.saveIncidentTypes(updated);
       setIncidents(updated);
+    }
+  };
+
+  // --- DB CONFIG HANDLER ---
+  const handleSaveDbConfig = () => {
+    try {
+      if (!dbConfigJson.trim()) {
+        if(confirm("Apakah Anda yakin ingin menghapus konfigurasi manual? Aplikasi akan kembali menggunakan environment variables.")) {
+           localStorage.removeItem('firebase_manual_config');
+           alert("Konfigurasi dihapus. Halaman akan direfresh.");
+           window.location.reload();
+        }
+        return;
+      }
+      
+      const parsed = JSON.parse(dbConfigJson);
+      if (!parsed.apiKey || !parsed.projectId) {
+         throw new Error("JSON tidak valid. Pastikan minimal ada 'apiKey' dan 'projectId'.");
+      }
+      
+      localStorage.setItem('firebase_manual_config', JSON.stringify(parsed));
+      alert("Konfigurasi Database berhasil disimpan! Aplikasi akan terhubung ulang.");
+      window.location.reload();
+    } catch (e: any) {
+      alert("Gagal menyimpan: " + e.message);
     }
   };
 
@@ -239,9 +281,17 @@ const PointConfiguration: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Konfigurasi Poin & Pelanggaran</h1>
-        <p className="text-slate-500">Atur kategori, bobot poin, dan kebijakan pembinaan siswa.</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Konfigurasi Poin & Pelanggaran</h1>
+          <p className="text-slate-500">Atur kategori, bobot poin, dan kebijakan pembinaan siswa.</p>
+        </div>
+        <button 
+          onClick={() => setShowDbConfigModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 shadow-md"
+        >
+          <Database className="h-4 w-4" /> Koneksi Database
+        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200">
@@ -403,6 +453,56 @@ const PointConfiguration: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* --- MODAL DB CONFIG (SECURE) --- */}
+      {showDbConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+             <div className="bg-slate-800 p-4 flex justify-between items-center text-white">
+                <h2 className="font-bold flex items-center gap-2">
+                   <Database className="h-5 w-5 text-blue-400" />
+                   Konfigurasi Database (Firebase)
+                </h2>
+                <button onClick={() => setShowDbConfigModal(false)} className="text-slate-400 hover:text-white">
+                   <X className="h-5 w-5" />
+                </button>
+             </div>
+             
+             <div className="p-6 overflow-y-auto">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 mb-4">
+                   <p className="font-bold flex items-center gap-2 mb-1">
+                      <AlertCircle className="h-4 w-4" /> Area Sensitif
+                   </p>
+                   Hanya ubah konfigurasi ini jika aplikasi kehilangan koneksi atau Anda berpindah project Firebase. 
+                   Data tersimpan di browser Anda.
+                </div>
+
+                <label className="block text-sm font-bold text-slate-700 mb-2">Firebase Config Object (JSON):</label>
+                <textarea 
+                  className="w-full h-64 p-3 bg-slate-900 text-green-400 font-mono text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                  placeholder={'{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  ...\n}'}
+                  value={dbConfigJson}
+                  onChange={e => setDbConfigJson(e.target.value)}
+                />
+             </div>
+
+             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+                <button 
+                  onClick={() => setShowDbConfigModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg font-medium text-sm"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={handleSaveDbConfig}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 shadow-sm"
+                >
+                  <RotateCcw className="h-4 w-4" /> Simpan & Reload
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODAL ADD/EDIT CATEGORY --- */}
       {showCatModal && (
