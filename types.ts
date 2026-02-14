@@ -59,6 +59,8 @@ export interface MasterIncidentType {
   isActive: boolean;
 }
 
+export type IncidentStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
+
 export interface IncidentRecord {
   id: string;
   studentId: string;
@@ -69,6 +71,10 @@ export interface IncidentRecord {
   recordedBy: string; 
   pointSnapshot: number; 
   typeSnapshot: IncidentTypeCategory;
+  
+  // Approval Logic
+  status?: IncidentStatus; // Optional for backward compatibility (default APPROVED)
+  rejectionReason?: string;
 }
 
 export interface CoachingRule {

@@ -1,7 +1,8 @@
+
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
-import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X } from 'lucide-react';
+import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus } from '../../types';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -11,6 +12,11 @@ const TeacherDashboard: React.FC = () => {
   const [myClasses, setMyClasses] = useState<ClassGroup[]>([]);
   const [currentUser, setCurrentUser] = useState<Teacher | null>(null);
   
+  // Approval Specific State
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [rejectRecordId, setRejectRecordId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
   // BK Specific State
   const [highRiskStudents, setHighRiskStudents] = useState<{student: Student, score: number, status: string}[]>([]);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
@@ -30,6 +36,10 @@ const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    refreshDashboard();
+  }, []);
+
+  const refreshDashboard = () => {
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
     
@@ -39,6 +49,7 @@ const TeacherDashboard: React.FC = () => {
     const rules = DataService.getRules();
     const counselings = DataService.getCounselingSessions();
     const sanctions = DataService.getSanctions();
+    const classes = DataService.getClasses();
 
     setRecords(recs);
     setIncidents(incs);
@@ -46,11 +57,29 @@ const TeacherDashboard: React.FC = () => {
     setCounselingCount(counselings.length);
     
     if (user) {
-      const allClasses = DataService.getClasses();
-      setMyClasses(allClasses.filter(c => c.homeroomTeacherId === user.id));
+      const myClassGroups = classes.filter(c => c.homeroomTeacherId === user.id);
+      setMyClasses(myClassGroups);
+
+      // --- LOGIC: PENDING APPROVALS FOR WALIKELAS ---
+      if (myClassGroups.length > 0) {
+         const myStudentIds = stds.filter(s => myClassGroups.some(c => c.id === s.classId)).map(s => s.id);
+         const now = new Date().getTime();
+         const AUTO_ACCEPT_MS = 2 * 24 * 60 * 60 * 1000; // 48 Hours
+
+         const pendings = recs.filter(r => {
+            const isMyStudent = myStudentIds.includes(r.studentId);
+            const isPending = r.status === 'PENDING' || (!r.status && false); // Default approved, so !status is safe
+            const isNotAutoAccepted = (now - new Date(r.date).getTime()) < AUTO_ACCEPT_MS;
+            return isMyStudent && isPending && isNotAutoAccepted;
+         }).map(r => ({
+            ...r,
+            studentName: stds.find(s => s.id === r.studentId)?.name || 'Unknown',
+            incidentName: incs.find(i => i.id === r.incidentTypeId)?.name || 'Unknown'
+         }));
+         setPendingApprovals(pendings);
+      }
 
       // BK LOGIC: Detect students with points >= 40 (Pembinaan BK & Above)
-      // Updated from 20 to 40 based on new rules
       if (user.roles.includes(Role.BK)) {
         const riskList: {student: Student, score: number, status: string}[] = [];
         stds.forEach(s => {
@@ -91,9 +120,6 @@ const TeacherDashboard: React.FC = () => {
           if (score >= 120 && score <= 159 && !hasSP2) { countSP2++; candidateLevel = 'SP 2'; }
           if (score >= 160 && !hasSP3) { countSP3++; candidateLevel = 'SP 3'; }
 
-          // FILTER LOGIC UPDATE:
-          // Hanya masukkan ke list jika 'candidateLevel' ada (artinya butuh SP baru).
-          // Jika tidak ada candidateLevel (artinya sudah punya SP yang sesuai atau poin rendah), jangan tampilkan.
           if (candidateLevel) {
             monitorData.push({
               student: s,
@@ -133,7 +159,7 @@ const TeacherDashboard: React.FC = () => {
         setBkHandledList(bkReferrals.sort((a,b) => new Date(b.session.date).getTime() - new Date(a.session.date).getTime()));
       }
     }
-  }, []);
+  }
 
   const handleGlobalSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
@@ -149,20 +175,48 @@ const TeacherDashboard: React.FC = () => {
     }
   };
 
+  const handleApprove = (id: string) => {
+    DataService.resolveIncident(id, 'APPROVED');
+    // Check auto sanction logic
+    const rec = records.find(r => r.id === id);
+    if (rec) {
+       DataService.evaluateAndApplySanction(rec.studentId);
+    }
+    refreshDashboard();
+  };
+
+  const handleRejectClick = (id: string) => {
+    setRejectRecordId(id);
+    setRejectReason('');
+  };
+
+  const confirmReject = () => {
+    if (rejectRecordId && rejectReason) {
+      DataService.resolveIncident(rejectRecordId, 'REJECTED', rejectReason);
+      setRejectRecordId(null);
+      refreshDashboard();
+    } else {
+      alert("Alasan penolakan wajib diisi.");
+    }
+  };
+
   const getIncidentName = (id: string) => incidents.find(i => i.id === id)?.name || 'Unknown';
   const getStudentName = (id: string) => students.find(s => s.id === id)?.name || 'Unknown';
 
   const recentRecords = [...records]
+    .filter(r => r.status !== 'REJECTED') // Hide rejected from recent global feed
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
 
   const violationsToday = records.filter(r => 
     r.typeSnapshot === IncidentTypeCategory.VIOLATION && 
+    r.status !== 'REJECTED' &&
     new Date(r.date).toDateString() === new Date().toDateString()
   ).length;
 
   const achievementsToday = records.filter(r => 
     r.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT && 
+    r.status !== 'REJECTED' &&
     new Date(r.date).toDateString() === new Date().toDateString()
   ).length;
 
@@ -187,6 +241,91 @@ const TeacherDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* --- APPROVAL WIDGET (ONLY FOR WALI KELAS WITH PENDING ITEMS) --- */}
+      {pendingApprovals.length > 0 && (
+        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-5 shadow-sm animate-fade-in">
+           <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-yellow-100 text-yellow-700 rounded-lg">
+                 <Inbox className="h-5 w-5" />
+              </div>
+              <div>
+                 <h2 className="font-bold text-slate-800">Persetujuan Laporan Masuk</h2>
+                 <p className="text-xs text-slate-500">
+                    Laporan dari guru lain untuk kelas Anda. Otomatis diterima dalam 2x24 jam jika tidak direspon.
+                 </p>
+              </div>
+           </div>
+
+           <div className="space-y-3">
+              {pendingApprovals.map((req) => (
+                 <div key={req.id} className="bg-white p-4 rounded-lg border border-yellow-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                    <div className="flex-1">
+                       <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-slate-800">{req.studentName}</span>
+                          <span className="text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-mono">
+                             {new Date(req.date).toLocaleDateString()}
+                          </span>
+                       </div>
+                       <p className="text-sm text-slate-600 font-medium">{req.incidentName} <span className="text-red-500">({req.pointSnapshot} Poin)</span></p>
+                       <p className="text-xs text-slate-400 mt-1">Pelapor: {req.recordedBy}</p>
+                       {req.notes && <p className="text-xs text-slate-500 italic mt-1">"{req.notes}"</p>}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                       <button 
+                         onClick={() => handleApprove(req.id)}
+                         className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                       >
+                          <Check className="h-3 w-3" /> Terima
+                       </button>
+                       <button 
+                         onClick={() => handleRejectClick(req.id)}
+                         className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                       >
+                          <Ban className="h-3 w-3" /> Tolak
+                       </button>
+                    </div>
+                 </div>
+              ))}
+           </div>
+        </div>
+      )}
+
+      {/* --- REJECT MODAL --- */}
+      {rejectRecordId && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
+               <h3 className="font-bold text-lg mb-2 text-slate-800">Tolak Laporan?</h3>
+               <p className="text-sm text-slate-500 mb-4">
+                  Anda wajib memberikan alasan penolakan. Laporan ini tidak akan dihitung dalam poin siswa.
+               </p>
+               <textarea 
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-red-500 outline-none mb-4"
+                  rows={3}
+                  placeholder="Contoh: Siswa sudah izin kepada saya sebelumnya..."
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+               />
+               <div className="flex justify-end gap-2">
+                  <button 
+                    onClick={() => setRejectRecordId(null)}
+                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    onClick={confirmReject}
+                    disabled={!rejectReason}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+                  >
+                    Konfirmasi Tolak
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* ... (Existing Kesiswaan Dashboard Code) ... */}
       {isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
           <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">

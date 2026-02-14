@@ -12,7 +12,8 @@ import {
   CounselingSession, 
   StudentSanction, 
   RedemptionStatus,
-  SanctionLevel
+  SanctionLevel,
+  IncidentStatus
 } from '../types';
 
 import { db, connectToFirebase } from '../firebaseConfig';
@@ -253,15 +254,31 @@ export const DataService = {
     let achievementCount = 0;
     let redemptionCount = 0;
 
+    const now = new Date().getTime();
+    const AUTO_ACCEPT_MS = 2 * 24 * 60 * 60 * 1000; // 48 Hours
+
     studentRecords.forEach(record => {
-      if (record.typeSnapshot === IncidentTypeCategory.VIOLATION) {
-        grossViolationPoints += record.pointSnapshot;
-        violationCount++;
-      } else if (record.typeSnapshot === IncidentTypeCategory.REDEMPTION) {
-        redemptionCount++;
-      } else if (record.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT) {
-        achievementPoints += record.pointSnapshot;
-        achievementCount++;
+      // LOGIKA APPROVAL:
+      // 1. Status 'APPROVED' -> Hitung
+      // 2. Status 'PENDING' tapi sudah > 48 jam -> Hitung (Auto Accept)
+      // 3. Status 'PENDING' < 48 jam -> JANGAN Hitung
+      // 4. Status 'REJECTED' -> JANGAN Hitung
+      // 5. Undefined status -> Hitung (Backward compatibility)
+      
+      const recordTime = new Date(record.date).getTime();
+      const isAutoAccepted = (record.status === 'PENDING') && ((now - recordTime) > AUTO_ACCEPT_MS);
+      const isEffective = record.status === 'APPROVED' || !record.status || isAutoAccepted;
+
+      if (isEffective) {
+        if (record.typeSnapshot === IncidentTypeCategory.VIOLATION) {
+          grossViolationPoints += record.pointSnapshot;
+          violationCount++;
+        } else if (record.typeSnapshot === IncidentTypeCategory.REDEMPTION) {
+          redemptionCount++;
+        } else if (record.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT) {
+          achievementPoints += record.pointSnapshot;
+          achievementCount++;
+        }
       }
     });
 
@@ -323,5 +340,21 @@ export const DataService = {
     }
 
     return null;
+  },
+
+  // --- APPROVAL ACTIONS ---
+  resolveIncident: (recordId: string, status: IncidentStatus, reason?: string) => {
+    const allRecords = DataService.getRecords();
+    const updatedRecords = allRecords.map(r => {
+      if (r.id === recordId) {
+        return { 
+          ...r, 
+          status: status,
+          rejectionReason: status === 'REJECTED' ? reason : undefined
+        };
+      }
+      return r;
+    });
+    DataService.saveRecords(updatedRecords);
   }
 };
