@@ -38,7 +38,7 @@ const KesiswaanAction: React.FC = () => {
       const latestCounseling = counselings.filter(c => c.studentId === s.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
       
       let neededSP: string | null = null;
-      // Updated Thresholds: 80, 120, 160
+      // Updated Thresholds: 80, 120, 160 based on new Rules
       if (score >= 160) neededSP = 'SP 3';
       else if (score >= 120) neededSP = 'SP 2';
       else if (score >= 80) neededSP = 'SP 1';

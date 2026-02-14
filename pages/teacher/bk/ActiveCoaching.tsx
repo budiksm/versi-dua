@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, CounselingSession, Role, IncidentRecord, MasterIncidentType, CoachingRule } from '../../../types';
@@ -43,7 +44,8 @@ const ActiveCoaching: React.FC = () => {
       const latestSession = studentCounselings[0];
       const hasOpenSession = latestSession?.status === 'OPEN';
       
-      // Threshold BK: >= 40 Poin
+      // Threshold BK: >= 40 Poin (UPDATED from 40 based on new rules)
+      // New Rules: 20-39 Wali Kelas, 40-79 BK
       const isHighRisk = stats.effectiveViolationScore >= 40;
 
       // Filter: Show if High Risk OR Has Open Session
@@ -140,7 +142,7 @@ const ActiveCoaching: React.FC = () => {
            <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-500">
              <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
              <p className="font-bold text-slate-700">Tidak ada kasus aktif.</p>
-             <p className="text-sm">Saat ini tidak ada siswa dengan poin tinggi atau sesi konseling terbuka.</p>
+             <p className="text-sm">Saat ini tidak ada siswa dengan poin tinggi (≥ 40) atau sesi konseling terbuka.</p>
            </div>
         ) : (
           filteredCases.map((item, idx) => (

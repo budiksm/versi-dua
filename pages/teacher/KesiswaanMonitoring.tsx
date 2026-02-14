@@ -94,8 +94,12 @@ const KesiswaanMonitoring: React.FC = () => {
     const matchesSanction = selectedSanction === 'ALL' || (info.activeSanction?.level === selectedSanction);
     
     let matchesPoints = true;
+    // Updated ranges based on new rules
+    // Critical: >= 80 (SP1 starts)
     if (pointFilter === 'CRITICAL') matchesPoints = info.effectiveViolationScore >= 80;
+    // Risk: 20 - 79 (Wali Kelas & BK)
     else if (pointFilter === 'RISK') matchesPoints = info.effectiveViolationScore >= 20 && info.effectiveViolationScore <= 79;
+    // Safe: 0 - 19
     else if (pointFilter === 'SAFE') matchesPoints = info.effectiveViolationScore <= 19;
 
     return matchesSearch && matchesClass && matchesSanction && matchesPoints;

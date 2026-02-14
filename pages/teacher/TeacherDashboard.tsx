@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -50,12 +50,13 @@ const TeacherDashboard: React.FC = () => {
       const allClasses = DataService.getClasses();
       setMyClasses(allClasses.filter(c => c.homeroomTeacherId === user.id));
 
-      // BK LOGIC: Detect students with points >= 20 (Pembinaan Wali Kelas & Above)
+      // BK LOGIC: Detect students with points >= 40 (Pembinaan BK & Above)
+      // Updated from 20 to 40 based on new rules
       if (user.roles.includes(Role.BK)) {
         const riskList: {student: Student, score: number, status: string}[] = [];
         stds.forEach(s => {
           const stats = DataService.calculateStudentPoints(s.id, recs, incs);
-          if (stats.effectiveViolationScore >= 20) {
+          if (stats.effectiveViolationScore >= 40) {
              const status = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
              riskList.push({
                student: s,
@@ -125,7 +126,8 @@ const TeacherDashboard: React.FC = () => {
         setSp2Candidates(countSP2);
         setSp3Candidates(countSP3);
         setActiveRedemptions(activeRedemptionCount);
-        setMonitoringList(monitorData.sort((a,b) => b.score - a.score).slice(0, 10)); 
+        // Show top 20 prioritized
+        setMonitoringList(monitorData.sort((a,b) => b.score - a.score).slice(0, 20)); 
         setBkHandledList(bkReferrals.sort((a,b) => new Date(b.session.date).getTime() - new Date(a.session.date).getTime()));
       }
     }
@@ -230,50 +232,69 @@ const TeacherDashboard: React.FC = () => {
                         <ClipboardList className="h-5 w-5 text-indigo-600" />
                         Monitoring Poin & Kandidat Sanksi
                       </h3>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                           <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                             <tr>
-                               <th className="px-3 py-2">Siswa</th>
-                               <th className="px-3 py-2 text-center">Poin</th>
-                               <th className="px-3 py-2">Status / Kandidat</th>
-                               <th className="px-3 py-2 text-right">Aksi</th>
-                             </tr>
-                           </thead>
-                           <tbody className="divide-y divide-slate-100">
-                             {monitoringList.length === 0 ? (
-                               <tr><td colSpan={4} className="p-4 text-center text-slate-500">Tidak ada siswa yang memerlukan tindakan mendesak.</td></tr>
-                             ) : (
-                               monitoringList.map((item, idx) => (
-                                 <tr key={idx} className="hover:bg-slate-50">
-                                   <td className="px-3 py-2 font-medium">{item.student.name}</td>
-                                   <td className="px-3 py-2 text-center font-bold text-red-600">{item.score}</td>
-                                   <td className="px-3 py-2">
-                                      {item.candidateFor ? (
-                                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold animate-pulse">
-                                          Layak {item.candidateFor}
-                                        </span>
+                      {/* WRAPPER SCROLL DAN BORDER */}
+                      <div className="overflow-hidden border border-slate-200 rounded-lg">
+                        <div className="max-h-[350px] overflow-y-auto">
+                          <table className="w-full text-sm text-left relative">
+                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                              <tr>
+                                <th className="px-3 py-2">Siswa</th>
+                                <th className="px-3 py-2 text-center">Poin</th>
+                                <th className="px-3 py-2">Status / Kandidat</th>
+                                <th className="px-3 py-2 text-center">Penanganan</th>
+                                <th className="px-3 py-2 text-right">Aksi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {monitoringList.length === 0 ? (
+                                <tr><td colSpan={5} className="p-4 text-center text-slate-500">Tidak ada siswa yang memerlukan tindakan mendesak.</td></tr>
+                              ) : (
+                                monitoringList.map((item, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 font-medium">{item.student.name}</td>
+                                    <td className="px-3 py-2 text-center font-bold text-red-600">{item.score}</td>
+                                    <td className="px-3 py-2">
+                                        {item.candidateFor ? (
+                                          <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold animate-pulse">
+                                            Layak {item.candidateFor}
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">
+                                            Sanksi {item.activeSanctionLevel}
+                                          </span>
+                                        )}
+                                        {item.redemptionStatus !== 'NONE' && item.redemptionStatus !== 'COMPLETED' && (
+                                          <div className="text-[10px] text-orange-600 mt-1 font-semibold">
+                                              Sedang Penebusan
+                                          </div>
+                                        )}
+                                    </td>
+                                    <td className="px-3 py-2 text-center">
+                                      {item.activeSanctionLevel !== '-' ? (
+                                        <div className="flex justify-center items-center" title="Sudah ditangani (Sanksi Aktif)">
+                                          <div className="bg-green-100 p-1 rounded-full">
+                                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                          </div>
+                                        </div>
                                       ) : (
-                                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">
-                                          Sanksi {item.activeSanctionLevel}
-                                        </span>
+                                        <div className="flex justify-center items-center" title="Belum ditangani (Perlu Sanksi)">
+                                          <div className="bg-red-100 p-1 rounded-full">
+                                            <X className="h-4 w-4 text-red-600" />
+                                          </div>
+                                        </div>
                                       )}
-                                      {item.redemptionStatus !== 'NONE' && item.redemptionStatus !== 'COMPLETED' && (
-                                         <div className="text-[10px] text-orange-600 mt-1 font-semibold">
-                                            Sedang Penebusan
-                                         </div>
-                                      )}
-                                   </td>
-                                   <td className="px-3 py-2 text-right">
-                                      <Link to={`/teacher/student/${item.student.id}`} className="text-indigo-600 hover:underline text-xs font-bold border border-indigo-200 px-2 py-1 rounded bg-indigo-50">
-                                         Proses
-                                      </Link>
-                                   </td>
-                                 </tr>
-                               ))
-                             )}
-                           </tbody>
-                        </table>
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                        <Link to={`/teacher/student/${item.student.id}`} className="text-indigo-600 hover:underline text-xs font-bold border border-indigo-200 px-2 py-1 rounded bg-indigo-50">
+                                          Proses
+                                        </Link>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                    </div>
 
@@ -282,7 +303,7 @@ const TeacherDashboard: React.FC = () => {
                         <UserCheck className="h-5 w-5 text-blue-600" />
                         Siswa Ditangani BK
                       </h3>
-                      <div className="flex-1 overflow-y-auto max-h-[300px] space-y-3">
+                      <div className="flex-1 overflow-y-auto max-h-[350px] space-y-3 pr-1">
                          {bkHandledList.length === 0 ? (
                            <div className="text-center text-slate-500 text-xs py-8 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                              Tidak ada siswa yang sedang dalam rujukan aktif BK.
@@ -334,7 +355,7 @@ const TeacherDashboard: React.FC = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                      <p className="text-indigo-100 text-sm">Siswa Dalam Pantauan (Poin ≥ 20)</p>
+                      <p className="text-indigo-100 text-sm">Siswa Bina BK (Poin ≥ 40)</p>
                       <p className="text-3xl font-bold mt-1">{highRiskStudents.length} <span className="text-sm font-normal opacity-75">Siswa</span></p>
                    </div>
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
@@ -387,7 +408,7 @@ const TeacherDashboard: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                            {highRiskStudents.length === 0 ? (
-                             <tr><td colSpan={4} className="p-4 text-center text-slate-500">Tidak ada siswa dengan poin tinggi saat ini.</td></tr>
+                             <tr><td colSpan={4} className="p-4 text-center text-slate-500">Tidak ada siswa dengan poin tinggi (≥ 40) saat ini.</td></tr>
                            ) : (
                              highRiskStudents.map(({student, score, status}) => (
                                <tr key={student.id} className="hover:bg-slate-50">

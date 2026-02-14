@@ -50,9 +50,15 @@ const INITIAL_CATEGORIES: MasterCategory[] = [
 const INITIAL_INCIDENTS: MasterIncidentType[] = [
   { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
 ];
+
+// UPDATED RULES SESUAI REQUEST
 const INITIAL_RULES: CoachingRule[] = [
   { id: 'r1', minPoints: 0, maxPoints: 19, statusLabel: 'Normal', color: 'bg-green-100 text-green-800' },
-  { id: 'r2', minPoints: 20, maxPoints: 9999, statusLabel: 'Perlu Pembinaan', color: 'bg-red-100 text-red-800' },
+  { id: 'r2', minPoints: 20, maxPoints: 39, statusLabel: 'Pembinaan Wali Kelas', color: 'bg-yellow-100 text-yellow-800' },
+  { id: 'r3', minPoints: 40, maxPoints: 79, statusLabel: 'Pembinaan BK + Ortu', color: 'bg-orange-100 text-orange-800' },
+  { id: 'r4', minPoints: 80, maxPoints: 119, statusLabel: 'SP 1', color: 'bg-red-100 text-red-800' },
+  { id: 'r5', minPoints: 120, maxPoints: 159, statusLabel: 'SP 2', color: 'bg-red-200 text-red-900' },
+  { id: 'r6', minPoints: 160, maxPoints: 9999, statusLabel: 'SP 3', color: 'bg-red-600 text-white' },
 ];
 
 // Helper for LocalStorage
