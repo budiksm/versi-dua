@@ -11,7 +11,8 @@ import {
   Role, 
   CounselingSession, 
   StudentSanction, 
-  RedemptionStatus 
+  RedemptionStatus,
+  SanctionLevel
 } from '../types';
 
 import { db, connectToFirebase } from '../firebaseConfig';
@@ -271,5 +272,56 @@ export const DataService = {
   getCoachingStatus: (violationScore: number, rules: CoachingRule[]) => {
     const rule = rules.find(r => violationScore >= r.minPoints && violationScore <= r.maxPoints);
     return rule || { id: 'unknown', minPoints: 0, maxPoints: 0, statusLabel: 'Unknown', color: 'bg-gray-100 text-gray-800' };
+  },
+
+  // --- AUTOMATION: AUTO ASSIGN SANCTION ---
+  evaluateAndApplySanction: (studentId: string): SanctionLevel | null => {
+    const records = DataService.getRecords();
+    const incidents = DataService.getIncidentTypes();
+    const sanctions = DataService.getSanctions();
+    const stats = DataService.calculateStudentPoints(studentId, records, incidents);
+    const score = stats.effectiveViolationScore;
+
+    // Filter active/relevant sanctions
+    const studentSanctions = sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
+    
+    // Check existing levels
+    const hasSP1 = studentSanctions.some(s => s.level === SanctionLevel.SP1);
+    const hasSP2 = studentSanctions.some(s => s.level === SanctionLevel.SP2);
+    const hasSP3 = studentSanctions.some(s => s.level === SanctionLevel.SP3);
+
+    let newLevel: SanctionLevel | null = null;
+
+    // Logic Priority: Highest score triggers highest sanction if not already present
+    // SP3 Threshold: 160
+    if (score >= 160) {
+        if (!hasSP3) newLevel = SanctionLevel.SP3;
+    }
+    // SP2 Threshold: 120
+    else if (score >= 120) {
+        if (!hasSP2 && !hasSP3) newLevel = SanctionLevel.SP2;
+    }
+    // SP1 Threshold: 80
+    else if (score >= 80) {
+        if (!hasSP1 && !hasSP2 && !hasSP3) newLevel = SanctionLevel.SP1;
+    }
+
+    if (newLevel) {
+        const newSanction: StudentSanction = {
+            id: `san_auto_${Date.now()}`,
+            studentId: studentId,
+            level: newLevel,
+            assignedBy: 'SYSTEM (Otomatis)',
+            assignedDate: new Date().toISOString(),
+            notes: `Sanksi otomatis sistem karena poin mencapai skor ${score}.`,
+            redemptionStatus: RedemptionStatus.NONE, // Belum ada tugas penebusan
+            isRedeemed: false
+        };
+        
+        DataService.saveSanctions([...sanctions, newSanction]);
+        return newLevel;
+    }
+
+    return null;
   }
 };

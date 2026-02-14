@@ -212,18 +212,28 @@ const StudentProfile: React.FC = () => {
       typeSnapshot: incidentDef.type
     };
 
+    // 1. Simpan Record
     const allRecords = DataService.getRecords();
     DataService.saveRecords([...allRecords, newRecord]);
 
+    // 2. Cek Otomatisasi Sanksi (Hanya jika Violation)
+    let autoSanctionMsg = '';
+    if (incidentDef.type === IncidentTypeCategory.VIOLATION) {
+        const appliedSanction = DataService.evaluateAndApplySanction(student.id);
+        if (appliedSanction) {
+            autoSanctionMsg = ` & Otomatis menerbitkan ${appliedSanction}`;
+        }
+    }
+
     setTimeout(() => {
-      setSuccessMsg('Data berhasil disimpan!');
+      setSuccessMsg(`Data berhasil disimpan${autoSanctionMsg}!`);
       setIsSubmitting(false);
       setNotes('');
       setImageProof(null);
       setSelectedIncident('');
       setSelectedCategory('');
       setRefreshKey(prev => prev + 1);
-      setTimeout(() => setSuccessMsg(''), 3000);
+      setTimeout(() => setSuccessMsg(''), 4000);
     }, 600);
   };
 
@@ -875,19 +885,22 @@ const StudentProfile: React.FC = () => {
                 </div>
               )}
 
-              {/* PENETAPAN SANKSI FORM */}
+              {/* PENETAPAN SANKSI FORM (MANUAL OVERRIDE) */}
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                  <div className="p-6 border-b border-slate-100 bg-red-50 flex justify-between items-center">
                    <h2 className="font-bold text-slate-800 flex items-center gap-2">
                       <Gavel className="h-5 w-5 text-red-600" />
-                      Penetapan Sanksi & Kewajiban
+                      Penetapan Sanksi Manual
                    </h2>
                  </div>
                  
                  <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
-                    <div className="bg-red-50 p-4 rounded-lg text-sm text-red-800 border border-red-100 mb-4">
-                       <p className="font-bold mb-1">Perhatian:</p>
-                       Sanksi ditetapkan secara manual berdasarkan akumulasi poin dan riwayat pembinaan. Penetapan SP1/SP2/SP3 tidak terjadi otomatis.
+                    <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100 mb-4 flex items-start gap-2">
+                       <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
+                       <div>
+                         <p className="font-bold mb-1">Otomatisasi Aktif:</p>
+                         Sistem sudah otomatis menetapkan SP1/SP2/SP3 berdasarkan poin. Gunakan form ini hanya jika Anda ingin memberikan tugas penebusan spesifik atau sanksi manual tambahan (Skorsing/DO).
+                       </div>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -908,14 +921,14 @@ const StudentProfile: React.FC = () => {
                     </div>
 
                     <div>
-                       <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Penetapan / Dasar Sanksi</label>
+                       <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Penetapan</label>
                        <textarea
                          required
                          value={sanctionNotes}
                          onChange={(e) => setSanctionNotes(e.target.value)}
                          rows={2}
                          className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                         placeholder="Alasan penetapan sanksi (misal: Poin > 50 dan sudah dibina BK)..."
+                         placeholder="Alasan penetapan sanksi..."
                        />
                     </div>
 
@@ -950,7 +963,7 @@ const StudentProfile: React.FC = () => {
                         className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
                     >
                         <Gavel className="h-5 w-5" />
-                        {isSubmitting ? 'Memproses...' : 'Tetapkan Sanksi'}
+                        {isSubmitting ? 'Memproses...' : 'Tetapkan Manual'}
                     </button>
                  </form>
               </div>
