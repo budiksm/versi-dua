@@ -21,12 +21,18 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR';
 let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
-let syncListeners: ((state: SyncState, time: Date | null) => void)[] = [];
+let lastError: string | null = null;
+// Update listener signature to include error message
+let syncListeners: ((state: SyncState, time: Date | null, error: string | null) => void)[] = [];
 
-const notifyListeners = (state: SyncState) => {
+const notifyListeners = (state: SyncState, errorMsg: string | null = null) => {
   currentSyncState = state;
-  if (state === 'SAVED') lastSyncTime = new Date();
-  syncListeners.forEach(l => l(state, lastSyncTime));
+  lastError = errorMsg;
+  if (state === 'SAVED') {
+    lastSyncTime = new Date();
+    lastError = null;
+  }
+  syncListeners.forEach(l => l(state, lastSyncTime, lastError));
 };
 
 // --- INITIAL MOCK DATA ---
@@ -74,20 +80,28 @@ const syncToCloud = async (collectionName: string, data: any) => {
   } catch (error: any) {
     console.error(`[Cloud] Failed to sync ${collectionName}:`, error);
     
-    // Check for size limit error
-    if (error.code === 'resource-exhausted' || error.message?.includes('exceeds the maximum allowed size')) {
-         console.warn("⚠️ ERROR: Dokumen terlalu besar (>1MB). Kurangi ukuran gambar bukti.");
+    let errorMsg = error.message || "Unknown error";
+    
+    // Translate common errors
+    if (error.code === 'permission-denied') {
+        errorMsg = "IZIN DITOLAK (Permission Denied). Cek Tab 'Rules' di Console Firebase Anda.";
+    } else if (error.code === 'resource-exhausted') {
+        errorMsg = "Dokumen terlalu besar (>1MB).";
+    } else if (error.code === 'unavailable') {
+        errorMsg = "Koneksi ke server Firestore gagal (Offline).";
+    } else if (error.code === 'invalid-argument') {
+        errorMsg = "Format data tidak valid (Invalid Argument).";
     }
     
-    notifyListeners('ERROR');
+    notifyListeners('ERROR', errorMsg);
   }
 };
 
 export const DataService = {
   // --- SYNC SUBSCRIPTION ---
-  subscribeToSync: (callback: (state: SyncState, time: Date | null) => void) => {
+  subscribeToSync: (callback: (state: SyncState, time: Date | null, error: string | null) => void) => {
     syncListeners.push(callback);
-    callback(currentSyncState, lastSyncTime); // Initial call
+    callback(currentSyncState, lastSyncTime, lastError); // Initial call
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
@@ -122,9 +136,11 @@ export const DataService = {
       
       notifyListeners('SAVED');
       return hasData;
-    } catch (e) {
+    } catch (e: any) {
       console.error("Gagal sinkronisasi data awal:", e);
-      notifyListeners('ERROR');
+      let msg = e.message;
+      if(e.code === 'permission-denied') msg = "Izin Baca Ditolak. Cek Rules.";
+      notifyListeners('ERROR', msg);
       return false;
     }
   },

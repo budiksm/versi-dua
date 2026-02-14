@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, AlertCircle, School } from 'lucide-react';
+import { Lock, User, AlertCircle } from 'lucide-react';
 import { DataService } from '../services/dataService';
 import { Role } from '../types';
 
@@ -46,9 +47,16 @@ const Login: React.FC = () => {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-800/50 rounded-full blur-3xl pointer-events-none"></div>
           
           <div className="relative z-10 flex flex-col items-center">
-            {/* Logo Container - Default Icon */}
-            <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center shadow-2xl mb-6 border-4 border-indigo-100/30">
-              <School className="h-12 w-12 text-indigo-900" />
+            {/* Logo Container - UPDATED TO IMAGE */}
+            <div className="h-28 w-28 bg-white rounded-full flex items-center justify-center shadow-2xl mb-6 border-4 border-indigo-100/30 overflow-hidden p-2">
+              <img 
+                // --- GANTI LINK DI BAWAH INI DENGAN LOGO ANDA ---
+                // Contoh link sementara:
+                src="https://img.freepik.com/free-vector/gradient-high-school-logo-design_23-2149626932.jpg"
+                // Jika file ada di folder public lokal: src="/logo-sekolah.png"
+                alt="Logo Sekolah" 
+                className="w-full h-full object-contain"
+              />
             </div>
             
             <h1 className="text-3xl font-bold text-white tracking-wide drop-shadow-md">SMKN JAYAKERTA</h1>

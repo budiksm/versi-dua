@@ -39,6 +39,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Sync Status State
   const [syncState, setSyncState] = useState<SyncState>('IDLE');
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   
   const currentUser = DataService.getCurrentUser();
 
@@ -52,9 +53,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   useEffect(() => {
     // Subscribe to DataService Sync events
-    const unsubscribe = DataService.subscribeToSync((state, time) => {
+    const unsubscribe = DataService.subscribeToSync((state, time, error) => {
       setSyncState(state);
       if (time) setLastSync(time);
+      if (error) setSyncError(error);
     });
     
     if (currentUser?.mustChangePassword && !successMessage) {
@@ -263,14 +265,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 animate-pulse">
                <AlertOctagon className="h-6 w-6 text-red-600 shrink-0" />
                <div>
-                  <h3 className="text-sm font-bold text-red-800">Koneksi Database Bermasalah</h3>
-                  <p className="text-xs text-red-600 mt-1">
-                     Data tidak dapat disimpan ke server. Kemungkinan penyebab:
-                     <ul className="list-disc list-inside mt-1 ml-1">
-                        <li>Koneksi internet terputus.</li>
-                        <li><b>Security Rules Firebase memblokir akses (Paling Umum).</b></li>
-                     </ul>
-                     Hubungi developer untuk mengubah "Firestore Rules" menjadi Test Mode.
+                  <h3 className="text-sm font-bold text-red-800">Gagal Sinkronisasi Cloud</h3>
+                  <p className="text-xs text-red-700 mt-1 mb-2 font-mono bg-red-100 p-1 rounded">
+                     Error: {syncError || "Unknown Error"}
+                  </p>
+                  <p className="text-xs text-red-600">
+                     Data Anda <b>sudah tersimpan di perangkat ini (Local Storage)</b>, tetapi gagal diupload ke server.
+                     <br/>
+                     Jika error adalah "Permission Denied", pastikan Rules Firestore sudah dibuka.
                   </p>
                </div>
             </div>
