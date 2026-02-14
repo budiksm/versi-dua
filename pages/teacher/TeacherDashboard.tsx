@@ -91,7 +91,10 @@ const TeacherDashboard: React.FC = () => {
           if (score >= 120 && score <= 159 && !hasSP2) { countSP2++; candidateLevel = 'SP 2'; }
           if (score >= 160 && !hasSP3) { countSP3++; candidateLevel = 'SP 3'; }
 
-          if (candidateLevel || activeSanction) {
+          // FILTER LOGIC UPDATE:
+          // Hanya masukkan ke list jika 'candidateLevel' ada (artinya butuh SP baru).
+          // Jika tidak ada candidateLevel (artinya sudah punya SP yang sesuai atau poin rendah), jangan tampilkan.
+          if (candidateLevel) {
             monitorData.push({
               student: s,
               score,
@@ -229,8 +232,9 @@ const TeacherDashboard: React.FC = () => {
                    <div className="lg:col-span-2 bg-white text-slate-800 rounded-lg p-5 shadow-sm">
                       <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-700">
                         <ClipboardList className="h-5 w-5 text-indigo-600" />
-                        Monitoring Poin & Kandidat Sanksi
+                        Daftar Tindak Lanjut (Unresolved)
                       </h3>
+                      <p className="text-xs text-slate-500 mb-3 -mt-2">Siswa di bawah ini memenuhi syarat sanksi baru tetapi belum diproses.</p>
                       {/* WRAPPER SCROLL DAN BORDER */}
                       <div className="overflow-hidden border border-slate-200 rounded-lg">
                         <div className="max-h-[350px] overflow-y-auto">
@@ -239,49 +243,34 @@ const TeacherDashboard: React.FC = () => {
                               <tr>
                                 <th className="px-3 py-2">Siswa</th>
                                 <th className="px-3 py-2 text-center">Poin</th>
-                                <th className="px-3 py-2">Status / Kandidat</th>
-                                <th className="px-3 py-2 text-center">Penanganan</th>
+                                <th className="px-3 py-2">Rekomendasi</th>
+                                <th className="px-3 py-2 text-center">Status</th>
                                 <th className="px-3 py-2 text-right">Aksi</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                               {monitoringList.length === 0 ? (
-                                <tr><td colSpan={5} className="p-4 text-center text-slate-500">Tidak ada siswa yang memerlukan tindakan mendesak.</td></tr>
+                                <tr><td colSpan={5} className="p-8 text-center text-slate-500 flex flex-col items-center justify-center">
+                                    <CheckCircle2 className="h-8 w-8 text-green-500 mb-2" />
+                                    <span className="font-semibold">Semua Beres!</span>
+                                    <span className="text-xs">Tidak ada siswa yang menunggu penanganan sanksi.</span>
+                                </td></tr>
                               ) : (
                                 monitoringList.map((item, idx) => (
                                   <tr key={idx} className="hover:bg-slate-50">
                                     <td className="px-3 py-2 font-medium">{item.student.name}</td>
                                     <td className="px-3 py-2 text-center font-bold text-red-600">{item.score}</td>
                                     <td className="px-3 py-2">
-                                        {item.candidateFor ? (
-                                          <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold animate-pulse">
-                                            Layak {item.candidateFor}
-                                          </span>
-                                        ) : (
-                                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">
-                                            Sanksi {item.activeSanctionLevel}
-                                          </span>
-                                        )}
-                                        {item.redemptionStatus !== 'NONE' && item.redemptionStatus !== 'COMPLETED' && (
-                                          <div className="text-[10px] text-orange-600 mt-1 font-semibold">
-                                              Sedang Penebusan
-                                          </div>
-                                        )}
+                                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold animate-pulse flex items-center gap-1 w-fit">
+                                          <AlertCircle className="h-3 w-3" /> Layak {item.candidateFor}
+                                        </span>
                                     </td>
                                     <td className="px-3 py-2 text-center">
-                                      {item.activeSanctionLevel !== '-' ? (
-                                        <div className="flex justify-center items-center" title="Sudah ditangani (Sanksi Aktif)">
-                                          <div className="bg-green-100 p-1 rounded-full">
-                                            <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                          </div>
-                                        </div>
-                                      ) : (
                                         <div className="flex justify-center items-center" title="Belum ditangani (Perlu Sanksi)">
-                                          <div className="bg-red-100 p-1 rounded-full">
-                                            <X className="h-4 w-4 text-red-600" />
+                                          <div className="bg-red-50 px-2 py-1 rounded border border-red-100 text-[10px] text-red-600 font-bold">
+                                            BELUM DIPROSES
                                           </div>
                                         </div>
-                                      )}
                                     </td>
                                     <td className="px-3 py-2 text-right">
                                         <Link to={`/teacher/student/${item.student.id}`} className="text-indigo-600 hover:underline text-xs font-bold border border-indigo-200 px-2 py-1 rounded bg-indigo-50">
