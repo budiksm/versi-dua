@@ -18,10 +18,13 @@ import {
   Gavel,
   HeartHandshake,
   Lock,
-  CheckCircle
+  CheckCircle,
+  Cloud,
+  RefreshCw,
+  AlertOctagon
 } from 'lucide-react';
 import { Role } from '../types';
-import { DataService } from '../services/dataService';
+import { DataService, SyncState } from '../services/dataService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -33,7 +36,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   
-  // We need to trigger re-renders when user data changes (e.g. password update)
+  // Sync Status State
+  const [syncState, setSyncState] = useState<SyncState>('IDLE');
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  
   const currentUser = DataService.getCurrentUser();
 
   // Force Password Change State
@@ -45,10 +51,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    // Only show if the flag is true AND we haven't just successfully updated it (successMessage check)
+    // Subscribe to DataService Sync events
+    const unsubscribe = DataService.subscribeToSync((state, time) => {
+      setSyncState(state);
+      if (time) setLastSync(time);
+    });
+    
     if (currentUser?.mustChangePassword && !successMessage) {
       setShowPasswordModal(true);
     }
+
+    return () => unsubscribe();
   }, [currentUser, successMessage]);
 
   const handleLogout = () => {
@@ -64,12 +77,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       setPasswordError('Konfirmasi password tidak cocok.');
       return;
     }
-
     if (newPassword === '123') {
-      setPasswordError('Dilarang menggunakan password default "123". Harap gunakan password lain.');
+      setPasswordError('Dilarang menggunakan password default "123".');
       return;
     }
-
     if (newPassword.length < 4) {
       setPasswordError('Password minimal 4 karakter.');
       return;
@@ -77,39 +88,30 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     if (currentUser) {
       setIsSavingPass(true);
-      // Simulate API call
       setTimeout(() => {
         DataService.updatePassword(currentUser.id, newPassword);
         setIsSavingPass(false);
         setSuccessMessage('Password berhasil diubah!');
-        
-        // Close modal after short delay to show success message
         setTimeout(() => {
           setShowPasswordModal(false);
           setSuccessMessage('');
-          // No reload needed. The modal closes, user is already on the protected route.
         }, 1000);
       }, 800);
     }
   };
 
-  // Base Teacher Links
+  // --- MENU CONFIG ---
   const teacherLinks = [
     { path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/teacher/classes', label: 'Daftar Kelas', icon: Users },
   ];
-
-  // BK Specific Links
   const bkLinks = [
     { path: '/teacher/bk/active', label: 'Pembinaan Aktif', icon: HeartHandshake },
   ];
-
-  // Kesiswaan Specific Links
   const kesiswaanLinks = [
     { path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },
     { path: '/teacher/kesiswaan/action', label: 'Pembinaan & SP', icon: Gavel },
   ];
-
   const adminLinks = [
     { path: '/admin/students', label: 'Manajemen Siswa', icon: Users },
     { path: '/admin/accounts', label: 'Manajemen Akun', icon: UserCog },
@@ -117,109 +119,49 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   ];
 
   const roles = currentUser?.roles || [];
-  const hasAdminRole = roles.includes(Role.ADMIN);
-  const isKesiswaan = roles.includes(Role.KESISWAAN);
-  const isBK = roles.includes(Role.BK);
-
   let finalLinks: any[] = [];
   
-  if (hasAdminRole) {
+  if (roles.includes(Role.ADMIN)) {
     finalLinks = [...adminLinks];
-    // Admins who are also educators get teacher links
     if (roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r))) {
        finalLinks = [...finalLinks, ...teacherLinks];
     }
   } else {
     finalLinks = [...teacherLinks];
   }
-
-  // Inject BK menus if eligible
-  if (isBK) {
-    // Insert BK links after Dashboard/Classes but before Kesiswaan if exists
-    finalLinks = [...finalLinks, ...bkLinks];
-  }
-
-  // Inject Kesiswaan menus if eligible
-  if (isKesiswaan) {
-    finalLinks = [...finalLinks, ...kesiswaanLinks];
-  }
+  if (roles.includes(Role.BK)) finalLinks = [...finalLinks, ...bkLinks];
+  if (roles.includes(Role.KESISWAAN)) finalLinks = [...finalLinks, ...kesiswaanLinks];
   
-  // Remove duplicates
   finalLinks = finalLinks.filter((link, index, self) =>
     index === self.findIndex((t) => t.path === link.path)
   );
 
-  const getMenuLabel = () => {
-    if (roles.length > 0) return roles.join(' & ');
-    return 'User';
-  };
-
   return (
     <div className="flex h-screen bg-slate-50">
       
-      {/* BLOCKING PASSWORD CHANGE MODAL */}
+      {/* PASSWORD CHANGE MODAL */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/95 backdrop-blur-sm p-4">
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in">
               <div className="bg-red-600 p-6 text-center text-white">
                  <Lock className="h-12 w-12 mx-auto mb-2 opacity-90" />
                  <h2 className="text-xl font-bold">Wajib Ganti Password</h2>
-                 <p className="text-red-100 text-sm mt-1">Akun baru wajib mengubah password default demi keamanan.</p>
+                 <p className="text-red-100 text-sm mt-1">Demi keamanan akun Anda.</p>
               </div>
               <div className="p-8">
                  {successMessage ? (
-                    <div className="text-center py-8 animate-fade-in">
-                       <div className="mx-auto w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
-                          <CheckCircle className="h-8 w-8" />
-                       </div>
-                       <h3 className="text-xl font-bold text-slate-800 mb-2">Berhasil!</h3>
-                       <p className="text-slate-500">Password Anda telah diperbarui. Mengalihkan...</p>
+                    <div className="text-center py-8">
+                       <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                       <h3 className="text-xl font-bold">Berhasil!</h3>
                     </div>
                  ) : (
-                   <form onSubmit={handlePasswordChangeSubmit} className="space-y-5">
-                      <div>
-                         <label className="block text-sm font-bold text-slate-700 mb-1">Password Baru</label>
-                         <input 
-                           type="password" 
-                           required
-                           autoFocus
-                           className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none transition-all"
-                           placeholder="Masukkan password baru..."
-                           value={newPassword}
-                           onChange={e => setNewPassword(e.target.value)}
-                         />
-                         <p className="text-xs text-slate-400 mt-1">Dilarang menggunakan "123"</p>
-                      </div>
-                      <div>
-                         <label className="block text-sm font-bold text-slate-700 mb-1">Konfirmasi Password</label>
-                         <input 
-                           type="password" 
-                           required
-                           className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none transition-all"
-                           placeholder="Ulangi password baru..."
-                           value={confirmPassword}
-                           onChange={e => setConfirmPassword(e.target.value)}
-                         />
-                      </div>
-
-                      {passwordError && (
-                        <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-start gap-2">
-                          <X className="h-4 w-4 mt-0.5 shrink-0" />
-                          {passwordError}
-                        </div>
-                      )}
-
-                      <button 
-                        type="submit" 
-                        disabled={isSavingPass}
-                        className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-lg transform transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                      >
-                        {isSavingPass ? 'Menyimpan...' : 'Simpan & Lanjutkan'}
+                   <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+                      <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Password Baru" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                      <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Konfirmasi Password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+                      {passwordError && <p className="text-red-500 text-sm">{passwordError}</p>}
+                      <button type="submit" disabled={isSavingPass} className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">
+                        {isSavingPass ? 'Menyimpan...' : 'Simpan Password'}
                       </button>
-
-                      <div className="text-center pt-2">
-                         <p className="text-xs text-slate-400">Anda tidak dapat menutup halaman ini sampai password diganti.</p>
-                      </div>
                    </form>
                  )}
               </div>
@@ -227,19 +169,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       )}
 
+      {/* MOBILE OVERLAY */}
       {isSidebarOpen && (
         <div className="fixed inset-0 z-20 bg-black/50 lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
+      {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-30 w-64 transform bg-white shadow-xl transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-16 items-center justify-between px-6 border-b border-slate-100">
-          <div className="flex items-center gap-2 font-bold text-indigo-900 text-lg">
-            <School className="h-6 w-6 text-indigo-600" />
-            <span className="truncate">SMKN Jayakerta</span>
-          </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-500">
-            <X className="h-6 w-6" />
-          </button>
+        <div className="flex h-16 items-center px-6 border-b border-slate-100 gap-2 font-bold text-indigo-900 text-lg">
+           <School className="h-6 w-6 text-indigo-600" /> SMKN Jayakerta
         </div>
 
         <div className="px-6 py-4 flex items-center gap-3 border-b border-slate-50">
@@ -248,7 +186,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
            </div>
            <div className="overflow-hidden">
              <p className="text-sm font-bold text-slate-800 truncate">{currentUser?.name || 'User'}</p>
-             <p className="text-[10px] text-slate-500 uppercase leading-tight mt-0.5 truncate">{getMenuLabel()}</p>
+             <p className="text-[10px] text-slate-500 uppercase leading-tight mt-0.5 truncate">{roles.join(', ')}</p>
            </div>
         </div>
 
@@ -279,16 +217,64 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </aside>
 
+      {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="flex h-16 items-center justify-between bg-white px-6 shadow-sm lg:hidden">
-          <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500">
-            <Menu className="h-6 w-6" />
-          </button>
-          <span className="font-semibold text-slate-700">SMKN Jayakerta</span>
-          <div className="w-6" />
+        <header className="flex h-16 items-center justify-between bg-white px-6 shadow-sm z-10">
+          <div className="flex items-center gap-4">
+             <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 lg:hidden">
+               <Menu className="h-6 w-6" />
+             </button>
+             {/* SYNC INDICATOR */}
+             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200" title="Status Sinkronisasi Data">
+                {syncState === 'SYNCING' && (
+                  <>
+                     <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
+                     <span className="text-xs font-medium text-blue-600">Menyimpan...</span>
+                  </>
+                )}
+                {syncState === 'SAVED' && (
+                  <>
+                     <Cloud className="h-4 w-4 text-emerald-600" />
+                     <span className="text-xs font-medium text-emerald-600">Tersimpan</span>
+                  </>
+                )}
+                {syncState === 'IDLE' && (
+                  <>
+                     <Cloud className="h-4 w-4 text-slate-400" />
+                     <span className="text-xs text-slate-400">Siap</span>
+                  </>
+                )}
+                {syncState === 'ERROR' && (
+                  <>
+                     <AlertOctagon className="h-4 w-4 text-red-500" />
+                     <span className="text-xs font-bold text-red-500">Gagal Simpan!</span>
+                  </>
+                )}
+             </div>
+          </div>
+          
+          <div className="text-xs text-slate-400 hidden sm:block">
+            {lastSync ? `Sinkronisasi terakhir: ${lastSync.toLocaleTimeString()}` : ''}
+          </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
+          {syncState === 'ERROR' && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 animate-pulse">
+               <AlertOctagon className="h-6 w-6 text-red-600 shrink-0" />
+               <div>
+                  <h3 className="text-sm font-bold text-red-800">Koneksi Database Bermasalah</h3>
+                  <p className="text-xs text-red-600 mt-1">
+                     Data tidak dapat disimpan ke server. Kemungkinan penyebab:
+                     <ul className="list-disc list-inside mt-1 ml-1">
+                        <li>Koneksi internet terputus.</li>
+                        <li><b>Security Rules Firebase memblokir akses (Paling Umum).</b></li>
+                     </ul>
+                     Hubungi developer untuk mengubah "Firestore Rules" menjadi Test Mode.
+                  </p>
+               </div>
+            </div>
+          )}
           <div className="mx-auto max-w-5xl">{children}</div>
         </main>
       </div>

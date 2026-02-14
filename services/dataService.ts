@@ -17,7 +17,19 @@ import {
 import { db } from '../firebaseConfig';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-// --- INITIAL MOCK DATA (Fallback if DB is empty) ---
+// --- SYNC STATUS MANAGEMENT ---
+export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR';
+let currentSyncState: SyncState = 'IDLE';
+let lastSyncTime: Date | null = null;
+let syncListeners: ((state: SyncState, time: Date | null) => void)[] = [];
+
+const notifyListeners = (state: SyncState) => {
+  currentSyncState = state;
+  if (state === 'SAVED') lastSyncTime = new Date();
+  syncListeners.forEach(l => l(state, lastSyncTime));
+};
+
+// --- INITIAL MOCK DATA ---
 const INITIAL_TEACHERS: Teacher[] = [
   { id: 'admin1', name: 'Administrator', nip: '000000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false },
   { id: 't1', name: 'Budi Raharjo, S.Pd', nip: '19800101', roles: [Role.TEACHER, Role.WALIKELAS], username: 'budi', password: '123', mustChangePassword: false },
@@ -47,23 +59,36 @@ const saveToStorage = (key: string, data: any) => {
   localStorage.setItem(key, JSON.stringify(data));
 };
 
-// Helper for Firestore Sync (Fire and Forget)
+// Helper for Firestore Sync
 const syncToCloud = async (collectionName: string, data: any) => {
-  if (!db) return; // Skip if no firebase config
+  if (!db) return; 
+  
+  notifyListeners('SYNCING');
   try {
-    // We store the entire array as a single document for simplicity in this MVP
-    // In a massive scale app, you would store each item as a doc.
+    // Save entire array as a single document field (suitable for small-medium scale)
     await setDoc(doc(db, "school_data", collectionName), { data: data });
+    notifyListeners('SAVED');
+    console.log(`[Cloud] Synced ${collectionName} successfully.`);
   } catch (error) {
-    console.error(`Gagal upload ${collectionName} ke cloud:`, error);
+    console.error(`[Cloud] Failed to sync ${collectionName}:`, error);
+    notifyListeners('ERROR');
   }
 };
 
 export const DataService = {
+  // --- SYNC SUBSCRIPTION ---
+  subscribeToSync: (callback: (state: SyncState, time: Date | null) => void) => {
+    syncListeners.push(callback);
+    callback(currentSyncState, lastSyncTime); // Initial call
+    return () => { syncListeners = syncListeners.filter(l => l !== callback); };
+  },
+
   // --- INITIALIZATION ---
-  // This function must be called when App starts
   initializeData: async (): Promise<boolean> => {
-    if (!db) return false; // Offline mode
+    if (!db) {
+        console.warn("DB not initialized, running offline.");
+        return false;
+    }
 
     try {
       const collections = [
@@ -71,6 +96,8 @@ export const DataService = {
         'rules', 'records', 'teachers', 'counseling', 'sanctions'
       ];
 
+      notifyListeners('SYNCING');
+      
       // Download all collections parallelly
       const promises = collections.map(col => getDoc(doc(db, "school_data", col)));
       const snapshots = await Promise.all(promises);
@@ -86,28 +113,29 @@ export const DataService = {
           hasData = true;
         }
       });
-
+      
+      notifyListeners('SAVED');
       return hasData;
     } catch (e) {
       console.error("Gagal sinkronisasi data awal:", e);
+      notifyListeners('ERROR');
       return false;
     }
   },
 
-  // --- GETTERS (Read from LocalStorage for speed) ---
+  // --- GETTERS ---
   getClasses: () => loadFromStorage<ClassGroup[]>('classes', INITIAL_CLASSES),
   getStudents: () => loadFromStorage<Student[]>('students', INITIAL_STUDENTS),
   getCategories: () => loadFromStorage<MasterCategory[]>('categories', INITIAL_CATEGORIES),
   getIncidentTypes: () => loadFromStorage<MasterIncidentType[]>('incidentTypes', INITIAL_INCIDENTS),
   getRules: () => loadFromStorage<CoachingRule[]>('rules', INITIAL_RULES),
-  // FIX: Explicitly type these empty arrays so TS knows what they contain
   getRecords: () => loadFromStorage<IncidentRecord[]>('records', []),
   getCounselingSessions: () => loadFromStorage<CounselingSession[]>('counseling', []),
   getSanctions: () => loadFromStorage<StudentSanction[]>('sanctions', []),
 
   getTeachers: (): Teacher[] => {
     let teachers = loadFromStorage<Teacher[]>('teachers', INITIAL_TEACHERS);
-    // Migration helper (same as before)
+    // Migration helper
     let needsUpdate = false;
     const migrated = teachers.map((t: any) => {
       let updated = false;
@@ -123,7 +151,7 @@ export const DataService = {
     return migrated;
   },
 
-  // --- SETTERS (Write to LocalStorage AND Cloud) ---
+  // --- SETTERS ---
   saveClasses: (data: ClassGroup[]) => { saveToStorage('classes', data); syncToCloud('classes', data); },
   saveStudents: (data: Student[]) => { saveToStorage('students', data); syncToCloud('students', data); },
   saveCategories: (data: MasterCategory[]) => { saveToStorage('categories', data); syncToCloud('categories', data); },
@@ -139,7 +167,7 @@ export const DataService = {
     const teachers = DataService.getTeachers(); 
     let user = teachers.find(t => t.username === username && t.password === password);
     
-    // Default fallback logic preserved
+    // Default fallback logic for initial admin
     if (!user) {
         const defaultAdmin = INITIAL_TEACHERS.find(t => t.roles.includes(Role.ADMIN));
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {
@@ -173,12 +201,16 @@ export const DataService = {
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
         const updatedUser = { ...t, password: newPass, mustChangePassword: false };
-        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        // If current user is the one being updated, update local session too
+        const currentUser = DataService.getCurrentUser();
+        if (currentUser && currentUser.id === userId) {
+             localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        }
         return updatedUser;
       }
       return t;
     });
-    DataService.saveTeachers(updatedTeachers); // Syncs to cloud
+    DataService.saveTeachers(updatedTeachers);
   },
 
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
