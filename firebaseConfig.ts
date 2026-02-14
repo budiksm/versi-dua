@@ -2,7 +2,21 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// Helper untuk mengambil config manual dari LocalStorage (jika user input lewat UI Login)
+// --- AREA KONFIGURASI UTAMA (PASTE KODE FIREBASE ANDA DI SINI) ---
+// Agar "Otomatis" jalan, ganti tulisan di bawah ini dengan kode dari Firebase Console.
+// Biarkan tanda kutipnya.
+const hardcodedConfig = {
+  apiKey: "ISI_DENGAN_API_KEY_ANDA",
+  authDomain: "ISI_DENGAN_PROJECT_ID.firebaseapp.com",
+  projectId: "ISI_DENGAN_PROJECT_ID",
+  storageBucket: "ISI_DENGAN_PROJECT_ID.appspot.com",
+  messagingSenderId: "ISI_DENGAN_SENDER_ID",
+  appId: "ISI_DENGAN_APP_ID"
+};
+
+// ------------------------------------------------------------------
+
+// Helper untuk mengambil config manual dari LocalStorage (jika pernah disetting via Admin Panel)
 const getStoredConfig = () => {
   try {
     const stored = localStorage.getItem('firebase_manual_config');
@@ -13,13 +27,9 @@ const getStoredConfig = () => {
   return null;
 };
 
-// Cast import.meta to any
+// Helper untuk membaca Environment Variables (jika pakai .env)
 const env = (import.meta as any).env || {};
-
-// Prioritas: 1. Manual Config (LocalStorage), 2. Env Vars (.env)
-const manualConfig = getStoredConfig();
-
-const firebaseConfig = manualConfig || {
+const envConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY,
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: env.VITE_FIREBASE_PROJECT_ID,
@@ -28,17 +38,36 @@ const firebaseConfig = manualConfig || {
   appId: env.VITE_FIREBASE_APP_ID
 };
 
+// LOGIKA PRIORITAS KONFIGURASI:
+// 1. Config Manual (dari LocalStorage Admin Panel) - Paling Prioritas
+// 2. Config Hardcoded (dari file ini langsung) - Agar "Otomatis" jalan
+// 3. Config Env (dari .env) - Opsional
+let firebaseConfig = null;
+
+const stored = getStoredConfig();
+const isHardcodedFilled = hardcodedConfig.apiKey !== "AIzaSyAycrr3a5Hg5IgWdSxRNcSbuqY_rROeY3w";
+const isEnvFilled = envConfig.apiKey !== undefined;
+
+if (stored) {
+  firebaseConfig = stored;
+  console.log("Menggunakan Konfigurasi: MANUAL (LocalStorage)");
+} else if (isHardcodedFilled) {
+  firebaseConfig = hardcodedConfig;
+  console.log("Menggunakan Konfigurasi: OTOMATIS (Hardcoded)");
+} else if (isEnvFilled) {
+  firebaseConfig = envConfig;
+  console.log("Menggunakan Konfigurasi: ENVIRONMENT (.env)");
+}
+
 let db: any = null;
 
 try {
-  // Validasi sederhana
-  if (!firebaseConfig.apiKey) {
-    console.warn("Firebase Config belum tersedia. Silakan klik ikon Gear di halaman Login untuk memasukkan konfigurasi.");
+  if (!firebaseConfig || !firebaseConfig.apiKey) {
+    console.warn("⚠️ DATABASE BELUM TERHUBUNG: API Key tidak ditemukan.");
+    console.warn("Solusi: Buka file 'firebaseConfig.ts' dan paste kode Firebase Anda di variabel 'hardcodedConfig'.");
   } else {
-    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
-    console.log("Firebase initialized successfully (" + (manualConfig ? "Manual Config" : "Env Config") + ")");
   }
 } catch (error) {
   console.error("Firebase initialization error:", error);
