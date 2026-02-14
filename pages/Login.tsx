@@ -5,6 +5,11 @@ import { Lock, User, AlertCircle } from 'lucide-react';
 import { DataService } from '../services/dataService';
 import { Role } from '../types';
 
+// --- KONFIGURASI GAMBAR (GANTI LINK DI SINI) ---
+const SCHOOL_LOGO_URL = "https://i.ibb.co.com/HkW9d0t/512.png";
+// Tips: Gunakan gambar pemandangan sekolah ukuran 1920x1080
+const LOGIN_BACKGROUND_URL = "https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&q=80&w=2000";
+
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -40,20 +45,20 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 bg-[url('https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&q=80&w=2000')] bg-cover bg-center bg-no-repeat bg-blend-overlay">
+    <div 
+      className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 bg-cover bg-center bg-no-repeat bg-blend-overlay"
+      style={{ backgroundImage: `url('${LOGIN_BACKGROUND_URL}')` }}
+    >
       <div className="w-full max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-white/50">
         <div className="bg-indigo-900 p-8 text-center relative overflow-hidden">
           {/* Decorative background circle */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-800/50 rounded-full blur-3xl pointer-events-none"></div>
           
           <div className="relative z-10 flex flex-col items-center">
-            {/* Logo Container - UPDATED TO IMAGE */}
+            {/* Logo Container */}
             <div className="h-28 w-28 bg-white rounded-full flex items-center justify-center shadow-2xl mb-6 border-4 border-indigo-100/30 overflow-hidden p-2">
               <img 
-                // --- GANTI LINK DI BAWAH INI DENGAN LOGO ANDA ---
-                // Contoh link sementara:
-                src="https://img.freepik.com/free-vector/gradient-high-school-logo-design_23-2149626932.jpg"
-                // Jika file ada di folder public lokal: src="/logo-sekolah.png"
+                src={SCHOOL_LOGO_URL}
                 alt="Logo Sekolah" 
                 className="w-full h-full object-contain"
               />
