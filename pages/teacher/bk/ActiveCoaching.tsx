@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, CounselingSession, Role, IncidentRecord, MasterIncidentType, CoachingRule } from '../../../types';

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { DataService, SyncState } from '../services/dataService';
 import { 
   Users, 
   LayoutDashboard, 
@@ -21,10 +22,10 @@ import {
   CheckCircle,
   Cloud,
   RefreshCw,
-  AlertOctagon
+  AlertOctagon,
+  RotateCcw
 } from 'lucide-react';
 import { Role } from '../types';
-import { DataService, SyncState } from '../services/dataService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -69,6 +70,28 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleLogout = () => {
     DataService.logout();
     navigate('/');
+  };
+  
+  // FUNGSI BARU: Membersihkan Cache Browser secara paksa
+  const handleResetConnection = async () => {
+    if(confirm("Tindakan ini akan membersihkan cache database di browser untuk memperbaiki error koneksi. Data di server aman. Lanjutkan?")) {
+        try {
+            // Hapus IndexedDB database firebase
+            const dbs = await window.indexedDB.databases();
+            dbs.forEach(db => { 
+                if(db.name && db.name.includes('firebase')) {
+                    window.indexedDB.deleteDatabase(db.name);
+                }
+            });
+            // Hapus LocalStorage
+            localStorage.clear();
+            // Reload Halaman
+            window.location.reload();
+        } catch (e) {
+            alert("Gagal reset otomatis. Silakan hapus history browser Anda secara manual.");
+            window.location.reload();
+        }
+    }
   };
 
   const handlePasswordChangeSubmit = (e: React.FormEvent) => {
@@ -262,19 +285,29 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
           {syncState === 'ERROR' && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 animate-pulse">
-               <AlertOctagon className="h-6 w-6 text-red-600 shrink-0" />
-               <div>
-                  <h3 className="text-sm font-bold text-red-800">Gagal Sinkronisasi Cloud</h3>
-                  <p className="text-xs text-red-700 mt-1 mb-2 font-mono bg-red-100 p-1 rounded">
-                     Error: {syncError || "Unknown Error"}
-                  </p>
-                  <p className="text-xs text-red-600">
-                     Data Anda <b>sudah tersimpan di perangkat ini (Local Storage)</b>, tetapi gagal diupload ke server.
-                     <br/>
-                     Jika error adalah "Permission Denied", pastikan Rules Firestore sudah dibuka.
-                  </p>
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex flex-col md:flex-row items-start gap-4 animate-fade-in shadow-sm">
+               <div className="flex items-start gap-3">
+                   <AlertOctagon className="h-6 w-6 text-red-600 shrink-0 mt-1" />
+                   <div>
+                      <h3 className="text-sm font-bold text-red-800">Gagal Sinkronisasi Cloud</h3>
+                      <p className="text-xs text-red-700 mt-1 mb-2 font-mono bg-red-100 p-1 rounded break-all">
+                         {syncError || "Unknown Error"}
+                      </p>
+                      <p className="text-xs text-red-600 leading-relaxed">
+                         Kemungkinan Cache Browser Anda menyimpan sesi lama yang tidak valid.
+                         <br/>
+                         Klik tombol di kanan untuk membersihkan cache dan menghubungkan ulang secara otomatis.
+                      </p>
+                   </div>
                </div>
+               
+               <button 
+                 onClick={handleResetConnection}
+                 className="mt-2 md:mt-0 md:ml-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center gap-2 shrink-0 transition-transform active:scale-95"
+               >
+                 <RotateCcw className="h-4 w-4" />
+                 Perbaiki & Reset Koneksi
+               </button>
             </div>
           )}
           <div className="mx-auto max-w-5xl">{children}</div>

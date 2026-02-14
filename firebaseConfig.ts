@@ -6,7 +6,7 @@ import {
   persistentLocalCache, 
   persistentMultipleTabManager 
 } from "firebase/firestore";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 // --- AREA KONFIGURASI UTAMA ---
 const hardcodedConfig = {
@@ -37,16 +37,14 @@ let firebaseConfig = null;
 const stored = getStoredConfig();
 
 if (isHardcodedFilled) {
-  // Selalu prioritaskan hardcoded config jika valid
   if (localStorage.getItem('firebase_manual_config')) {
-     console.log("⚠️ Membersihkan konfigurasi manual lama demi konfigurasi hardcoded yang valid.");
      localStorage.removeItem('firebase_manual_config');
   }
   firebaseConfig = hardcodedConfig;
-  console.log("✅ Menggunakan Konfigurasi: OTOMATIS (Hardcoded)");
+  console.log("✅ Config: Hardcoded");
 } else if (stored) {
   firebaseConfig = stored;
-  console.log("ℹ️ Menggunakan Konfigurasi: MANUAL (LocalStorage)");
+  console.log("ℹ️ Config: Manual");
 } else {
   const env = (import.meta as any).env || {};
   if (env.VITE_FIREBASE_API_KEY) {
@@ -58,49 +56,60 @@ if (isHardcodedFilled) {
       messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
       appId: env.VITE_FIREBASE_APP_ID
     };
-    console.log("ℹ️ Menggunakan Konfigurasi: ENVIRONMENT (.env)");
+    console.log("ℹ️ Config: Environment");
   }
 }
 
 let db: any = null;
 let auth: any = null;
 
-// Fungsi untuk melakukan Handshake keamanan ke Firebase
+// Fungsi Handshake Lebih Robust
 const connectToFirebase = async () => {
     if (!auth) return false;
-    try {
-        // Melakukan login sistem di belakang layar
-        // Ini membuat request.auth di Rules menjadi TIDAK null
-        await signInAnonymously(auth);
-        console.log("🔐 Terhubung ke Database dengan Aman (System Auth)");
-        return true;
-    } catch (error) {
-        console.error("Gagal koneksi Auth:", error);
-        return false;
-    }
+
+    // Tunggu sebentar untuk cek state auth yang tersimpan (biar gak login ulang terus)
+    return new Promise((resolve) => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            unsubscribe(); // Stop listening
+            if (user) {
+                console.log("🔐 [Auth] Sesi dipulihkan:", user.uid);
+                resolve(true);
+            } else {
+                console.log("🔐 [Auth] Mencoba login sistem baru...");
+                signInAnonymously(auth)
+                    .then((cred) => {
+                        console.log("🔐 [Auth] Login Berhasil:", cred.user.uid);
+                        resolve(true);
+                    })
+                    .catch((error) => {
+                        console.error("❌ [Auth GAGAL]:", error);
+                        if (error.code === 'auth/operation-not-allowed') {
+                            alert("⚠️ PERHATIAN: Fitur 'Anonymous' belum diaktifkan di Firebase Console!\n\nBuka Firebase Console -> Authentication -> Sign-in method -> Aktifkan Anonymous.");
+                        }
+                        resolve(false);
+                    });
+            }
+        });
+    });
 };
 
 try {
   if (!firebaseConfig || !firebaseConfig.apiKey) {
-    console.error("❌ FATAL: Tidak ada konfigurasi Firebase yang ditemukan.");
+    console.error("❌ FATAL: Config missing.");
   } else {
     const app = initializeApp(firebaseConfig);
-    
-    // Inisialisasi Auth System
     auth = getAuth(app);
 
-    // Inisialisasi Database dengan fitur Enterprise:
-    // 1. experimentalForceLongPolling: Menembus firewall/proxy sekolah yang memblokir WebSocket.
-    // 2. persistentLocalCache: Menyimpan data di laptop agar tidak hilang saat internet mati.
+    // Gunakan settingan cache yang lebih agresif tapi aman
     db = initializeFirestore(app, {
       experimentalForceLongPolling: true, 
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
     });
     
-    console.log("🔥 Firebase initialized (Mode Stabil & Offline Aktif)!");
+    console.log("🔥 Firebase init done.");
   }
 } catch (error) {
-  console.error("🔥 Firebase initialization error:", error);
+  console.error("🔥 Firebase init error:", error);
 }
 
 export { db, auth, connectToFirebase };

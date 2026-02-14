@@ -22,7 +22,6 @@ export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR';
 let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
 let lastError: string | null = null;
-// Update listener signature to include error message
 let syncListeners: ((state: SyncState, time: Date | null, error: string | null) => void)[] = [];
 
 const notifyListeners = (state: SyncState, errorMsg: string | null = null) => {
@@ -85,7 +84,7 @@ const syncToCloud = async (collectionName: string, data: any) => {
     
     let errorMsg = error.message || "Unknown error";
     if (error.code === 'permission-denied') {
-        errorMsg = "IZIN DITOLAK. Aplikasi perlu restart untuk update keamanan.";
+        errorMsg = "IZIN DITOLAK. Cek Rules & Anonymous Auth.";
     } else if (error.code === 'resource-exhausted') {
         errorMsg = "Dokumen terlalu besar (>1MB).";
     } else if (error.code === 'unavailable') {
@@ -111,10 +110,18 @@ export const DataService = {
         return false;
     }
 
-    // --- LANGKAH PENTING: KONEKSI AMAN ---
-    // Kita melakukan koneksi 'handshake' ke Firebase sebelum meminta data.
-    // Ini memastikan kita punya 'tiket masuk' yang valid (Auth Token).
-    await connectToFirebase();
+    // 1. KONEKSI KEAMANAN (Handshake)
+    const isAuthSuccess = await connectToFirebase();
+    
+    if (!isAuthSuccess) {
+       notifyListeners('ERROR', "Gagal Login Sistem (Anonymous Auth Failed)");
+       return false;
+    }
+
+    // 2. DELAY KECIL (PENTING)
+    // Firestore kadang butuh ~500ms setelah login anonymous untuk mengupdate state internal socketnya
+    // sebelum siap menerima request "read". Tanpa ini, sering kena Permission Denied.
+    await new Promise(r => setTimeout(r, 800));
 
     try {
       const collections = [
@@ -143,7 +150,7 @@ export const DataService = {
     } catch (e: any) {
       console.error("Gagal sinkronisasi data awal:", e);
       let msg = e.message;
-      if(e.code === 'permission-denied') msg = "Izin Baca Ditolak. Pastikan Rules sudah diupdate.";
+      if(e.code === 'permission-denied') msg = "Izin Baca Ditolak. Pastikan 'Anonymous Auth' aktif di Console.";
       notifyListeners('ERROR', msg);
       return false;
     }
@@ -188,13 +195,11 @@ export const DataService = {
   saveSanctions: (data: StudentSanction[]) => { saveToStorage('sanctions', data); syncToCloud('sanctions', data); },
 
   // --- AUTH LOGIC (Aplikasi) ---
-  // Login ini hanya mengecek data di koleksi 'teachers'.
-  // Keamanan database ditangani oleh connectToFirebase() di atas.
   login: (username: string, password: string): Teacher | null => {
     const teachers = DataService.getTeachers(); 
     let user = teachers.find(t => t.username === username && t.password === password);
     
-    // Fallback Admin Recovery jika database kosong/error
+    // Fallback Admin Recovery
     if (!user) {
         const defaultAdmin = INITIAL_TEACHERS.find(t => t.roles.includes(Role.ADMIN));
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {
