@@ -6,12 +6,12 @@ import {
   MasterIncidentType, 
   IncidentRecord, 
   CoachingRule,
-  IncidentTypeCategory,
-  Teacher,
-  Role,
-  CounselingSession,
-  StudentSanction,
-  RedemptionStatus
+  IncidentTypeCategory, 
+  Teacher, 
+  Role, 
+  CounselingSession, 
+  StudentSanction, 
+  RedemptionStatus 
 } from '../types';
 
 import { db } from '../firebaseConfig';
@@ -65,12 +65,20 @@ const syncToCloud = async (collectionName: string, data: any) => {
   
   notifyListeners('SYNCING');
   try {
-    // Save entire array as a single document field (suitable for small-medium scale)
-    await setDoc(doc(db, "school_data", collectionName), { data: data });
+    // Basic check for undefined in array which Firestore hates
+    const cleanData = JSON.parse(JSON.stringify(data)); 
+    
+    await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
     notifyListeners('SAVED');
     console.log(`[Cloud] Synced ${collectionName} successfully.`);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[Cloud] Failed to sync ${collectionName}:`, error);
+    
+    // Check for size limit error
+    if (error.code === 'resource-exhausted' || error.message?.includes('exceeds the maximum allowed size')) {
+         console.warn("⚠️ ERROR: Dokumen terlalu besar (>1MB). Kurangi ukuran gambar bukti.");
+    }
+    
     notifyListeners('ERROR');
   }
 };
@@ -98,7 +106,6 @@ export const DataService = {
 
       notifyListeners('SYNCING');
       
-      // Download all collections parallelly
       const promises = collections.map(col => getDoc(doc(db, "school_data", col)));
       const snapshots = await Promise.all(promises);
 
@@ -108,7 +115,6 @@ export const DataService = {
         const colName = collections[index];
         if (snap.exists()) {
           const remoteData = snap.data().data;
-          // Overwrite local storage with cloud data
           saveToStorage(colName, remoteData);
           hasData = true;
         }
@@ -135,7 +141,6 @@ export const DataService = {
 
   getTeachers: (): Teacher[] => {
     let teachers = loadFromStorage<Teacher[]>('teachers', INITIAL_TEACHERS);
-    // Migration helper
     let needsUpdate = false;
     const migrated = teachers.map((t: any) => {
       let updated = false;
@@ -167,14 +172,13 @@ export const DataService = {
     const teachers = DataService.getTeachers(); 
     let user = teachers.find(t => t.username === username && t.password === password);
     
-    // Default fallback logic for initial admin
     if (!user) {
         const defaultAdmin = INITIAL_TEACHERS.find(t => t.roles.includes(Role.ADMIN));
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {
             const existingAdminIndex = teachers.findIndex(t => t.roles.includes(Role.ADMIN));
             if (existingAdminIndex === -1) {
                 const newTeachers = [...teachers, defaultAdmin];
-                DataService.saveTeachers(newTeachers); // Syncs to cloud
+                DataService.saveTeachers(newTeachers); 
             }
             user = defaultAdmin;
         }
@@ -201,7 +205,6 @@ export const DataService = {
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
         const updatedUser = { ...t, password: newPass, mustChangePassword: false };
-        // If current user is the one being updated, update local session too
         const currentUser = DataService.getCurrentUser();
         if (currentUser && currentUser.id === userId) {
              localStorage.setItem('currentUser', JSON.stringify(updatedUser));

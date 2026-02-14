@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DataService } from '../../services/dataService';
@@ -61,6 +62,7 @@ const StudentProfile: React.FC = () => {
   const [selectedIncident, setSelectedIncident] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [imageProof, setImageProof] = useState<string | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
   
   // Form State (Counseling)
   const [counselingNotes, setCounselingNotes] = useState('');
@@ -133,14 +135,54 @@ const StudentProfile: React.FC = () => {
     i.categoryId === selectedCategory
   );
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- IMAGE COMPRESSION LOGIC ---
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; // Limit width to 800px to keep size small
+          const scaleSize = MAX_WIDTH / img.width;
+          
+          // Only resize if image is larger than MAX_WIDTH
+          if (scaleSize < 1) {
+             canvas.width = MAX_WIDTH;
+             canvas.height = img.height * scaleSize;
+          } else {
+             canvas.width = img.width;
+             canvas.height = img.height;
+          }
+
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Compress to JPEG with 0.6 quality
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          resolve(compressedDataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageProof(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setIsCompressing(true);
+      try {
+        const compressedBase64 = await compressImage(file);
+        setImageProof(compressedBase64);
+      } catch (error) {
+        console.error("Gagal kompres gambar:", error);
+        alert("Gagal memproses gambar. Coba gunakan gambar lain.");
+      } finally {
+        setIsCompressing(false);
+      }
     }
   };
 
@@ -198,13 +240,9 @@ const StudentProfile: React.FC = () => {
       date: new Date().toISOString(),
       notes: counselingNotes,
       recommendation: counselingRec,
-      status: 'CLOSED' // In this simple flow, we close it immediately or we could add status to form
+      status: 'CLOSED' 
     };
     
-    // Quick fix: If recommendation is "To Kesiswaan", maybe consider it "OPEN" for handling? 
-    // Or just CLOSED and let Kesiswaan pick it up. Let's keep it CLOSED as a log, Kesiswaan sees "Referrals".
-    // For "Siswa Dalam Pantauan" dashboard logic, we might need 'OPEN' status or specific recommendation.
-    // Let's set it to OPEN if there is a serious recommendation, so it stays on dashboard.
     if (counselingRec !== 'NONE') {
         newSession.status = 'OPEN';
     }
@@ -240,7 +278,6 @@ const StudentProfile: React.FC = () => {
     };
 
     const allSanctions = DataService.getSanctions();
-    // Logic: Is there already an active sanction of the SAME level?
     const existing = allSanctions.find(s => s.studentId === student.id && s.redemptionStatus !== RedemptionStatus.COMPLETED && s.level === sanctionLevel);
     
     if (existing) {
@@ -522,7 +559,6 @@ const StudentProfile: React.FC = () => {
                           <Award className="h-4 w-4" />
                           Penghargaan
                           </button>
-                          {/* NOTE: Penebusan is NOT here anymore. Moved to Sanction Panel for Kesiswaan */}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -573,12 +609,22 @@ const StudentProfile: React.FC = () => {
                       <div>
                           <label className="block text-sm font-medium text-slate-700 mb-2">Bukti Foto (Opsional)</label>
                           {!imageProof ? (
-                          <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                          <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer hover:bg-slate-50 transition-colors ${isCompressing ? 'opacity-50 cursor-wait' : ''}`}>
                               <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                              <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
-                              <p className="text-sm text-slate-500"><span className="font-semibold">Klik untuk upload</span> atau drag & drop</p>
+                                {isCompressing ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2"></div>
+                                        <p className="text-sm text-slate-500">Memproses gambar...</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                                        <p className="text-sm text-slate-500"><span className="font-semibold">Klik untuk upload</span></p>
+                                        <p className="text-xs text-slate-400 mt-1">Otomatis dikompres &lt; 100KB</p>
+                                    </>
+                                )}
                               </div>
-                              <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                              <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={isCompressing} />
                           </label>
                           ) : (
                           <div className="relative w-full h-48 bg-slate-100 rounded-lg overflow-hidden border border-slate-300">
@@ -614,7 +660,7 @@ const StudentProfile: React.FC = () => {
 
                       <button
                           type="submit"
-                          disabled={isSubmitting || !selectedIncident || !selectedCategory}
+                          disabled={isSubmitting || !selectedIncident || !selectedCategory || isCompressing}
                           className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
                       >
                           <Save className="h-5 w-5" />
