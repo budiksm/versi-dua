@@ -2,12 +2,24 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// Cast import.meta to any to avoid TypeScript errors if types are not properly configured
-const env = (import.meta as any).env;
+// Helper untuk mengambil config manual dari LocalStorage (jika user input lewat UI Login)
+const getStoredConfig = () => {
+  try {
+    const stored = localStorage.getItem('firebase_manual_config');
+    if (stored) return JSON.parse(stored);
+  } catch (e) {
+    console.error("Gagal membaca konfigurasi manual:", e);
+  }
+  return null;
+};
 
-// Config mengambil dari Environment Variables (.env)
-// Agar API Key tidak terekspos di Source Code (GitHub)
-const firebaseConfig = {
+// Cast import.meta to any
+const env = (import.meta as any).env || {};
+
+// Prioritas: 1. Manual Config (LocalStorage), 2. Env Vars (.env)
+const manualConfig = getStoredConfig();
+
+const firebaseConfig = manualConfig || {
   apiKey: env.VITE_FIREBASE_API_KEY,
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: env.VITE_FIREBASE_PROJECT_ID,
@@ -19,13 +31,14 @@ const firebaseConfig = {
 let db: any = null;
 
 try {
-  // Validasi sederhana untuk memastikan .env sudah dibuat
+  // Validasi sederhana
   if (!firebaseConfig.apiKey) {
-    console.error("Firebase Config Error: API Key tidak ditemukan. Pastikan Anda telah membuat file .env berisi VITE_FIREBASE_API_KEY");
+    console.warn("Firebase Config belum tersedia. Silakan klik ikon Gear di halaman Login untuk memasukkan konfigurasi.");
   } else {
+    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
-    console.log("Firebase initialized successfully");
+    console.log("Firebase initialized successfully (" + (manualConfig ? "Manual Config" : "Env Config") + ")");
   }
 } catch (error) {
   console.error("Firebase initialization error:", error);

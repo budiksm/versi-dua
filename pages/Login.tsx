@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, AlertCircle } from 'lucide-react';
+import { Lock, User, AlertCircle, Settings, Database, Save, X, RotateCcw } from 'lucide-react';
 import { DataService } from '../services/dataService';
 import { Role } from '../types';
 
@@ -16,6 +16,24 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Configuration Modal State
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [configJson, setConfigJson] = useState('');
+
+  useEffect(() => {
+    // Load existing config string for display
+    const stored = localStorage.getItem('firebase_manual_config');
+    if (stored) {
+      // Pretty print JSON
+      try {
+        const parsed = JSON.parse(stored);
+        setConfigJson(JSON.stringify(parsed, null, 2));
+      } catch (e) {
+        setConfigJson(stored);
+      }
+    }
+  }, []);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,12 +62,44 @@ const Login: React.FC = () => {
     }, 800);
   };
 
+  const handleSaveConfig = () => {
+    try {
+      if (!configJson.trim()) {
+        localStorage.removeItem('firebase_manual_config');
+        alert("Konfigurasi dihapus. Aplikasi akan menggunakan Environment Variables.");
+        window.location.reload();
+        return;
+      }
+      
+      const parsed = JSON.parse(configJson);
+      if (!parsed.apiKey || !parsed.projectId) {
+         throw new Error("JSON tidak valid. Pastikan minimal ada 'apiKey' dan 'projectId'.");
+      }
+      
+      localStorage.setItem('firebase_manual_config', JSON.stringify(parsed));
+      alert("Konfigurasi berhasil disimpan! Halaman akan dimuat ulang.");
+      window.location.reload();
+    } catch (e: any) {
+      alert("Gagal menyimpan: " + e.message);
+    }
+  };
+
   return (
     <div 
       className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 bg-cover bg-center bg-no-repeat bg-blend-overlay"
       style={{ backgroundImage: `url('${LOGIN_BACKGROUND_URL}')` }}
     >
-      <div className="w-full max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-white/50">
+      <div className="w-full max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-white/50 relative">
+        
+        {/* SETTINGS BUTTON */}
+        <button 
+          onClick={() => setShowConfigModal(true)}
+          className="absolute top-4 right-4 text-white/50 hover:text-white z-20 transition-colors p-2 rounded-full hover:bg-white/10"
+          title="Konfigurasi Database"
+        >
+           <Settings className="h-5 w-5" />
+        </button>
+
         <div className="bg-indigo-900 p-8 text-center relative overflow-hidden">
           {/* Decorative background circle */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-800/50 rounded-full blur-3xl pointer-events-none"></div>
@@ -133,6 +183,59 @@ const Login: React.FC = () => {
         &copy; {new Date().getFullYear()} SMKN Jayakerta<br/>
         Jl. Raya Kemiri, Jayamakmur, Kec. Jayakerta, Karawang, Jawa Barat 41352
       </p>
+
+      {/* DATABASE CONFIGURATION MODAL */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+             <div className="bg-slate-800 p-4 flex justify-between items-center text-white">
+                <h2 className="font-bold flex items-center gap-2">
+                   <Database className="h-5 w-5 text-blue-400" />
+                   Konfigurasi Database (Firebase)
+                </h2>
+                <button onClick={() => setShowConfigModal(false)} className="text-slate-400 hover:text-white">
+                   <X className="h-5 w-5" />
+                </button>
+             </div>
+             
+             <div className="p-6 overflow-y-auto">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 mb-4">
+                   <p className="font-bold flex items-center gap-2 mb-1">
+                      <AlertCircle className="h-4 w-4" /> Mode Pemulihan Koneksi
+                   </p>
+                   Jika data Anda hilang/reset, kemungkinan aplikasi kehilangan koneksi ke database.
+                   Paste kode konfigurasi Firebase Anda di bawah ini untuk menghubungkan ulang secara manual.
+                </div>
+
+                <label className="block text-sm font-bold text-slate-700 mb-2">Firebase Config Object (JSON):</label>
+                <textarea 
+                  className="w-full h-64 p-3 bg-slate-900 text-green-400 font-mono text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                  placeholder={'{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  ...\n}'}
+                  value={configJson}
+                  onChange={e => setConfigJson(e.target.value)}
+                />
+                <p className="text-xs text-slate-500 mt-2">
+                   *Anda bisa mendapatkan kode ini dari Firebase Console &gt; Project Settings.
+                </p>
+             </div>
+
+             <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+                <button 
+                  onClick={() => setShowConfigModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg font-medium text-sm"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={handleSaveConfig}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 shadow-sm"
+                >
+                  <RotateCcw className="h-4 w-4" /> Simpan & Reload
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
