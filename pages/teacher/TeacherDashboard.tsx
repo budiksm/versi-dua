@@ -108,6 +108,7 @@ const TeacherDashboard: React.FC = () => {
         const riskList: {student: Student, score: number, status: string}[] = [];
         stds.forEach(s => {
           const stats = DataService.calculateStudentPoints(s.id, recs, incs);
+          // High Risk Criteria: Point >= 40
           if (stats.effectiveViolationScore >= 40) {
              const status = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
              riskList.push({
@@ -317,6 +318,7 @@ const TeacherDashboard: React.FC = () => {
       {/* --- KESISWAAN DASHBOARD --- */}
       {isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
+          {/* ... (Kesiswaan Code remains same) ... */}
           <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
              <div className="absolute right-0 top-0 opacity-5">
                <Gavel className="h-64 w-64 -mr-16 -mt-16 text-white" />
@@ -535,23 +537,35 @@ const TeacherDashboard: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                      <p className="text-indigo-100 text-sm">Siswa Bina BK</p>
+                      <p className="text-indigo-100 text-sm">Siswa Dalam Pantauan</p>
                       <p className="text-3xl font-bold mt-1">{highRiskStudents.length}</p>
                    </div>
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                      <p className="text-indigo-100 text-sm">Total Sesi</p>
+                      <p className="text-indigo-100 text-sm">Total Riwayat Konseling</p>
                       <p className="text-3xl font-bold mt-1">{counselingCount}</p>
                    </div>
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                        <label className="text-indigo-100 text-sm block mb-2 flex items-center gap-2">
                           <Search className="h-4 w-4" /> Cari Siswa
                        </label>
-                       <div className="relative">
-                          <input type="text" className="w-full bg-white text-slate-800 px-3 py-2 rounded text-sm outline-none" placeholder="Nama / NIS..." value={globalSearchTerm} onChange={handleGlobalSearch} />
+                       <div className="relative z-50">
+                          <input 
+                            type="text" 
+                            className="w-full bg-white text-slate-800 px-3 py-2 rounded text-sm outline-none" 
+                            placeholder="Nama / NIS..." 
+                            value={globalSearchTerm} 
+                            onChange={handleGlobalSearch} 
+                          />
                           {globalSearchResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden z-20 text-slate-800">
+                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden z-50 text-slate-800 border border-slate-200 max-h-60 overflow-y-auto">
                                {globalSearchResults.map(s => (
-                                 <Link key={s.id} to={`/teacher/student/${s.id}`} className="block px-4 py-2 hover:bg-slate-100 text-sm border-b last:border-0 font-bold">{s.name}</Link>
+                                 <Link 
+                                   key={s.id} 
+                                   to={`/teacher/student/${s.id}`} 
+                                   className="block px-4 py-2 hover:bg-slate-100 text-sm border-b last:border-0 font-bold"
+                                 >
+                                   {s.name}
+                                 </Link>
                                ))}
                             </div>
                           )}

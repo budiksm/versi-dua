@@ -27,7 +27,8 @@ import {
   ClipboardList,
   Wallet,
   Clock,
-  ShieldAlert
+  ShieldAlert,
+  Search
 } from 'lucide-react';
 import { Role } from '../types';
 
@@ -151,6 +152,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   ];
   const bkLinks = [
     { path: '/teacher/bk/active', label: 'Pembinaan Aktif', icon: HeartHandshake },
+    { path: '/teacher/bk/monitoring', label: 'Monitoring Siswa', icon: Search }, // NEW LINK FOR BK
   ];
   const kesiswaanLinks = [
     { path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },

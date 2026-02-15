@@ -8,6 +8,7 @@ import ClassList from './pages/teacher/ClassList';
 import StudentList from './pages/teacher/StudentList';
 import StudentProfile from './pages/teacher/StudentProfile';
 import ActiveCoaching from './pages/teacher/bk/ActiveCoaching';
+import BKStudentMonitoring from './pages/teacher/bk/BKStudentMonitoring'; // NEW IMPORT
 import KesiswaanMonitoring from './pages/teacher/KesiswaanMonitoring';
 import KesiswaanAction from './pages/teacher/KesiswaanAction';
 import TeacherInputLog from './pages/teacher/TeacherInputLog';
@@ -79,6 +80,7 @@ const App: React.FC = () => {
               
               {/* BK Specific Routes */}
               <Route path="bk/active" element={<ActiveCoaching />} />
+              <Route path="bk/monitoring" element={<BKStudentMonitoring />} />
 
               {/* Kesiswaan Specific Routes */}
               <Route path="kesiswaan/monitoring" element={<KesiswaanMonitoring />} />
