@@ -57,6 +57,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
+    // HEARTBEAT UPDATE (Online Status)
+    if (currentUser) {
+       // Update immediately on mount
+       DataService.updateHeartbeat(currentUser.id);
+       
+       // Update every minute while page is open
+       const interval = setInterval(() => {
+          DataService.updateHeartbeat(currentUser.id);
+       }, 60000);
+       
+       return () => clearInterval(interval);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     // Subscribe to DataService Sync events
     const unsubscribe = DataService.subscribeToSync((state, time, error) => {
       setSyncState(state);

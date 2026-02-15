@@ -15,7 +15,8 @@ import {
   SanctionLevel,
   IncidentStatus,
   CashflowRecord,
-  CashflowStatus
+  CashflowStatus,
+  ActivityLog
 } from '../types';
 
 import { db, connectToFirebase } from '../firebaseConfig';
@@ -126,24 +127,19 @@ export const DataService = {
         return false;
     }
 
-    // 1. KONEKSI KEAMANAN (Handshake)
     const isAuthSuccess = await connectToFirebase();
-    
     if (!isAuthSuccess) {
        notifyListeners('ERROR', "Gagal Login Sistem (Anonymous Auth Failed)");
        return false;
     }
 
-    // 2. DELAY KECIL (PENTING)
-    // Firestore kadang butuh ~500ms setelah login anonymous untuk mengupdate state internal socketnya
-    // sebelum siap menerima request "read". Tanpa ini, sering kena Permission Denied.
     await new Promise(r => setTimeout(r, 800));
 
     try {
       const collections = [
         'classes', 'students', 'categories', 'incidentTypes', 
         'rules', 'records', 'teachers', 'counseling', 'sanctions',
-        'cashflow' // Added new collection
+        'cashflow', 'activity_logs' // Added activity logs
       ];
 
       notifyListeners('SYNCING');
@@ -183,6 +179,7 @@ export const DataService = {
   getCounselingSessions: () => loadFromStorage<CounselingSession[]>('counseling', []),
   getSanctions: () => loadFromStorage<StudentSanction[]>('sanctions', []),
   getCashflows: () => loadFromStorage<CashflowRecord[]>('cashflow', []),
+  getActivityLogs: () => loadFromStorage<ActivityLog[]>('activity_logs', []),
 
   getTeachers: (): Teacher[] => {
     let teachers = loadFromStorage<Teacher[]>('teachers', INITIAL_TEACHERS);
@@ -212,11 +209,50 @@ export const DataService = {
   saveCounselingSessions: (data: CounselingSession[]) => { saveToStorage('counseling', data); syncToCloud('counseling', data); },
   saveSanctions: (data: StudentSanction[]) => { saveToStorage('sanctions', data); syncToCloud('sanctions', data); },
   saveCashflows: (data: CashflowRecord[]) => { saveToStorage('cashflow', data); syncToCloud('cashflow', data); },
+  saveActivityLogs: (data: ActivityLog[]) => { saveToStorage('activity_logs', data); syncToCloud('activity_logs', data); },
+
+  // --- ACTIVITY LOGGING & HEARTBEAT ---
+  logActivity: (user: Teacher, action: 'LOGIN' | 'LOGOUT' | 'SYNC') => {
+    const logs = DataService.getActivityLogs();
+    const newLog: ActivityLog = {
+      id: `log_${Date.now()}`,
+      userId: user.id,
+      userName: user.name,
+      role: user.roles.join(', '),
+      action,
+      timestamp: new Date().toISOString(),
+      deviceInfo: navigator.userAgent
+    };
+    // Keep only last 500 logs to prevent bloat
+    const updatedLogs = [newLog, ...logs].slice(0, 500);
+    DataService.saveActivityLogs(updatedLogs);
+  },
+
+  updateHeartbeat: (userId: string) => {
+    const teachers = DataService.getTeachers();
+    const now = new Date().toISOString();
+    let changed = false;
+    
+    const updatedTeachers = teachers.map(t => {
+      if (t.id === userId) {
+        // Only update if last active was > 1 min ago to reduce writes
+        const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
+        if (new Date().getTime() - last > 60000) {
+           changed = true;
+           return { ...t, lastActiveAt: now };
+        }
+      }
+      return t;
+    });
+
+    if (changed) {
+      DataService.saveTeachers(updatedTeachers);
+    }
+  },
 
   // --- CASHFLOW HELPER ---
   getClassBalance: (classId: string) => {
     const flows = DataService.getCashflows();
-    // Only count APPROVED transactions
     const classFlows = flows.filter(f => f.classId === classId && f.status === 'APPROVED');
     
     let totalIn = 0;
@@ -251,7 +287,6 @@ export const DataService = {
     DataService.saveCashflows(updatedFlows);
   },
 
-  // Soft Delete (Mark as Corrected/Void)
   voidCashflow: (recordId: string, user: Teacher) => {
     const flows = DataService.getCashflows();
     const updatedFlows = flows.map(f => {
@@ -272,7 +307,6 @@ export const DataService = {
     const teachers = DataService.getTeachers(); 
     let user = teachers.find(t => t.username === username && t.password === password);
     
-    // Fallback Admin Recovery
     if (!user) {
         const defaultAdmin = INITIAL_TEACHERS.find(t => t.roles.includes(Role.ADMIN));
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {
@@ -287,12 +321,18 @@ export const DataService = {
 
     if (user) {
       localStorage.setItem('currentUser', JSON.stringify(user));
+      // CATAT LOG LOGIN
+      DataService.logActivity(user, 'LOGIN');
+      // UPDATE ONLINE STATUS SEGERA
+      DataService.updateHeartbeat(user.id);
       return user;
     }
     return null;
   },
 
   logout: () => {
+    const user = DataService.getCurrentUser();
+    if(user) DataService.logActivity(user, 'LOGOUT');
     localStorage.removeItem('currentUser');
   },
 
@@ -329,16 +369,9 @@ export const DataService = {
     const AUTO_ACCEPT_MS = 2 * 24 * 60 * 60 * 1000; // 48 Hours
 
     studentRecords.forEach(record => {
-      // LOGIKA APPROVAL:
-      // 1. Status 'APPROVED' -> Hitung
-      // 2. Status 'PENDING' tapi sudah > 48 jam -> Hitung (Auto Accept)
-      // 3. Status 'PENDING' < 48 jam -> JANGAN Hitung
-      // 4. Status 'REJECTED' -> JANGAN Hitung
-      
       const recordTime = new Date(record.date).getTime();
       const isAutoAccepted = (record.status === 'PENDING') && ((now - recordTime) > AUTO_ACCEPT_MS);
       
-      // Default to APPROVED for legacy data without status
       const effectiveStatus = record.status || 'APPROVED';
       const isEffective = effectiveStatus === 'APPROVED' || isAutoAccepted;
 
@@ -364,7 +397,6 @@ export const DataService = {
     return rule || { id: 'unknown', minPoints: 0, maxPoints: 0, statusLabel: 'Unknown', color: 'bg-gray-100 text-gray-800' };
   },
 
-  // --- AUTOMATION: AUTO ASSIGN SANCTION ---
   evaluateAndApplySanction: (studentId: string): SanctionLevel | null => {
     const records = DataService.getRecords();
     const incidents = DataService.getIncidentTypes();
@@ -372,7 +404,6 @@ export const DataService = {
     const stats = DataService.calculateStudentPoints(studentId, records, incidents);
     const score = stats.effectiveViolationScore;
 
-    // Filter active/relevant sanctions
     const studentSanctions = sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
     
     const hasSP1 = studentSanctions.some(s => s.level === SanctionLevel.SP1);
@@ -382,21 +413,12 @@ export const DataService = {
 
     let newLevel: SanctionLevel | null = null;
 
-    // Revised Thresholds based on Prompt
-    // DO: > 200 (Requires Manual Decree usually, system just warns or stops at SP3 auto)
-    // But we will allow SP3 automation up to 200.
-    
-    // SP3: 160-200
     if (score >= 160) {
-       // If no SP3 and no DO yet, apply SP3. 
-       // DO usually not auto-applied, but system suggests it.
        if (!hasSP3 && !hasDO) newLevel = SanctionLevel.SP3;
     }
-    // SP2: 120-159
     else if (score >= 120) {
         if (!hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP2;
     }
-    // SP1: 80-119
     else if (score >= 80) {
         if (!hasSP1 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP1;
     }
@@ -420,7 +442,6 @@ export const DataService = {
     return null;
   },
 
-  // --- APPROVAL ACTIONS ---
   resolveIncident: (recordId: string, status: IncidentStatus, reason?: string) => {
     const allRecords = DataService.getRecords();
     const updatedRecords = allRecords.map(r => {
@@ -436,7 +457,6 @@ export const DataService = {
     DataService.saveRecords(updatedRecords);
   },
 
-  // --- MAINTENANCE: CLEANUP ORPHAN DATA ---
   cleanupOrphanData: () => {
     const students = DataService.getStudents();
     const validStudentIds = new Set(students.map(s => s.id));

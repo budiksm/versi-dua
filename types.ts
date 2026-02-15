@@ -24,6 +24,17 @@ export interface Teacher {
   password?: string;
   mustChangePassword?: boolean; // Flag to force password change
   assignedClassId?: string; // Khusus Role STUDENT agar tahu kelas mana
+  lastActiveAt?: string; // Timestamp terakhir online
+}
+
+export interface ActivityLog {
+  id: string;
+  userId: string;
+  userName: string;
+  role: string;
+  action: 'LOGIN' | 'LOGOUT' | 'SYNC';
+  timestamp: string;
+  deviceInfo?: string; // Optional: Browser/OS info
 }
 
 export interface ClassGroup {

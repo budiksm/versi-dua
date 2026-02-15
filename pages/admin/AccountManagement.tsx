@@ -1,17 +1,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
-import { Teacher, Role, ClassGroup } from '../../types';
-import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet, Clock, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { Teacher, Role, ClassGroup, ActivityLog } from '../../types';
+import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet, Clock, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, ChevronUp, ChevronDown, ArrowUpDown, History, Smartphone, Monitor } from 'lucide-react';
 
-type SortKey = 'name' | 'nip' | 'username' | 'roles';
+type SortKey = 'name' | 'nip' | 'username' | 'roles' | 'lastActive';
 type SortDirection = 'asc' | 'desc';
 
 const AccountManagement: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<ClassGroup[]>([]); // Load Classes
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   
   // Edit Mode State
   const [isEditMode, setIsEditMode] = useState(false);
@@ -29,14 +32,26 @@ const AccountManagement: React.FC = () => {
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
-    key: 'name',
-    direction: 'asc'
+    key: 'lastActive', // Default sort by online status
+    direction: 'desc'
   });
 
+  // Log Modal State
+  const [selectedUserLogs, setSelectedUserLogs] = useState<ActivityLog[]>([]);
+  const [selectedUserName, setSelectedUserName] = useState('');
+
   useEffect(() => {
+    refreshData();
+    // Auto refresh status every 30s
+    const interval = setInterval(refreshData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const refreshData = () => {
     setTeachers(DataService.getTeachers());
     setClasses(DataService.getClasses());
-  }, []);
+    setLogs(DataService.getActivityLogs());
+  };
 
   const openAddModal = () => {
     setIsEditMode(false);
@@ -57,6 +72,13 @@ const AccountManagement: React.FC = () => {
       assignedClassId: teacher.assignedClassId || ''
     });
     setIsModalOpen(true);
+  };
+
+  const openLogModal = (teacher: Teacher) => {
+    const userLogs = logs.filter(l => l.userId === teacher.id).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    setSelectedUserLogs(userLogs);
+    setSelectedUserName(teacher.name);
+    setIsLogModalOpen(true);
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -131,6 +153,24 @@ const AccountManagement: React.FC = () => {
     }
   };
 
+  // --- ONLINE STATUS HELPER ---
+  const getOnlineStatus = (lastActive?: string) => {
+    if (!lastActive) return { text: 'Belum pernah login', color: 'text-slate-400', isOnline: false };
+    
+    const diff = new Date().getTime() - new Date(lastActive).getTime();
+    if (diff < 5 * 60 * 1000) { // < 5 mins
+       return { text: 'Sedang Online', color: 'text-emerald-600', isOnline: true };
+    } else if (diff < 60 * 60 * 1000) { // < 1 hour
+       const mins = Math.floor(diff / 60000);
+       return { text: `${mins} menit lalu`, color: 'text-slate-500', isOnline: false };
+    } else if (diff < 24 * 60 * 60 * 1000) {
+       const hours = Math.floor(diff / 3600000);
+       return { text: `${hours} jam lalu`, color: 'text-slate-500', isOnline: false };
+    } else {
+       return { text: new Date(lastActive).toLocaleDateString(), color: 'text-slate-400', isOnline: false };
+    }
+  };
+
   // --- SORTING LOGIC ---
   const handleSort = (key: SortKey) => {
     let direction: SortDirection = 'asc';
@@ -153,17 +193,21 @@ const AccountManagement: React.FC = () => {
         const rolesA = a.roles.join(', ');
         const rolesB = b.roles.join(', ');
         return rolesA.localeCompare(rolesB) * direction;
+      case 'lastActive':
+        const timeA = a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0;
+        const timeB = b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : 0;
+        return (timeA - timeB) * direction;
       default:
         return 0;
     }
   });
 
-  const SortHeader = ({ label, sKey, align = 'left' }: { label: string, sKey: SortKey, align?: 'left'|'right' }) => (
+  const SortHeader = ({ label, sKey, align = 'left' }: { label: string, sKey: SortKey, align?: 'left'|'right'|'center' }) => (
     <th 
       className={`px-6 py-3 font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none text-${align}`}
       onClick={() => handleSort(sKey)}
     >
-      <div className={`flex items-center gap-2 ${align === 'right' ? 'justify-end' : ''}`}>
+      <div className={`flex items-center gap-2 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
         {label}
         <span className="text-slate-400">
           {sortConfig.key === sKey ? (
@@ -305,7 +349,7 @@ const AccountManagement: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Manajemen Akun</h1>
-          <p className="text-slate-500">Kelola akun Guru, Staf, Siswa, dan OSIS.</p>
+          <p className="text-slate-500">Kelola akun dan pantau aktivitas pengguna.</p>
         </div>
         <div className="flex gap-2">
           <button 
@@ -327,27 +371,33 @@ const AccountManagement: React.FC = () => {
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 border-b">
             <tr>
+              <th className="px-6 py-3 font-semibold text-slate-700 w-10">Status</th>
               <SortHeader label="Nama Lengkap" sKey="name" />
-              <SortHeader label="NIP / NIS" sKey="nip" />
-              <SortHeader label="Username" sKey="username" />
               <SortHeader label="Role & Akses" sKey="roles" />
+              <SortHeader label="Terakhir Aktif" sKey="lastActive" />
               <th className="px-6 py-3 font-semibold text-slate-700 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {sortedTeachers.map(t => (
+            {sortedTeachers.map(t => {
+              const status = getOnlineStatus(t.lastActiveAt);
+              return (
               <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-3 font-medium text-slate-900">
-                    {t.name}
-                    {t.roles.includes(Role.STUDENT) && t.assignedClassId && (
-                        <div className="text-xs text-slate-500 font-normal flex items-center gap-1 mt-0.5">
-                            <School className="h-3 w-3" />
-                            {classes.find(c => c.id === t.assignedClassId)?.name || 'Kelas Terhapus'}
-                        </div>
-                    )}
+                <td className="px-6 py-3">
+                   <div className={`h-3 w-3 rounded-full ${status.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} title={status.isOnline ? "Online" : "Offline"}></div>
                 </td>
-                <td className="px-6 py-3">{t.nip}</td>
-                <td className="px-6 py-3 text-slate-600">{t.username || '-'}</td>
+                <td className="px-6 py-3 font-medium text-slate-900">
+                    <div className="flex flex-col">
+                        <span>{t.name}</span>
+                        <span className="text-xs text-slate-400 font-normal">@{t.username} • {t.nip}</span>
+                        {t.roles.includes(Role.STUDENT) && t.assignedClassId && (
+                            <div className="text-xs text-slate-500 font-normal flex items-center gap-1 mt-0.5">
+                                <School className="h-3 w-3" />
+                                {classes.find(c => c.id === t.assignedClassId)?.name || 'Kelas Terhapus'}
+                            </div>
+                        )}
+                    </div>
+                </td>
                 <td className="px-6 py-3">
                   <div className="flex flex-wrap gap-1">
                     {t.roles && t.roles.map(r => {
@@ -368,8 +418,20 @@ const AccountManagement: React.FC = () => {
                     )}
                   </div>
                 </td>
+                <td className="px-6 py-3">
+                   <span className={`text-xs font-medium ${status.color}`}>
+                      {status.text}
+                   </span>
+                </td>
                 <td className="px-6 py-3 text-right">
                   <div className="flex justify-end gap-2">
+                    <button 
+                      onClick={() => openLogModal(t)} 
+                      className="text-blue-500 hover:text-blue-700 p-1 rounded hover:bg-blue-50"
+                      title="Lihat Log Login"
+                    >
+                      <History className="h-4 w-4" />
+                    </button>
                     <button 
                       onClick={() => openEditModal(t)} 
                       className="text-indigo-500 hover:text-indigo-700 p-1 rounded hover:bg-indigo-50"
@@ -387,7 +449,7 @@ const AccountManagement: React.FC = () => {
                   </div>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
@@ -548,6 +610,49 @@ const AccountManagement: React.FC = () => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* --- LOG MODAL --- */}
+      {isLogModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
+              <div className="bg-slate-800 text-white p-4 flex justify-between items-center">
+                 <h3 className="font-bold flex items-center gap-2">
+                    <History className="h-5 w-5" /> Riwayat Login: {selectedUserName}
+                 </h3>
+                 <button onClick={() => setIsLogModalOpen(false)} className="text-slate-400 hover:text-white">
+                    <X className="h-5 w-5" />
+                 </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+                 {selectedUserLogs.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 italic">
+                       Belum ada riwayat login tercatat.
+                    </div>
+                 ) : (
+                    selectedUserLogs.map(log => (
+                       <div key={log.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+                          <div>
+                             <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                                {log.action === 'LOGIN' ? <span className="text-green-600">LOGIN</span> : <span className="text-slate-500">LOGOUT</span>}
+                                <span className="text-xs font-normal text-slate-400">| {log.deviceInfo ? 'Web App' : 'Unknown'}</span>
+                             </div>
+                             <div className="text-xs text-slate-500 mt-1">
+                                {new Date(log.timestamp).toLocaleDateString('id-ID', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'})}
+                             </div>
+                          </div>
+                          <div className="text-right">
+                             <div className="text-lg font-mono font-bold text-slate-800">
+                                {new Date(log.timestamp).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}
+                             </div>
+                          </div>
+                       </div>
+                    ))
+                 )}
+              </div>
+           </div>
         </div>
       )}
     </div>
