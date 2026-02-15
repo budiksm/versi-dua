@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
-import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull } from 'lucide-react';
+import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction } from '../../types';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -37,6 +37,10 @@ const TeacherDashboard: React.FC = () => {
   
   // NEW: BK Referrals for Kesiswaan
   const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession}[]>([]);
+
+  // QUICK ACTION MODAL STATE
+  const [showSanctionModal, setShowSanctionModal] = useState(false);
+  const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
 
   const navigate = useNavigate();
 
@@ -124,27 +128,30 @@ const TeacherDashboard: React.FC = () => {
           const score = stats.effectiveViolationScore;
           
           // Check sanctions
-          const studentSanctions = sanctions.filter(san => san.studentId === s.id); 
-          const activeSanction = studentSanctions.find(san => san.redemptionStatus !== RedemptionStatus.COMPLETED);
-          
           const hasSP1 = sanctions.some(san => san.studentId === s.id && san.level === SanctionLevel.SP1);
           const hasSP2 = sanctions.some(san => san.studentId === s.id && san.level === SanctionLevel.SP2);
           const hasSP3 = sanctions.some(san => san.studentId === s.id && san.level === SanctionLevel.SP3);
 
-          let candidateLevel = null;
+          let candidateLevel: SanctionLevel | null = null;
           // Updated thresholds: 80, 120, 160, 201
-          if (score >= 80 && score <= 119 && !hasSP1) { countSP1++; candidateLevel = 'SP 1'; }
-          if (score >= 120 && score <= 159 && !hasSP2) { countSP2++; candidateLevel = 'SP 2'; }
-          if (score >= 160 && score <= 200 && !hasSP3) { countSP3++; candidateLevel = 'SP 3'; }
-          if (score > 200) { countDO++; candidateLevel = 'DROP OUT'; }
+          if (score >= 80 && score <= 119 && !hasSP1) { countSP1++; candidateLevel = SanctionLevel.SP1; }
+          if (score >= 120 && score <= 159 && !hasSP2) { countSP2++; candidateLevel = SanctionLevel.SP2; }
+          if (score >= 160 && score <= 200 && !hasSP3) { countSP3++; candidateLevel = SanctionLevel.SP3; }
+          if (score > 200) { countDO++; candidateLevel = SanctionLevel.DROP_OUT; }
 
           if (candidateLevel) {
+            // Find recent violation for context
+            const lastViolation = recs
+                .filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION)
+                .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+            const violationName = lastViolation ? incs.find(i => i.id === lastViolation.incidentTypeId)?.name : '-';
+
             monitorData.push({
               student: s,
               score,
-              activeSanctionLevel: activeSanction?.level || '-',
-              redemptionStatus: activeSanction?.redemptionStatus || 'NONE',
-              candidateFor: candidateLevel
+              candidateFor: candidateLevel,
+              className: classes.find(c => c.id === s.classId)?.name || 'Unknown',
+              lastViolation: violationName
             });
           }
 
@@ -180,6 +187,37 @@ const TeacherDashboard: React.FC = () => {
     }
   }
 
+  // --- QUICK ACTION HANDLER ---
+  const handleOpenQuickSanction = (candidate: any) => {
+      setSelectedCandidate(candidate);
+      setShowSanctionModal(true);
+  };
+
+  const handleConfirmQuickSanction = () => {
+      if(!selectedCandidate || !currentUser) return;
+
+      const allSanctions = DataService.getSanctions();
+      
+      const newSanction: StudentSanction = {
+          id: `san_quick_${Date.now()}`,
+          studentId: selectedCandidate.student.id,
+          level: selectedCandidate.candidateFor,
+          assignedBy: currentUser.name,
+          assignedDate: new Date().toISOString(),
+          notes: `Penerbitan Cepat via Dashboard. Total Poin: ${selectedCandidate.score}. Pemicu: ${selectedCandidate.lastViolation}`,
+          redemptionStatus: RedemptionStatus.NONE, // Important: Sets it to "Need Task" state
+          redemptionTask: '',
+          isRedeemed: false
+      };
+
+      DataService.saveSanctions([...allSanctions, newSanction]);
+      setShowSanctionModal(false);
+      setSelectedCandidate(null);
+      refreshDashboard(); // Refresh to remove from list
+      alert("Sanksi berhasil diterbitkan! Silakan masuk ke menu 'Pembinaan & SP' untuk memberikan tugas penebusan.");
+  };
+
+  // ... (Existing helper functions like handleGlobalSearch, handleApprove, etc. remain the same) ...
   const handleGlobalSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
     setGlobalSearchTerm(term);
@@ -263,6 +301,7 @@ const TeacherDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* ... (Existing Header & Approval Widget Code) ... */}
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard Guru</h1>
@@ -272,9 +311,9 @@ const TeacherDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* --- APPROVAL WIDGET (ONLY FOR WALI KELAS WITH PENDING ITEMS) --- */}
       {pendingApprovals.length > 0 && (
         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-5 shadow-sm animate-fade-in">
+           {/* ... (Existing Pending Approval UI) ... */}
            <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-yellow-100 text-yellow-700 rounded-lg">
                  <Inbox className="h-5 w-5" />
@@ -356,7 +395,7 @@ const TeacherDashboard: React.FC = () => {
          </div>
       )}
 
-      {/* ... (Existing Kesiswaan Dashboard Code) ... */}
+      {/* --- KESISWAAN DASHBOARD --- */}
       {isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
           <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
@@ -376,6 +415,7 @@ const TeacherDashboard: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                   {/* ... (Existing Stats Cards) ... */}
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
                       <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider">Kandidat SP 1</p>
                       <p className="text-3xl font-bold mt-1">{sp1Candidates}</p>
@@ -406,55 +446,57 @@ const TeacherDashboard: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                   {/* ACTION CENTER: ANTRIAN SANKSI */}
                    <div className="lg:col-span-2 bg-white text-slate-800 rounded-lg p-5 shadow-sm">
                       <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-700">
-                        <ClipboardList className="h-5 w-5 text-indigo-600" />
-                        Daftar Tindak Lanjut (Unresolved)
+                        <Zap className="h-5 w-5 text-yellow-600" />
+                        Antrean Eksekusi Sanksi (Prioritas)
                       </h3>
-                      <p className="text-xs text-slate-500 mb-3 -mt-2">Siswa di bawah ini memenuhi syarat sanksi baru tetapi belum diproses.</p>
-                      {/* WRAPPER SCROLL DAN BORDER */}
+                      <p className="text-xs text-slate-500 mb-3 -mt-2">Siswa di bawah ini telah melampaui ambang batas poin tetapi belum menerima Surat Peringatan.</p>
+                      
                       <div className="overflow-hidden border border-slate-200 rounded-lg">
                         <div className="max-h-[350px] overflow-y-auto">
                           <table className="w-full text-sm text-left relative">
                             <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                               <tr>
-                                <th className="px-3 py-2">Siswa</th>
+                                <th className="px-3 py-2">Siswa & Kelas</th>
                                 <th className="px-3 py-2 text-center">Poin</th>
                                 <th className="px-3 py-2">Rekomendasi</th>
-                                <th className="px-3 py-2 text-center">Status</th>
-                                <th className="px-3 py-2 text-right">Aksi</th>
+                                <th className="px-3 py-2 text-right">Aksi Cepat</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                               {monitoringList.length === 0 ? (
-                                <tr><td colSpan={5} className="p-8 text-center text-slate-500 flex flex-col items-center justify-center">
+                                <tr><td colSpan={4} className="p-8 text-center text-slate-500 flex flex-col items-center justify-center">
                                     <CheckCircle2 className="h-8 w-8 text-green-500 mb-2" />
-                                    <span className="font-semibold">Semua Beres!</span>
-                                    <span className="text-xs">Tidak ada siswa yang menunggu penanganan sanksi.</span>
+                                    <span className="font-semibold">Semua Aman!</span>
+                                    <span className="text-xs">Tidak ada siswa yang menunggu penerbitan sanksi.</span>
                                 </td></tr>
                               ) : (
                                 monitoringList.map((item, idx) => (
                                   <tr key={idx} className="hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-medium">{item.student.name}</td>
+                                    <td className="px-3 py-2">
+                                        <div className="font-bold text-slate-900">{item.student.name}</div>
+                                        <div className="text-xs text-slate-500">{item.className}</div>
+                                    </td>
                                     <td className="px-3 py-2 text-center font-bold text-red-600">{item.score}</td>
                                     <td className="px-3 py-2">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold animate-pulse flex items-center gap-1 w-fit
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit
                                             ${item.candidateFor === 'DROP OUT' ? 'bg-slate-800 text-white' : 'bg-red-100 text-red-700'}
                                         `}>
                                           <AlertCircle className="h-3 w-3" /> Layak {item.candidateFor}
                                         </span>
-                                    </td>
-                                    <td className="px-3 py-2 text-center">
-                                        <div className="flex justify-center items-center" title="Belum ditangani (Perlu Sanksi)">
-                                          <div className="bg-red-50 px-2 py-1 rounded border border-red-100 text-[10px] text-red-600 font-bold">
-                                            BELUM DIPROSES
-                                          </div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]">
+                                            Terakhir: {item.lastViolation}
                                         </div>
                                     </td>
                                     <td className="px-3 py-2 text-right">
-                                        <Link to={`/teacher/student/${item.student.id}`} className="text-indigo-600 hover:underline text-xs font-bold border border-indigo-200 px-2 py-1 rounded bg-indigo-50">
-                                          Proses
-                                        </Link>
+                                        <button 
+                                            onClick={() => handleOpenQuickSanction(item)}
+                                            className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1 ml-auto transition-transform active:scale-95"
+                                        >
+                                            <Gavel className="h-3 w-3" /> Terbitkan SP
+                                        </button>
                                     </td>
                                   </tr>
                                 ))
@@ -465,6 +507,7 @@ const TeacherDashboard: React.FC = () => {
                       </div>
                    </div>
 
+                   {/* ... (Existing BK Handled List) ... */}
                    <div className="bg-white text-slate-800 rounded-lg p-5 shadow-sm flex flex-col">
                       <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-700">
                         <UserCheck className="h-5 w-5 text-blue-600" />
@@ -506,8 +549,55 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* QUICK SANCTION MODAL */}
+      {showSanctionModal && selectedCandidate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                  <div className="bg-red-600 p-4 text-white flex justify-between items-center">
+                      <h3 className="font-bold flex items-center gap-2">
+                          <Gavel className="h-5 w-5" /> Konfirmasi Sanksi
+                      </h3>
+                      <button onClick={() => setShowSanctionModal(false)} className="hover:bg-red-700 p-1 rounded">
+                          <X className="h-5 w-5" />
+                      </button>
+                  </div>
+                  <div className="p-6">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 font-bold text-lg">
+                              {selectedCandidate.student.name.charAt(0)}
+                          </div>
+                          <div>
+                              <p className="font-bold text-slate-900 text-lg">{selectedCandidate.student.name}</p>
+                              <p className="text-sm text-slate-500">{selectedCandidate.className}</p>
+                          </div>
+                      </div>
+                      
+                      <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-center mb-4">
+                          <p className="text-xs text-red-600 font-bold uppercase tracking-wider">Sanksi Yang Akan Diterbitkan</p>
+                          <p className="text-3xl font-extrabold text-red-700 mt-1">{selectedCandidate.candidateFor}</p>
+                          <p className="text-xs text-slate-500 mt-1">Total Poin: {selectedCandidate.score}</p>
+                      </div>
+
+                      <p className="text-xs text-slate-500 text-center mb-6">
+                          Tindakan ini akan membuat catatan sanksi baru secara otomatis. 
+                          Tugas penebusan dapat ditambahkan nanti di menu "Pembinaan & SP".
+                      </p>
+
+                      <button 
+                          onClick={handleConfirmQuickSanction}
+                          className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2"
+                      >
+                          <Gavel className="h-4 w-4" /> Terbitkan Sanksi Sekarang
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* ... (Existing BK Dashboard Code & Lower Sections) ... */}
       {isBK && !isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
+           {/* ... (Same as original BK Dashboard content) ... */}
            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
               <div className="absolute right-0 top-0 opacity-10">
                 <HeartHandshake className="h-64 w-64 -mr-16 -mt-16" />
@@ -599,6 +689,7 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
       
+      {/* ... (Existing Class & Activity Widgets) ... */}
       <div className="bg-indigo-600 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
         <div className="absolute right-0 top-0 opacity-10">
           <Star className="h-48 w-48 -mr-10 -mt-10" />
