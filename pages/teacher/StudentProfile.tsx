@@ -128,6 +128,9 @@ const StudentProfile: React.FC = () => {
   const isBK = roles.includes(Role.BK);
   const isKesiswaan = roles.includes(Role.KESISWAAN);
 
+  // Akses Konseling: BK atau Wali Kelas Siswa Tersebut
+  const canAccessCounseling = isBK || isReporterHomeroom;
+
   // Can Record Incident: Educators
   const canRecord = isEducator; 
 
@@ -273,7 +276,7 @@ const StudentProfile: React.FC = () => {
     DataService.saveCounselingSessions([...allSessions, newSession]);
 
     setTimeout(() => {
-      setSuccessMsg('Catatan konseling disimpan!');
+      setSuccessMsg(isReporterHomeroom ? 'Pembinaan Wali Kelas disimpan!' : 'Catatan konseling disimpan!');
       setIsSubmitting(false);
       setCounselingNotes('');
       setCounselingRec('NONE');
@@ -511,7 +514,7 @@ const StudentProfile: React.FC = () => {
                   <ClipboardList className="h-4 w-4" /> Catatan Kejadian
                </span>
             </button>
-            {isBK && (
+            {canAccessCounseling && (
               <button
                  onClick={() => setActiveTab('COUNSELING')}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
@@ -521,7 +524,8 @@ const StudentProfile: React.FC = () => {
                  }`}
               >
                  <span className="flex items-center gap-2">
-                    <HeartHandshake className="h-4 w-4" /> Bimbingan Konseling
+                    <HeartHandshake className="h-4 w-4" /> 
+                    {isReporterHomeroom && !isBK ? 'Pembinaan Wali Kelas' : 'Bimbingan Konseling'}
                  </span>
               </button>
             )}
@@ -815,21 +819,21 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 2: COUNSELING (BK Only) === */}
-        {activeTab === 'COUNSELING' && isBK && (
+        {/* === TAB 2: COUNSELING (BK & WALIKELAS) === */}
+        {activeTab === 'COUNSELING' && canAccessCounseling && (
            <>
              {/* INPUT FORM COUNSELING */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   <div className="p-6 border-b border-slate-100 bg-blue-50 flex justify-between items-center">
-                     <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                        <HeartHandshake className="h-5 w-5 text-blue-600" />
-                        Catat Sesi Konseling
+                   <div className={`p-6 border-b flex justify-between items-center ${isReporterHomeroom && !isBK ? 'bg-orange-50 border-orange-100' : 'bg-blue-50 border-blue-100'}`}>
+                     <h2 className={`font-bold flex items-center gap-2 ${isReporterHomeroom && !isBK ? 'text-orange-800' : 'text-blue-800'}`}>
+                        <HeartHandshake className="h-5 w-5" />
+                        {isReporterHomeroom && !isBK ? 'Catat Pembinaan Wali Kelas' : 'Catat Sesi Konseling'}
                      </h2>
                    </div>
                    
                    <form onSubmit={handleSubmitCounseling} className="p-6 space-y-6">
-                      <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100 mb-4">
+                      <div className={`p-4 rounded-lg text-sm border mb-4 ${isReporterHomeroom && !isBK ? 'bg-orange-50 text-orange-800 border-orange-100' : 'bg-blue-50 text-blue-800 border-blue-100'}`}>
                          Gunakan form ini untuk mencatat hasil wawancara, pembinaan mental, atau pemanggilan siswa. 
                          Data ini bersifat rahasia.
                       </div>
@@ -878,7 +882,7 @@ const StudentProfile: React.FC = () => {
                           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
                       >
                           <Save className="h-5 w-5" />
-                          {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan Konseling'}
+                          {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan'}
                       </button>
                    </form>
                 </div>
@@ -888,7 +892,7 @@ const StudentProfile: React.FC = () => {
              <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
                    <BookOpen className="h-5 w-5" />
-                   Riwayat Konseling
+                   Riwayat Pembinaan
                 </div>
 
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -16,6 +16,10 @@ const TeacherDashboard: React.FC = () => {
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [rejectRecordId, setRejectRecordId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+
+  // Pagination State for Recent Activities
+  const [recentPage, setRecentPage] = useState(0);
+  const ITEMS_PER_PAGE = 5;
 
   // BK Specific State
   const [highRiskStudents, setHighRiskStudents] = useState<{student: Student, score: number, status: string}[]>([]);
@@ -203,10 +207,21 @@ const TeacherDashboard: React.FC = () => {
   const getIncidentName = (id: string) => incidents.find(i => i.id === id)?.name || 'Unknown';
   const getStudentName = (id: string) => students.find(s => s.id === id)?.name || 'Unknown';
 
-  const recentRecords = [...records]
-    .filter(r => r.status !== 'REJECTED') // Hide rejected from recent global feed
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 5);
+  // --- PAGINATION LOGIC ---
+  const allRecentRecords = [...records]
+    .filter(r => r.status !== 'REJECTED')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  const totalPages = Math.ceil(allRecentRecords.length / ITEMS_PER_PAGE);
+  const currentRecords = allRecentRecords.slice(recentPage * ITEMS_PER_PAGE, (recentPage + 1) * ITEMS_PER_PAGE);
+
+  const handlePrevPage = () => {
+    if (recentPage > 0) setRecentPage(prev => prev - 1);
+  };
+
+  const handleNextPage = () => {
+    if (recentPage < totalPages - 1) setRecentPage(prev => prev + 1);
+  };
 
   const violationsToday = records.filter(r => 
     r.typeSnapshot === IncidentTypeCategory.VIOLATION && 
@@ -626,16 +641,44 @@ const TeacherDashboard: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
-          <Clock className="h-5 w-5 text-slate-400" />
-          <h2 className="font-semibold text-slate-800">Aktivitas Terkini</h2>
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+             <Clock className="h-5 w-5 text-slate-400" />
+             <h2 className="font-semibold text-slate-800">Aktivitas Terkini</h2>
+          </div>
+          
+          {/* PAGINATION CONTROLS */}
+          {allRecentRecords.length > ITEMS_PER_PAGE && (
+            <div className="flex items-center gap-2">
+               <button 
+                 onClick={handlePrevPage} 
+                 disabled={recentPage === 0}
+                 className="p-1 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+               >
+                 <ChevronLeft className="h-5 w-5 text-slate-600" />
+               </button>
+               <span className="text-xs font-mono text-slate-400">
+                 {recentPage + 1}/{totalPages}
+               </span>
+               <button 
+                 onClick={handleNextPage} 
+                 disabled={recentPage === totalPages - 1}
+                 className="p-1 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+               >
+                 <ChevronRight className="h-5 w-5 text-slate-600" />
+               </button>
+            </div>
+          )}
         </div>
-        <div className="divide-y divide-slate-100">
-          {recentRecords.length === 0 ? (
-            <div className="p-6 text-center text-slate-500">Belum ada data kejadian.</div>
+        <div className="divide-y divide-slate-100 min-h-[300px]">
+          {currentRecords.length === 0 ? (
+            <div className="p-6 text-center text-slate-500 flex flex-col items-center justify-center h-full pt-16">
+               <Clock className="h-8 w-8 text-slate-300 mb-2" />
+               Belum ada data kejadian.
+            </div>
           ) : (
-            recentRecords.map(record => (
-              <div key={record.id} className="p-4 flex items-start gap-4 hover:bg-slate-50 transition-colors">
+            currentRecords.map(record => (
+              <div key={record.id} className="p-4 flex items-start gap-4 hover:bg-slate-50 transition-colors animate-fade-in">
                 <div className={`mt-1 h-2 w-2 rounded-full ${record.typeSnapshot === IncidentTypeCategory.VIOLATION ? 'bg-red-500' : 'bg-emerald-500'}`} />
                 <div className="flex-1">
                   <p className="font-medium text-slate-900">{getStudentName(record.studentId)}</p>
