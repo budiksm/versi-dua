@@ -1,12 +1,14 @@
+
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DataService } from '../../services/dataService';
-import { ClassGroup, Student } from '../../types';
-import { Users, ChevronRight, Search, Filter, User, GraduationCap, X } from 'lucide-react';
+import { ClassGroup, Student, Teacher } from '../../types';
+import { Users, ChevronRight, Search, Filter, User, GraduationCap, X, UserCheck } from 'lucide-react';
 
 const ClassList: React.FC = () => {
   const [allClasses, setAllClasses] = useState<ClassGroup[]>([]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [studentCounts, setStudentCounts] = useState<Record<string, number>>({});
   
   // States for Search & Filter
@@ -16,6 +18,7 @@ const ClassList: React.FC = () => {
   useEffect(() => {
     const cls = DataService.getClasses();
     const std = DataService.getStudents();
+    const tch = DataService.getTeachers();
     
     // Calculate student counts per class
     const counts: Record<string, number> = {};
@@ -25,6 +28,7 @@ const ClassList: React.FC = () => {
 
     setAllClasses(cls.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)));
     setAllStudents(std);
+    setTeachers(tch);
     setStudentCounts(counts);
   }, []);
 
@@ -145,32 +149,43 @@ const ClassList: React.FC = () => {
                Daftar Kelas {selectedLevel !== 'ALL' && `Tingkat ${selectedLevel}`}
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredClasses.map((cls) => (
-                <Link 
-                  key={cls.id} 
-                  to={`/teacher/classes/${cls.id}`}
-                  className="group relative bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 transition-all duration-300 overflow-hidden"
-                >
-                  {/* Decorative background badge */}
-                  <div className="absolute top-0 right-0 -mr-6 -mt-6 h-24 w-24 bg-indigo-50 rounded-full opacity-50 group-hover:bg-indigo-600 transition-colors duration-300"></div>
-                  
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="h-12 w-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 group-hover:bg-white transition-colors">
-                        <Users className="h-6 w-6" />
+              {filteredClasses.map((cls) => {
+                const homeroom = teachers.find(t => t.id === cls.homeroomTeacherId);
+                return (
+                  <Link 
+                    key={cls.id} 
+                    to={`/teacher/classes/${cls.id}`}
+                    className="group relative bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 transition-all duration-300 overflow-hidden"
+                  >
+                    {/* Decorative background badge */}
+                    <div className="absolute top-0 right-0 -mr-6 -mt-6 h-24 w-24 bg-indigo-50 rounded-full opacity-50 group-hover:bg-indigo-600 transition-colors duration-300"></div>
+                    
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="h-12 w-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 group-hover:bg-white transition-colors">
+                          <Users className="h-6 w-6" />
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full uppercase tracking-tighter">
+                          {studentCounts[cls.id] || 0} Siswa
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full uppercase tracking-tighter">
-                        {studentCounts[cls.id] || 0} Siswa
-                      </span>
+                      <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-1">Tingkat {cls.level}</p>
+                      <h3 className="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{cls.name}</h3>
+                      
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg group-hover:bg-indigo-50 group-hover:text-indigo-700 transition-colors w-fit">
+                         <UserCheck className="h-3 w-3" />
+                         <span className="font-medium truncate max-w-[180px]">
+                           {homeroom ? homeroom.name : 'Belum ada Wali Kelas'}
+                         </span>
+                      </div>
+
+                      <div className="mt-4 flex items-center text-sm text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                        Kelola Kelas <ChevronRight className="h-4 w-4 ml-1" />
+                      </div>
                     </div>
-                    <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-1">Tingkat {cls.level}</p>
-                    <h3 className="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{cls.name}</h3>
-                    <div className="mt-6 flex items-center text-sm text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                      Kelola Kelas <ChevronRight className="h-4 w-4 ml-1" />
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
             
             {filteredClasses.length === 0 && (
