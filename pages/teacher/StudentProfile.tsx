@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DataService } from '../../services/dataService';
@@ -55,7 +56,7 @@ const StudentProfile: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0); 
   const [currentUser, setCurrentUser] = useState<Teacher | null>(null);
 
-  // UI State - Updated for Split Tabs
+  // UI State
   const [activeTab, setActiveTab] = useState<'INCIDENTS' | 'HOMEROOM' | 'BK_COUNSELING' | 'SANCTIONS'>('INCIDENTS');
 
   // Form State (Incident)
@@ -66,37 +67,30 @@ const StudentProfile: React.FC = () => {
   const [imageProof, setImageProof] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   
-  // Form State (Counseling - Shared state, used by both forms)
+  // Form State (Counseling)
   const [counselingNotes, setCounselingNotes] = useState('');
-  // Expanded generic type for all forms
   const [counselingRec, setCounselingRec] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
-  
-  // New: Selected Records for Counseling
   const [selectedCounselingRecords, setSelectedCounselingRecords] = useState<string[]>([]);
 
-  // Form State (Sanction - Kesiswaan Only)
+  // Form State (Sanction)
   const [sanctionLevel, setSanctionLevel] = useState<SanctionLevel>(SanctionLevel.SP1);
   const [sanctionNotes, setSanctionNotes] = useState('');
   const [sanctionRedemptionTask, setSanctionRedemptionTask] = useState('');
-  
-  // EDIT STATE FOR SANCTION
   const [editingSanctionId, setEditingSanctionId] = useState<string | null>(null);
 
-  // DETAIL MODAL STATE
+  // Detail Modal State
   const [selectedRecord, setSelectedRecord] = useState<IncidentRecord | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    // Get real logged in user
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
     loadStudentData();
 
-    // Subscribe to Realtime Updates
     const unsubscribe = DataService.subscribeToDataChanges(() => {
-        setRefreshKey(prev => prev + 1); // Trigger re-render
+        setRefreshKey(prev => prev + 1); 
         loadStudentData();
     });
     
@@ -112,68 +106,41 @@ const StudentProfile: React.FC = () => {
     setRules(DataService.getRules());
     setClasses(DataService.getClasses());
     
-    // Get Counseling
     const allSessions = DataService.getCounselingSessions();
     setCounselingSessions(allSessions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
-    // Get Sanctions
     const allSanctions = DataService.getSanctions();
     setSanctions(allSanctions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.assignedDate).getTime() - new Date(a.assignedDate).getTime()));
   };
 
   if (!student) return <div className="p-8">Siswa tidak ditemukan</div>;
 
-  // Calculate Points
   const stats = DataService.calculateStudentPoints(student.id, records, incidents);
   const recommendedStatus = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
   const history = [...records].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
-  // Get active sanction
   const activeSanction = sanctions.find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
-  
-  // Get Dynamic Class Name & Check Homeroom
   const studentClass = classes.find(c => c.id === student.classId);
   const className = studentClass ? `Kelas ${studentClass.name}` : 'Kelas Tidak Diketahui';
   const isReporterHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
 
-  // HIERARCHY LOGIC
-  // 1. Walikelas Referral to BK
   const latestHomeroomSession = counselingSessions.filter(s => s.sessionType === 'HOMEROOM').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
   const hasReferralToBK = latestHomeroomSession?.recommendation === 'TO_BK';
 
-  // 2. BK Referral to Kesiswaan
-  const latestBKSession = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-  const hasReferralToKesiswaan = latestBKSession?.recommendation === 'TO_KESISWAAN' || latestBKSession?.recommendation === 'SUSPENSION_REVIEW';
-
-  // PERMISSION LOGIC (Updated for Multi-Role)
   const roles = currentUser?.roles || [];
-  
   const isAdmin = roles.includes(Role.ADMIN);
   const isEducator = roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r));
   const isBK = roles.includes(Role.BK);
   const isKesiswaan = roles.includes(Role.KESISWAAN);
 
-  // ACCESS CONTROL FOR MEDIA
   const canViewEvidence = currentUser && !roles.includes(Role.STUDENT) && !roles.includes(Role.OSIS);
-
-  // Akses BK: User BK AND (Poin >= 40 OR Ada Rujukan Walikelas)
   const canAccessBK = isBK && (stats.effectiveViolationScore >= 40 || hasReferralToBK || records.some(r => r.bkStatus === 'REQUIRED'));
-
-  // Akses Kesiswaan: User Kesiswaan AND (Poin >= 80 OR Ada Rujukan BK)
-  const canAccessKesiswaan = isKesiswaan && (stats.effectiveViolationScore >= 80 || hasReferralToKesiswaan);
-
-  // Can Record Incident: Educators
+  const canAccessKesiswaan = isKesiswaan; 
   const canRecord = isEducator; 
 
-  // Filtering Logic
   const filteredCategories = categories.filter(c => c.targetType === formType);
-  const filteredIncidents = incidents.filter(i => 
-    i.isActive && 
-    i.type === formType && 
-    i.categoryId === selectedCategory
-  );
+  const filteredIncidents = incidents.filter(i => i.isActive && i.type === formType && i.categoryId === selectedCategory);
 
-  // --- RECORD SELECTION HELPER ---
   const toggleCounselingRecord = (recordId: string) => {
       if (selectedCounselingRecords.includes(recordId)) {
           setSelectedCounselingRecords(prev => prev.filter(id => id !== recordId));
@@ -191,9 +158,8 @@ const StudentProfile: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800; // Limit width to 800px to keep size small
+          const MAX_WIDTH = 800;
           const scaleSize = MAX_WIDTH / img.width;
-          
           if (scaleSize < 1) {
              canvas.width = MAX_WIDTH;
              canvas.height = img.height * scaleSize;
@@ -201,7 +167,6 @@ const StudentProfile: React.FC = () => {
              canvas.width = img.width;
              canvas.height = img.height;
           }
-
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
@@ -259,23 +224,18 @@ const StudentProfile: React.FC = () => {
       status: initialStatus
     };
 
-    const allRecords = DataService.getRecords();
-    
     if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= 40 && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) {
         newRecord.bkStatus = 'REQUIRED';
     }
 
+    const allRecords = DataService.getRecords();
     DataService.saveRecords([...allRecords, newRecord]);
 
     let autoSanctionMsg = '';
     if (incidentDef.type === IncidentTypeCategory.VIOLATION && initialStatus === 'APPROVED') {
         const appliedSanction = DataService.evaluateAndApplySanction(student.id);
-        if (appliedSanction) {
-            autoSanctionMsg = ` & Otomatis menerbitkan ${appliedSanction}`;
-        }
-        if (newRecord.bkStatus === 'REQUIRED') {
-            autoSanctionMsg += " & Wajib Konseling BK";
-        }
+        if (appliedSanction) autoSanctionMsg = ` & Otomatis menerbitkan ${appliedSanction}`;
+        if (newRecord.bkStatus === 'REQUIRED') autoSanctionMsg += " & Wajib Konseling BK";
     } else if (initialStatus === 'PENDING') {
         autoSanctionMsg = '. Menunggu persetujuan Wali Kelas.';
     }
@@ -306,12 +266,10 @@ const StudentProfile: React.FC = () => {
       recommendation: counselingRec,
       status: 'CLOSED',
       sessionType: type,
-      relatedRecordIds: type === 'BK' ? selectedCounselingRecords : [] // Hanya BK yang support case linking
+      relatedRecordIds: type === 'BK' ? selectedCounselingRecords : [] 
     };
     
-    if (counselingRec !== 'NONE') {
-        newSession.status = 'OPEN';
-    }
+    if (counselingRec !== 'NONE') newSession.status = 'OPEN';
 
     const allSessions = DataService.getCounselingSessions();
     DataService.saveCounselingSessions([...allSessions, newSession]);
@@ -364,7 +322,6 @@ const StudentProfile: React.FC = () => {
         };
 
         const existing = allSanctions.find(s => s.studentId === student.id && s.redemptionStatus !== RedemptionStatus.COMPLETED && s.level === sanctionLevel);
-        
         if (existing) {
            alert("Siswa ini sudah memiliki sanksi level tersebut yang belum diselesaikan.");
            setIsSubmitting(false);
@@ -441,16 +398,12 @@ const StudentProfile: React.FC = () => {
     return <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold border border-green-200 flex items-center gap-1"><CheckCircle2 className="h-3 w-3"/> TERVERIFIKASI</span>;
   };
 
-  // --- FILTERED SESSIONS LISTS ---
   const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
-
-  // --- FILTERED INCIDENTS FOR SELECTION ---
   const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 15);
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Header and Stats Cards */}
       <div className="flex flex-col md:flex-row md:items-center gap-4">
         {isAdmin && !isEducator ? (
             <Link to="/admin/students" className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 self-start">
@@ -473,7 +426,6 @@ const StudentProfile: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards - Updated to 4 Columns Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group hover:border-red-300 transition-colors">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -555,7 +507,6 @@ const StudentProfile: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs for Navigation */}
       <div className="border-b border-slate-200">
          <nav className="-mb-px flex gap-6 overflow-x-auto" aria-label="Tabs">
             <button
@@ -570,8 +521,6 @@ const StudentProfile: React.FC = () => {
                   <ClipboardList className="h-4 w-4" /> Catatan Kejadian
                </span>
             </button>
-            
-            {/* TAB WALI KELAS */}
             {isReporterHomeroom && (
               <button
                  onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); }}
@@ -582,8 +531,6 @@ const StudentProfile: React.FC = () => {
                  </span>
               </button>
             )}
-
-            {/* TAB BK */}
             {canAccessBK && (
               <button
                  onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); }}
@@ -594,8 +541,6 @@ const StudentProfile: React.FC = () => {
                  </span>
               </button>
             )}
-
-            {/* TAB SANKSI */}
             {canAccessKesiswaan && (
               <button
                  onClick={() => setActiveTab('SANCTIONS')}
@@ -609,13 +554,9 @@ const StudentProfile: React.FC = () => {
          </nav>
       </div>
 
-      {/* MAIN CONTENT AREA */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* === TAB 1: INCIDENTS === */}
         {activeTab === 'INCIDENTS' && (
            <>
-              {/* INPUT FORM (Left Column) */}
               <div className="lg:col-span-2 space-y-6">
                 {canRecord ? (
                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -628,7 +569,6 @@ const StudentProfile: React.FC = () => {
                       
                       <form onSubmit={handleSubmitIncident} className="p-6 space-y-6">
                       
-                      {/* NOTIFIKASI WALI KELAS */}
                       {!isReporterHomeroom && formType === IncidentTypeCategory.VIOLATION && (
                          <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-sm text-yellow-800 flex items-start gap-2">
                             <AlertCircle className="h-5 w-5 shrink-0" />
@@ -641,7 +581,6 @@ const StudentProfile: React.FC = () => {
                          </div>
                       )}
 
-                      {/* Type Selection Tabs */}
                       <div className="flex p-1 bg-slate-100 rounded-xl">
                           <button
                           type="button"
@@ -752,7 +691,6 @@ const StudentProfile: React.FC = () => {
                 )}
               </div>
 
-              {/* HISTORY LIST (Right Column) */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
                   <History className="h-5 w-5" /> Riwayat Kejadian
@@ -803,10 +741,8 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 2: HOMEROOM === */}
         {activeTab === 'HOMEROOM' && isReporterHomeroom && (
            <>
-             {/* INPUT FORM HOMEROOM */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <div className="p-6 border-b flex justify-between items-center bg-orange-50 border-orange-100">
@@ -841,7 +777,6 @@ const StudentProfile: React.FC = () => {
                 </div>
              </div>
 
-             {/* HISTORY HOMEROOM */}
              <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><BookOpen className="h-5 w-5" /> Riwayat Pembinaan</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
@@ -863,10 +798,8 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 3: BK COUNSELING === */}
         {activeTab === 'BK_COUNSELING' && canAccessBK && (
            <>
-             {/* INPUT FORM BK */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <div className="p-6 border-b flex justify-between items-center bg-blue-50 border-blue-100">
@@ -880,7 +813,6 @@ const StudentProfile: React.FC = () => {
                          Form ini terbuka karena siswa memiliki Poin ≥ 40, ada kasus berat, atau dirujuk oleh Wali Kelas.
                       </div>
 
-                      {/* --- RECORD SELECTOR --- */}
                       <div>
                          <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-orange-500" />
@@ -940,7 +872,6 @@ const StudentProfile: React.FC = () => {
                 </div>
              </div>
 
-             {/* HISTORY BK */}
              <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><BookOpen className="h-5 w-5" /> Riwayat Konseling BK</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
@@ -967,7 +898,6 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (Existing Tabs for Sanctions & Locked States remain same) ... */}
         {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
             <div className="lg:col-span-3">
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
@@ -978,7 +908,6 @@ const StudentProfile: React.FC = () => {
             </div>
         )}
         
-        {/* TAB SANCTIONS (Same as previous implementation) */}
         {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
            <>
              <div className="lg:col-span-2 space-y-6">
@@ -1043,7 +972,6 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (Existing Tab for Incident Detail Modal) ... */}
         {selectedRecord && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
                 <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1083,6 +1011,7 @@ const StudentProfile: React.FC = () => {
                 </div>
             </div>
         )}
+      </div>
     </div>
   );
 };
