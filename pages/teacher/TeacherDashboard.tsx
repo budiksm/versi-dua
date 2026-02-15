@@ -203,16 +203,17 @@ const TeacherDashboard: React.FC = () => {
       alert("Tugas penebusan berhasil ditetapkan! Siswa sekarang dapat mulai mengerjakan.");
   };
 
-  // ... (Existing helpers: handleGlobalSearch, handleApprove, etc.) ...
+  // --- UPDATED SEARCH HANDLER ---
   const handleGlobalSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
     setGlobalSearchTerm(term);
-    if (term.length > 2) {
+    // Trigger search immediately if term exists (removed length > 2 restriction)
+    if (term.trim().length > 0) {
       const results = students.filter(s => 
         s.name.toLowerCase().includes(term.toLowerCase()) || 
         s.nis.includes(term)
       );
-      setGlobalSearchResults(results.slice(0, 5));
+      setGlobalSearchResults(results.slice(0, 8)); // Show up to 8 results
     } else {
       setGlobalSearchResults([]);
     }
@@ -522,7 +523,6 @@ const TeacherDashboard: React.FC = () => {
          </div>
       )}
 
-      {/* ... (BK & Teacher Layouts - Keep as is) ... */}
       {/* BK Section */}
       {isBK && !isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
@@ -544,20 +544,21 @@ const TeacherDashboard: React.FC = () => {
                       <p className="text-indigo-100 text-sm">Total Riwayat Konseling</p>
                       <p className="text-3xl font-bold mt-1">{counselingCount}</p>
                    </div>
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
+                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 relative">
                        <label className="text-indigo-100 text-sm block mb-2 flex items-center gap-2">
                           <Search className="h-4 w-4" /> Cari Siswa
                        </label>
-                       <div className="relative z-50">
+                       {/* FIXED SEARCH DROPDOWN UI */}
+                       <div className="relative">
                           <input 
                             type="text" 
                             className="w-full bg-white text-slate-800 px-3 py-2 rounded text-sm outline-none" 
-                            placeholder="Nama / NIS..." 
+                            placeholder="Ketik Nama..." 
                             value={globalSearchTerm} 
                             onChange={handleGlobalSearch} 
                           />
                           {globalSearchResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden z-50 text-slate-800 border border-slate-200 max-h-60 overflow-y-auto">
+                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden text-slate-800 border border-slate-200 max-h-60 overflow-y-auto" style={{ zIndex: 9999 }}>
                                {globalSearchResults.map(s => (
                                  <Link 
                                    key={s.id} 
