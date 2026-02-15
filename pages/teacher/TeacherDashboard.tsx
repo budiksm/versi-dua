@@ -47,6 +47,13 @@ const TeacherDashboard: React.FC = () => {
 
   useEffect(() => {
     refreshDashboard();
+    
+    // Subscribe to Realtime Updates
+    const unsubscribe = DataService.subscribeToDataChanges(() => {
+        refreshDashboard();
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const refreshDashboard = () => {

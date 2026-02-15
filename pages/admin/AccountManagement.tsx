@@ -42,9 +42,12 @@ const AccountManagement: React.FC = () => {
 
   useEffect(() => {
     refreshData();
-    // Auto refresh status every 30s
-    const interval = setInterval(refreshData, 30000);
-    return () => clearInterval(interval);
+    // Subscribe to Realtime Updates
+    const unsubscribe = DataService.subscribeToDataChanges(() => {
+        refreshData();
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const refreshData = () => {

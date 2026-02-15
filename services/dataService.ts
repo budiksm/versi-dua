@@ -20,7 +20,7 @@ import {
 } from '../types';
 
 import { db, connectToFirebase } from '../firebaseConfig';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- SYNC STATUS MANAGEMENT ---
 export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR';
@@ -28,6 +28,9 @@ let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
 let lastError: string | null = null;
 let syncListeners: ((state: SyncState, time: Date | null, error: string | null) => void)[] = [];
+
+// --- DATA CHANGE LISTENERS (REALTIME) ---
+let dataChangeListeners: (() => void)[] = [];
 
 const notifyListeners = (state: SyncState, errorMsg: string | null = null) => {
   currentSyncState = state;
@@ -37,6 +40,10 @@ const notifyListeners = (state: SyncState, errorMsg: string | null = null) => {
     lastError = null;
   }
   syncListeners.forEach(l => l(state, lastSyncTime, lastError));
+};
+
+const notifyDataChange = () => {
+  dataChangeListeners.forEach(cb => cb());
 };
 
 // --- INITIAL MOCK DATA ---
@@ -113,6 +120,43 @@ const syncToCloud = async (collectionName: string, data: any) => {
 };
 
 export const DataService = {
+  // --- REALTIME SUBSCRIPTION ---
+  subscribeToDataChanges: (callback: () => void) => {
+    dataChangeListeners.push(callback);
+    return () => { dataChangeListeners = dataChangeListeners.filter(cb => cb !== callback); };
+  },
+
+  startRealtimeListeners: () => {
+    if (!db) return;
+    const collections = [
+        'classes', 'students', 'categories', 'incidentTypes', 
+        'rules', 'records', 'teachers', 'counseling', 'sanctions',
+        'cashflow', 'activity_logs'
+    ];
+
+    console.log("📡 Starting Real-time Listeners...");
+
+    collections.forEach(colName => {
+        onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
+            if (docSnapshot.exists()) {
+                const data = docSnapshot.data().data;
+                
+                // Cek apakah data berbeda dengan localstorage untuk menghindari loop/refresh berlebih
+                const currentLocal = localStorage.getItem(colName);
+                const stringifiedData = JSON.stringify(data);
+                
+                if (currentLocal !== stringifiedData) {
+                    console.log(`🔄 [Realtime] New data received for: ${colName}`);
+                    saveToStorage(colName, data);
+                    notifyDataChange(); // Beritahu komponen React untuk re-render
+                }
+            }
+        }, (error) => {
+            console.error(`Error listening to ${colName}:`, error);
+        });
+    });
+  },
+
   // --- SYNC SUBSCRIPTION ---
   subscribeToSync: (callback: (state: SyncState, time: Date | null, error: string | null) => void) => {
     syncListeners.push(callback);
@@ -133,40 +177,10 @@ export const DataService = {
        return false;
     }
 
-    await new Promise(r => setTimeout(r, 800));
+    // Start Listeners immediately after auth
+    DataService.startRealtimeListeners();
 
-    try {
-      const collections = [
-        'classes', 'students', 'categories', 'incidentTypes', 
-        'rules', 'records', 'teachers', 'counseling', 'sanctions',
-        'cashflow', 'activity_logs' // Added activity logs
-      ];
-
-      notifyListeners('SYNCING');
-      
-      const promises = collections.map(col => getDoc(doc(db, "school_data", col)));
-      const snapshots = await Promise.all(promises);
-
-      let hasData = false;
-
-      snapshots.forEach((snap, index) => {
-        const colName = collections[index];
-        if (snap.exists()) {
-          const remoteData = snap.data().data;
-          saveToStorage(colName, remoteData);
-          hasData = true;
-        }
-      });
-      
-      notifyListeners('SAVED');
-      return hasData;
-    } catch (e: any) {
-      console.error("Gagal sinkronisasi data awal:", e);
-      let msg = e.message;
-      if(e.code === 'permission-denied') msg = "Izin Baca Ditolak. Pastikan 'Anonymous Auth' aktif di Console.";
-      notifyListeners('ERROR', msg);
-      return false;
-    }
+    return true; 
   },
 
   // --- GETTERS ---

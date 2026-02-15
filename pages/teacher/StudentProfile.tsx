@@ -89,7 +89,18 @@ const StudentProfile: React.FC = () => {
     // Get real logged in user
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
+    loadStudentData();
 
+    // Subscribe to Realtime Updates
+    const unsubscribe = DataService.subscribeToDataChanges(() => {
+        setRefreshKey(prev => prev + 1); // Trigger re-render
+        loadStudentData();
+    });
+    
+    return () => unsubscribe();
+  }, [studentId, refreshKey]);
+
+  const loadStudentData = () => {
     if (!studentId) return;
     setStudent(DataService.getStudents().find((s: any) => s.id === studentId) || null);
     setRecords(DataService.getRecords().filter((r: any) => r.studentId === studentId));
@@ -105,8 +116,7 @@ const StudentProfile: React.FC = () => {
     // Get Sanctions
     const allSanctions = DataService.getSanctions();
     setSanctions(allSanctions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.assignedDate).getTime() - new Date(a.assignedDate).getTime()));
-
-  }, [studentId, refreshKey]);
+  };
 
   if (!student) return <div className="p-8">Siswa tidak ditemukan</div>;
 
