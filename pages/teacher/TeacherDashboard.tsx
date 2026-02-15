@@ -242,6 +242,7 @@ const TeacherDashboard: React.FC = () => {
     if (rec === 'TO_KESISWAAN') return 'Rujuk SP';
     if (rec === 'SUSPENSION_REVIEW') return 'Tinjau Skors';
     if (rec === 'PARENT_CALL') return 'Panggil Ortu';
+    if (rec === 'TO_BK') return 'Rujuk BK';
     return 'Pembinaan';
   };
 

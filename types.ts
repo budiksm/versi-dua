@@ -92,8 +92,9 @@ export interface CounselingSession {
   counselorName: string;
   date: string;
   notes: string; 
-  recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW';
+  recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK';
   status: 'OPEN' | 'CLOSED';
+  sessionType?: 'BK' | 'HOMEROOM'; // Distinguish between BK session and Homeroom coaching
 }
 
 export enum SanctionLevel {

@@ -13,7 +13,7 @@ const ActiveCoaching: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [notes, setNotes] = useState('');
-  const [recommendation, setRecommendation] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW'>('NONE');
+  const [recommendation, setRecommendation] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
   const [sessionStatus, setSessionStatus] = useState<'OPEN' | 'CLOSED'>('OPEN');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -44,8 +44,7 @@ const ActiveCoaching: React.FC = () => {
       const latestSession = studentCounselings[0];
       const hasOpenSession = latestSession?.status === 'OPEN';
       
-      // Threshold BK: >= 40 Poin (UPDATED from 40 based on new rules)
-      // New Rules: 20-39 Wali Kelas, 40-79 BK
+      // Threshold BK: >= 40 Poin
       const isHighRisk = stats.effectiveViolationScore >= 40;
 
       // Filter: Show if High Risk OR Has Open Session
@@ -100,7 +99,8 @@ const ActiveCoaching: React.FC = () => {
       date: new Date().toISOString(),
       notes: notes,
       recommendation: recommendation,
-      status: sessionStatus
+      status: sessionStatus,
+      sessionType: 'BK' // Ensure type is set
     };
 
     DataService.saveCounselingSessions([...allSessions, newSession]);

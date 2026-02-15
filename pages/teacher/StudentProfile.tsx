@@ -40,7 +40,8 @@ import {
   AlertCircle,
   Megaphone,
   UserCheck,
-  Ban
+  Ban,
+  User
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -56,8 +57,8 @@ const StudentProfile: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0); 
   const [currentUser, setCurrentUser] = useState<Teacher | null>(null);
 
-  // UI State
-  const [activeTab, setActiveTab] = useState<'INCIDENTS' | 'COUNSELING' | 'SANCTIONS'>('INCIDENTS');
+  // UI State - Updated for Split Tabs
+  const [activeTab, setActiveTab] = useState<'INCIDENTS' | 'HOMEROOM' | 'BK_COUNSELING' | 'SANCTIONS'>('INCIDENTS');
 
   // Form State (Incident)
   const [formType, setFormType] = useState<IncidentTypeCategory>(IncidentTypeCategory.VIOLATION);
@@ -67,9 +68,10 @@ const StudentProfile: React.FC = () => {
   const [imageProof, setImageProof] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   
-  // Form State (Counseling)
+  // Form State (Counseling - Shared state, used by both forms)
   const [counselingNotes, setCounselingNotes] = useState('');
-  const [counselingRec, setCounselingRec] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW'>('NONE');
+  // Expanded generic type for all forms
+  const [counselingRec, setCounselingRec] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
 
   // Form State (Sanction - Kesiswaan Only)
   const [sanctionLevel, setSanctionLevel] = useState<SanctionLevel>(SanctionLevel.SP1);
@@ -112,9 +114,6 @@ const StudentProfile: React.FC = () => {
   // Get active sanction
   const activeSanction = sanctions.find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
   
-  // Get latest Counseling with recommendation (For Kesiswaan Display)
-  const latestReferralSession = counselingSessions.find(s => s.recommendation === 'TO_KESISWAAN' || s.recommendation === 'SUSPENSION_REVIEW' || s.status === 'OPEN');
-
   // Get Dynamic Class Name & Check Homeroom
   const studentClass = classes.find(c => c.id === student.classId);
   const className = studentClass ? `Kelas ${studentClass.name}` : 'Kelas Tidak Diketahui';
@@ -127,9 +126,6 @@ const StudentProfile: React.FC = () => {
   const isEducator = roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r));
   const isBK = roles.includes(Role.BK);
   const isKesiswaan = roles.includes(Role.KESISWAAN);
-
-  // Akses Konseling: BK atau Wali Kelas Siswa Tersebut
-  const canAccessCounseling = isBK || isReporterHomeroom;
 
   // Can Record Incident: Educators
   const canRecord = isEducator; 
@@ -155,7 +151,6 @@ const StudentProfile: React.FC = () => {
           const MAX_WIDTH = 800; // Limit width to 800px to keep size small
           const scaleSize = MAX_WIDTH / img.width;
           
-          // Only resize if image is larger than MAX_WIDTH
           if (scaleSize < 1) {
              canvas.width = MAX_WIDTH;
              canvas.height = img.height * scaleSize;
@@ -166,8 +161,6 @@ const StudentProfile: React.FC = () => {
 
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          
-          // Compress to JPEG with 0.6 quality
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
           resolve(compressedDataUrl);
         };
@@ -208,9 +201,6 @@ const StudentProfile: React.FC = () => {
     const incidentDef = incidents.find(i => i.id === selectedIncident);
     if (!incidentDef) return;
 
-    // DETERMINASI STATUS AWAL
-    // Jika pelapor adalah wali kelas -> APPROVED
-    // Jika bukan -> PENDING
     const initialStatus: IncidentStatus = isReporterHomeroom ? 'APPROVED' : 'PENDING';
 
     const newRecord: IncidentRecord = {
@@ -226,11 +216,9 @@ const StudentProfile: React.FC = () => {
       status: initialStatus
     };
 
-    // 1. Simpan Record
     const allRecords = DataService.getRecords();
     DataService.saveRecords([...allRecords, newRecord]);
 
-    // 2. Cek Otomatisasi Sanksi (Hanya jika Violation DAN sudah Approved)
     let autoSanctionMsg = '';
     if (incidentDef.type === IncidentTypeCategory.VIOLATION && initialStatus === 'APPROVED') {
         const appliedSanction = DataService.evaluateAndApplySanction(student.id);
@@ -253,7 +241,7 @@ const StudentProfile: React.FC = () => {
     }, 600);
   };
 
-  const handleSubmitCounseling = (e: React.FormEvent) => {
+  const handleSubmitCounseling = (e: React.FormEvent, type: 'BK' | 'HOMEROOM') => {
     e.preventDefault();
     setIsSubmitting(true);
 
@@ -265,7 +253,8 @@ const StudentProfile: React.FC = () => {
       date: new Date().toISOString(),
       notes: counselingNotes,
       recommendation: counselingRec,
-      status: 'CLOSED' 
+      status: 'CLOSED',
+      sessionType: type
     };
     
     if (counselingRec !== 'NONE') {
@@ -276,7 +265,7 @@ const StudentProfile: React.FC = () => {
     DataService.saveCounselingSessions([...allSessions, newSession]);
 
     setTimeout(() => {
-      setSuccessMsg(isReporterHomeroom ? 'Pembinaan Wali Kelas disimpan!' : 'Catatan konseling disimpan!');
+      setSuccessMsg(type === 'HOMEROOM' ? 'Pembinaan Wali Kelas disimpan!' : 'Catatan Konseling BK disimpan!');
       setIsSubmitting(false);
       setCounselingNotes('');
       setCounselingRec('NONE');
@@ -299,7 +288,7 @@ const StudentProfile: React.FC = () => {
       notes: sanctionNotes,
       redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : RedemptionStatus.NONE,
       redemptionTask: sanctionRedemptionTask,
-      isRedeemed: false // Deprecated but kept for type compat
+      isRedeemed: false
     };
 
     const allSanctions = DataService.getSanctions();
@@ -323,45 +312,24 @@ const StudentProfile: React.FC = () => {
     }, 600);
   };
 
-  const updateRedemptionStatus = (sanctionId: string, newStatus: RedemptionStatus) => {
-    if(!isKesiswaan) return;
-    
+  const updateRedemptionStatus = (sanctionId: string, status: RedemptionStatus) => {
     const allSanctions = DataService.getSanctions();
     const updatedSanctions = allSanctions.map(s => {
       if (s.id === sanctionId) {
         return { 
-           ...s, 
-           redemptionStatus: newStatus,
-           redemptionDate: newStatus === RedemptionStatus.COMPLETED ? new Date().toISOString() : undefined,
-           isRedeemed: newStatus === RedemptionStatus.COMPLETED // Keep backward compat
+          ...s, 
+          redemptionStatus: status,
+          redemptionDate: status === RedemptionStatus.COMPLETED ? new Date().toISOString() : s.redemptionDate,
+          isRedeemed: status === RedemptionStatus.COMPLETED
         };
       }
       return s;
     });
+
     DataService.saveSanctions(updatedSanctions);
-
-    // If completed, log a redemption incident
-    if (newStatus === RedemptionStatus.COMPLETED) {
-        const redemptionType = incidents.find(i => i.type === IncidentTypeCategory.REDEMPTION) 
-            || { id: 'generic_redemption', name: 'Penebusan Sanksi', points: 0, type: IncidentTypeCategory.REDEMPTION };
-        
-        const newRecord: IncidentRecord = {
-          id: `rec_red_${Date.now()}`,
-          studentId: student.id,
-          incidentTypeId: redemptionType.id as string,
-          date: new Date().toISOString(),
-          notes: 'Penebusan sanksi disetujui oleh Kesiswaan.',
-          recordedBy: currentUser?.name || 'Kesiswaan',
-          pointSnapshot: 0,
-          typeSnapshot: IncidentTypeCategory.REDEMPTION,
-          status: 'APPROVED' // Redemption is always approved by Kesiswaan
-        };
-        const allRecords = DataService.getRecords();
-        DataService.saveRecords([...allRecords, newRecord]);
-    }
-
-    setSuccessMsg('Status penebusan diperbarui!');
     setRefreshKey(prev => prev + 1);
+    
+    setSuccessMsg(status === RedemptionStatus.COMPLETED ? 'Sanksi diselesaikan!' : 'Status diperbarui.');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -370,6 +338,7 @@ const StudentProfile: React.FC = () => {
       case 'PARENT_CALL': return 'Panggilan Orang Tua';
       case 'TO_KESISWAAN': return 'Rujuk ke Kesiswaan';
       case 'SUSPENSION_REVIEW': return 'Tinjauan Skorsing';
+      case 'TO_BK': return 'Rujuk ke BK';
       default: return '-';
     }
   };
@@ -385,11 +354,15 @@ const StudentProfile: React.FC = () => {
     return null; // Approved is default/clean
   };
 
+  // --- FILTERED SESSIONS LISTS ---
+  // Legacy data (undefined sessionType) is treated as BK data for compatibility
+  const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
+  const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
+
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center gap-4">
-        {/* Back Button Logic */}
         {isAdmin && !isEducator ? (
             <Link to="/admin/students" className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 self-start">
                  <ArrowLeft className="h-6 w-6" />
@@ -405,7 +378,6 @@ const StudentProfile: React.FC = () => {
           <p className="text-slate-500">NIS: {student.nis} • {className}</p>
         </div>
         
-        {/* Status Badge: Now shows Active Sanction OR Recommended Status */}
         <div className={`md:ml-auto px-4 py-2 rounded-lg border font-bold text-sm flex items-center gap-2 ${activeSanction ? 'bg-red-600 text-white border-red-700' : recommendedStatus.color}`}>
            <AlertTriangle className="h-4 w-4" />
            {activeSanction ? `Sanksi Aktif: ${activeSanction.level}` : `Status Poin: ${recommendedStatus.statusLabel}`}
@@ -415,7 +387,6 @@ const StudentProfile: React.FC = () => {
       {/* Stats Cards - Updated to 4 Columns Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         
-        {/* CARD 1: AKUMULASI POIN PELANGGARAN */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group hover:border-red-300 transition-colors">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <ShieldAlert className="h-16 w-16 text-red-600" />
@@ -430,7 +401,6 @@ const StudentProfile: React.FC = () => {
           <p className="mt-2 text-xs text-slate-400">Akumulatif (Disetujui)</p>
         </div>
 
-        {/* CARD 2: TOTAL POIN PENGHARGAAN (NEW) */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group hover:border-emerald-300 transition-colors">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Award className="h-16 w-16 text-emerald-600" />
@@ -445,7 +415,6 @@ const StudentProfile: React.FC = () => {
           <p className="mt-2 text-xs text-slate-400">Total apresiasi positif</p>
         </div>
 
-        {/* CARD 3: STATUS SANKSI */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group hover:border-orange-300 transition-colors">
            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <Gavel className="h-16 w-16 text-orange-600" />
@@ -477,7 +446,6 @@ const StudentProfile: React.FC = () => {
           </div>
         </div>
 
-        {/* CARD 4: STATISTIK FREKUENSI */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center relative overflow-hidden group hover:border-blue-300 transition-colors">
            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <BarChart3 className="h-16 w-16 text-slate-600" />
@@ -514,21 +482,45 @@ const StudentProfile: React.FC = () => {
                   <ClipboardList className="h-4 w-4" /> Catatan Kejadian
                </span>
             </button>
-            {canAccessCounseling && (
+            
+            {/* TAB WALI KELAS */}
+            {isReporterHomeroom && (
               <button
-                 onClick={() => setActiveTab('COUNSELING')}
+                 onClick={() => {
+                    setActiveTab('HOMEROOM');
+                    setCounselingRec('NONE'); // Reset choice when switching tabs
+                 }}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
-                    activeTab === 'COUNSELING' 
-                    ? 'border-indigo-500 text-indigo-600' 
+                    activeTab === 'HOMEROOM' 
+                    ? 'border-orange-500 text-orange-600' 
                     : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
                  }`}
               >
                  <span className="flex items-center gap-2">
-                    <HeartHandshake className="h-4 w-4" /> 
-                    {isReporterHomeroom && !isBK ? 'Pembinaan Wali Kelas' : 'Bimbingan Konseling'}
+                    <User className="h-4 w-4" /> Pembinaan Wali Kelas
                  </span>
               </button>
             )}
+
+            {/* TAB BK */}
+            {isBK && (
+              <button
+                 onClick={() => {
+                    setActiveTab('BK_COUNSELING');
+                    setCounselingRec('NONE');
+                 }}
+                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
+                    activeTab === 'BK_COUNSELING' 
+                    ? 'border-blue-500 text-blue-600' 
+                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                 }`}
+              >
+                 <span className="flex items-center gap-2">
+                    <HeartHandshake className="h-4 w-4" /> Bimbingan Konseling
+                 </span>
+              </button>
+            )}
+
             {isKesiswaan && (
               <button
                  onClick={() => setActiveTab('SANCTIONS')}
@@ -819,27 +811,133 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 2: COUNSELING (BK & WALIKELAS) === */}
-        {activeTab === 'COUNSELING' && canAccessCounseling && (
+        {/* === TAB 2: PEMBINAAN WALI KELAS (Specific for Walikelas) === */}
+        {activeTab === 'HOMEROOM' && isReporterHomeroom && (
            <>
-             {/* INPUT FORM COUNSELING */}
+             {/* INPUT FORM HOMEROOM */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   <div className={`p-6 border-b flex justify-between items-center ${isReporterHomeroom && !isBK ? 'bg-orange-50 border-orange-100' : 'bg-blue-50 border-blue-100'}`}>
-                     <h2 className={`font-bold flex items-center gap-2 ${isReporterHomeroom && !isBK ? 'text-orange-800' : 'text-blue-800'}`}>
-                        <HeartHandshake className="h-5 w-5" />
-                        {isReporterHomeroom && !isBK ? 'Catat Pembinaan Wali Kelas' : 'Catat Sesi Konseling'}
+                   <div className="p-6 border-b flex justify-between items-center bg-orange-50 border-orange-100">
+                     <h2 className="font-bold flex items-center gap-2 text-orange-800">
+                        <User className="h-5 w-5" />
+                        Catat Pembinaan Wali Kelas
                      </h2>
                    </div>
                    
-                   <form onSubmit={handleSubmitCounseling} className="p-6 space-y-6">
-                      <div className={`p-4 rounded-lg text-sm border mb-4 ${isReporterHomeroom && !isBK ? 'bg-orange-50 text-orange-800 border-orange-100' : 'bg-blue-50 text-blue-800 border-blue-100'}`}>
-                         Gunakan form ini untuk mencatat hasil wawancara, pembinaan mental, atau pemanggilan siswa. 
-                         Data ini bersifat rahasia.
+                   <form onSubmit={(e) => handleSubmitCounseling(e, 'HOMEROOM')} className="p-6 space-y-6">
+                      <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100">
+                         Form ini khusus untuk pencatatan pembinaan oleh Wali Kelas. Data ini akan membantu BK dan Kesiswaan dalam pemantauan.
                       </div>
                       
                       <div>
-                         <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil Pembinaan</label>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Pembinaan / Solusi</label>
+                         <textarea
+                           required
+                           value={counselingNotes}
+                           onChange={(e) => setCounselingNotes(e.target.value)}
+                           rows={6}
+                           className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900"
+                           placeholder="Jelaskan permasalahan siswa dan solusi yang diberikan..."
+                         />
+                      </div>
+
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label>
+                         <select
+                            value={counselingRec}
+                            onChange={(e) => setCounselingRec(e.target.value as any)}
+                            className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900"
+                         >
+                            <option value="NONE">Cukup Pembinaan (Selesai)</option>
+                            <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
+                            <option value="TO_BK">Rujuk ke BK</option>
+                         </select>
+                         {counselingRec !== 'NONE' && (
+                           <p className="text-xs text-orange-600 mt-2">
+                             *Status pembinaan ini akan diset OPEN untuk ditindaklanjuti.
+                           </p>
+                         )}
+                      </div>
+
+                      {successMsg && (
+                          <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5" />
+                          {successMsg}
+                          </div>
+                      )}
+
+                      <button
+                          type="submit"
+                          disabled={isSubmitting || !counselingNotes}
+                          className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
+                      >
+                          <Save className="h-5 w-5" />
+                          {isSubmitting ? 'Menyimpan...' : 'Simpan Pembinaan'}
+                      </button>
+                   </form>
+                </div>
+             </div>
+
+             {/* HISTORY HOMEROOM */}
+             <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
+                   <BookOpen className="h-5 w-5" />
+                   Riwayat Pembinaan
+                </div>
+
+                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
+                  {homeroomSessions.length === 0 ? (
+                    <div className="text-slate-500 text-sm italic">Belum ada data pembinaan wali kelas.</div>
+                  ) : (
+                    homeroomSessions.map(session => (
+                      <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
+                         <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-500" />
+                         <div className="flex justify-between items-start mb-2">
+                           <div className="text-xs font-semibold text-slate-500">
+                              {new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                           </div>
+                           {session.recommendation !== 'NONE' && (
+                             <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
+                               ! {translateRecommendation(session.recommendation)}
+                             </span>
+                           )}
+                         </div>
+                         
+                         <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                            {session.notes}
+                         </p>
+
+                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1">
+                            <span className="font-semibold text-slate-500">Wali Kelas:</span> {session.counselorName}
+                         </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+             </div>
+           </>
+        )}
+
+        {/* === TAB 3: BIMBINGAN KONSELING (Specific for BK) === */}
+        {activeTab === 'BK_COUNSELING' && isBK && (
+           <>
+             {/* INPUT FORM BK */}
+             <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className="p-6 border-b flex justify-between items-center bg-blue-50 border-blue-100">
+                     <h2 className="font-bold flex items-center gap-2 text-blue-800">
+                        <HeartHandshake className="h-5 w-5" />
+                        Catat Sesi Konseling BK
+                     </h2>
+                   </div>
+                   
+                   <form onSubmit={(e) => handleSubmitCounseling(e, 'BK')} className="p-6 space-y-6">
+                      <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100">
+                         Form khusus Guru BK. Gunakan untuk mencatat konseling mendalam, pemanggilan orang tua, atau rujukan sanksi.
+                      </div>
+                      
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil</label>
                          <textarea
                            required
                            value={counselingNotes}
@@ -882,24 +980,24 @@ const StudentProfile: React.FC = () => {
                           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
                       >
                           <Save className="h-5 w-5" />
-                          {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan'}
+                          {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan BK'}
                       </button>
                    </form>
                 </div>
              </div>
 
-             {/* COUNSELING HISTORY */}
+             {/* HISTORY BK (Includes Legacy Data) */}
              <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
                    <BookOpen className="h-5 w-5" />
-                   Riwayat Pembinaan
+                   Riwayat Konseling BK
                 </div>
 
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-                  {counselingSessions.length === 0 ? (
-                    <div className="text-slate-500 text-sm italic">Belum ada data konseling.</div>
+                  {bkSessions.length === 0 ? (
+                    <div className="text-slate-500 text-sm italic">Belum ada data konseling BK.</div>
                   ) : (
-                    counselingSessions.map(session => (
+                    bkSessions.map(session => (
                       <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
                          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500" />
                          <div className="flex justify-between items-start mb-2">
@@ -929,6 +1027,145 @@ const StudentProfile: React.FC = () => {
         )}
 
         {/* ... (TAB SANCTIONS kept same) ... */}
+        {activeTab === 'SANCTIONS' && isKesiswaan && (
+           <>
+             {/* INPUT FORM SANKSI */}
+             <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className="p-6 border-b border-slate-100 bg-red-50 flex justify-between items-center">
+                     <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                        <Gavel className="h-5 w-5 text-red-600" />
+                        Tetapkan Sanksi
+                     </h2>
+                   </div>
+                   
+                   <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
+                      <div className="bg-red-50 p-4 rounded-lg text-sm text-red-800 border border-red-100 mb-4">
+                         Hanya Kesiswaan yang dapat menetapkan sanksi formal (SP 1, SP 2, SP 3).
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Tingkat Sanksi</label>
+                            <select
+                               value={sanctionLevel}
+                               onChange={(e) => setSanctionLevel(e.target.value as any)}
+                               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900"
+                            >
+                               <option value="SP1">SP 1 (Peringatan Pertama)</option>
+                               <option value="SP2">SP 2 (Peringatan Kedua)</option>
+                               <option value="SP3">SP 3 (Peringatan Terakhir)</option>
+                               <option value="SKORSING">Skorsing Sementara</option>
+                               <option value="DROP_OUT">Dikembalikan ke Orang Tua</option>
+                            </select>
+                         </div>
+                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Tugas Penebusan (Opsional)</label>
+                            <input
+                               type="text"
+                               value={sanctionRedemptionTask}
+                               onChange={(e) => setSanctionRedemptionTask(e.target.value)}
+                               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900"
+                               placeholder="Contoh: Membersihkan Masjid 3 Hari"
+                            />
+                         </div>
+                      </div>
+
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Alasan / Catatan Sanksi</label>
+                         <textarea
+                           required
+                           value={sanctionNotes}
+                           onChange={(e) => setSanctionNotes(e.target.value)}
+                           rows={4}
+                           className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900"
+                           placeholder="Dasar penetapan sanksi..."
+                         />
+                      </div>
+
+                      {successMsg && (
+                          <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5" />
+                          {successMsg}
+                          </div>
+                      )}
+
+                      <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
+                      >
+                          <Gavel className="h-5 w-5" />
+                          {isSubmitting ? 'Menyimpan...' : 'Terbitkan Surat Peringatan'}
+                      </button>
+                   </form>
+                </div>
+             </div>
+
+             {/* SANCTION HISTORY */}
+             <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
+                   <Gavel className="h-5 w-5" />
+                   Riwayat Sanksi
+                </div>
+
+                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
+                  {sanctions.length === 0 ? (
+                    <div className="text-slate-500 text-sm italic">Belum ada sanksi.</div>
+                  ) : (
+                    sanctions.map(item => (
+                      <div key={item.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
+                         <div className="flex justify-between items-start mb-2">
+                           <div className="text-xs font-semibold text-slate-500">
+                              {new Date(item.assignedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                           </div>
+                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${item.redemptionStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                              {item.redemptionStatus === 'COMPLETED' ? 'Selesai' : 'Belum Selesai'}
+                           </span>
+                         </div>
+                         
+                         <div className="flex items-center gap-2 mb-2">
+                            <span className="text-lg font-bold text-red-600">{item.level}</span>
+                         </div>
+
+                         <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">
+                            "{item.notes}"
+                         </p>
+
+                         {item.redemptionTask && (
+                            <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3">
+                               <b>Tugas:</b> {item.redemptionTask}
+                            </div>
+                         )}
+
+                         {item.redemptionStatus !== 'COMPLETED' && item.redemptionTask && (
+                            <div className="flex gap-2 justify-end mt-2">
+                               <button 
+                                 onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.IN_PROGRESS)}
+                                 disabled={item.redemptionStatus === RedemptionStatus.IN_PROGRESS}
+                                 className="px-3 py-1.5 text-xs bg-white border border-blue-200 text-blue-600 rounded hover:bg-blue-50 disabled:opacity-50"
+                               >
+                                 Mulai
+                               </button>
+                               <button 
+                                 onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED)}
+                                 className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
+                               >
+                                 Selesai
+                               </button>
+                            </div>
+                         )}
+                         
+                         <div className="mt-2 text-[10px] text-slate-400 text-right">
+                            Oleh: {item.assignedBy}
+                         </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+             </div>
+           </>
+        )}
       </div>
     </div>
   );
