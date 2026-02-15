@@ -41,7 +41,8 @@ import {
   Megaphone,
   UserCheck,
   Ban,
-  User
+  User,
+  PenSquare
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -77,6 +78,9 @@ const StudentProfile: React.FC = () => {
   const [sanctionLevel, setSanctionLevel] = useState<SanctionLevel>(SanctionLevel.SP1);
   const [sanctionNotes, setSanctionNotes] = useState('');
   const [sanctionRedemptionTask, setSanctionRedemptionTask] = useState('');
+  
+  // EDIT STATE FOR SANCTION
+  const [editingSanctionId, setEditingSanctionId] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -293,42 +297,82 @@ const StudentProfile: React.FC = () => {
     }, 600);
   };
 
+  // --- HANDLE SANCTIONS (CREATE & UPDATE) ---
   const handleAssignSanction = (e: React.FormEvent) => {
     e.preventDefault();
     if(!isKesiswaan) return;
     setIsSubmitting(true);
 
-    const newSanction: StudentSanction = {
-      id: `san_${Date.now()}`,
-      studentId: student.id,
-      level: sanctionLevel,
-      assignedBy: currentUser?.name || 'Kesiswaan',
-      assignedDate: new Date().toISOString(),
-      notes: sanctionNotes,
-      redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : RedemptionStatus.NONE,
-      redemptionTask: sanctionRedemptionTask,
-      isRedeemed: false
-    };
-
     const allSanctions = DataService.getSanctions();
-    const existing = allSanctions.find(s => s.studentId === student.id && s.redemptionStatus !== RedemptionStatus.COMPLETED && s.level === sanctionLevel);
-    
-    if (existing) {
-       alert("Siswa ini sudah memiliki sanksi level tersebut yang belum diselesaikan.");
-       setIsSubmitting(false);
-       return;
+
+    if (editingSanctionId) {
+        // UPDATE EXISTING SANCTION
+        const updatedSanctions = allSanctions.map(s => {
+            if (s.id === editingSanctionId) {
+                return {
+                    ...s,
+                    level: sanctionLevel,
+                    notes: sanctionNotes,
+                    redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : s.redemptionStatus,
+                    redemptionTask: sanctionRedemptionTask,
+                    assignedBy: `${s.assignedBy} & ${currentUser?.name}` // Append editor name
+                };
+            }
+            return s;
+        });
+        DataService.saveSanctions(updatedSanctions);
+        setSuccessMsg('Data sanksi berhasil diperbarui!');
+    } else {
+        // CREATE NEW SANCTION
+        const newSanction: StudentSanction = {
+          id: `san_${Date.now()}`,
+          studentId: student.id,
+          level: sanctionLevel,
+          assignedBy: currentUser?.name || 'Kesiswaan',
+          assignedDate: new Date().toISOString(),
+          notes: sanctionNotes,
+          redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : RedemptionStatus.NONE,
+          redemptionTask: sanctionRedemptionTask,
+          isRedeemed: false
+        };
+
+        const existing = allSanctions.find(s => s.studentId === student.id && s.redemptionStatus !== RedemptionStatus.COMPLETED && s.level === sanctionLevel);
+        
+        if (existing) {
+           alert("Siswa ini sudah memiliki sanksi level tersebut yang belum diselesaikan.");
+           setIsSubmitting(false);
+           return;
+        }
+
+        DataService.saveSanctions([...allSanctions, newSanction]);
+        setSuccessMsg('Sanksi baru ditetapkan!');
     }
 
-    DataService.saveSanctions([...allSanctions, newSanction]);
-
     setTimeout(() => {
-      setSuccessMsg('Sanksi ditetapkan!');
       setIsSubmitting(false);
       setSanctionNotes('');
       setSanctionRedemptionTask('');
+      setEditingSanctionId(null);
       setRefreshKey(prev => prev + 1);
       setTimeout(() => setSuccessMsg(''), 3000);
     }, 600);
+  };
+
+  const startEditSanction = (sanction: StudentSanction) => {
+      setEditingSanctionId(sanction.id);
+      setSanctionLevel(sanction.level);
+      setSanctionNotes(sanction.notes);
+      setSanctionRedemptionTask(sanction.redemptionTask || '');
+      
+      // Scroll to top of form
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditSanction = () => {
+      setEditingSanctionId(null);
+      setSanctionNotes('');
+      setSanctionRedemptionTask('');
+      setSanctionLevel(SanctionLevel.SP1);
   };
 
   const updateRedemptionStatus = (sanctionId: string, status: RedemptionStatus) => {
@@ -374,7 +418,6 @@ const StudentProfile: React.FC = () => {
   };
 
   // --- FILTERED SESSIONS LISTS ---
-  // Legacy data (undefined sessionType) is treated as BK data for compatibility
   const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
 
@@ -831,7 +874,8 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 2: PEMBINAAN WALI KELAS (Specific for Walikelas) === */}
+        {/* === TAB 2 & 3 HIDDEN FOR BREVITY AS REQUESTED IN CHANGES, SEE PREV FILE FOR CONTENT === */}
+        {/* ... (Existing Tabs for Homeroom & BK) ... */}
         {activeTab === 'HOMEROOM' && isReporterHomeroom && (
            <>
              {/* INPUT FORM HOMEROOM */}
@@ -939,7 +983,6 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 3: BIMBINGAN KONSELING (Specific for BK) === */}
         {activeTab === 'BK_COUNSELING' && canAccessBK && (
            <>
              {/* INPUT FORM BK */}
@@ -1047,7 +1090,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 3 (Locked State for BK) === */}
+        {/* ... (Existing Tabs for BK Locked) ... */}
         {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
             <div className="lg:col-span-3">
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
@@ -1065,22 +1108,30 @@ const StudentProfile: React.FC = () => {
             </div>
         )}
 
-        {/* ... (TAB SANCTIONS) ... */}
+        {/* === TAB 4: SANCTIONS (UPDATED FOR EDIT) === */}
         {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
            <>
              {/* INPUT FORM SANKSI */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   <div className="p-6 border-b border-slate-100 bg-red-50 flex justify-between items-center">
-                     <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                        <Gavel className="h-5 w-5 text-red-600" />
-                        Tetapkan Sanksi
+                   <div className={`p-6 border-b border-slate-100 flex justify-between items-center ${editingSanctionId ? 'bg-orange-50' : 'bg-red-50'}`}>
+                     <h2 className={`font-bold flex items-center gap-2 ${editingSanctionId ? 'text-orange-800' : 'text-slate-800'}`}>
+                        {editingSanctionId ? <PenSquare className="h-5 w-5" /> : <Gavel className="h-5 w-5 text-red-600" />}
+                        {editingSanctionId ? 'Edit Sanksi / Beri Tugas' : 'Tetapkan Sanksi Baru'}
                      </h2>
+                     {editingSanctionId && (
+                        <button onClick={cancelEditSanction} className="text-xs text-orange-700 hover:underline font-bold">
+                            Batal Edit
+                        </button>
+                     )}
                    </div>
                    
                    <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
-                      <div className="bg-red-50 p-4 rounded-lg text-sm text-red-800 border border-red-100 mb-4">
-                         Form terbuka karena Poin ≥ 80 atau ada rujukan dari BK.
+                      <div className={`p-4 rounded-lg text-sm border mb-4 ${editingSanctionId ? 'bg-orange-50 text-orange-800 border-orange-100' : 'bg-red-50 text-red-800 border-red-100'}`}>
+                         {editingSanctionId 
+                            ? "Anda sedang mengedit sanksi yang sudah ada. Gunakan ini untuk menambahkan tugas penebusan pada SP otomatis."
+                            : "Form terbuka karena Poin ≥ 80 atau ada rujukan dari BK."
+                         }
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1134,8 +1185,8 @@ const StudentProfile: React.FC = () => {
                           disabled={isSubmitting}
                           className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
                       >
-                          <Gavel className="h-5 w-5" />
-                          {isSubmitting ? 'Menyimpan...' : 'Terbitkan Surat Peringatan'}
+                          {editingSanctionId ? <Save className="h-5 w-5" /> : <Gavel className="h-5 w-5" />}
+                          {isSubmitting ? 'Menyimpan...' : (editingSanctionId ? 'Simpan Perubahan' : 'Terbitkan Surat Peringatan')}
                       </button>
                    </form>
                 </div>
@@ -1153,7 +1204,7 @@ const StudentProfile: React.FC = () => {
                     <div className="text-slate-500 text-sm italic">Belum ada sanksi.</div>
                   ) : (
                     sanctions.map(item => (
-                      <div key={item.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
+                      <div key={item.id} className={`bg-white p-5 rounded-xl border shadow-sm relative overflow-hidden transition-all ${editingSanctionId === item.id ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`}>
                          <div className="flex justify-between items-start mb-2">
                            <div className="text-xs font-semibold text-slate-500">
                               {new Date(item.assignedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -1163,17 +1214,30 @@ const StudentProfile: React.FC = () => {
                            </span>
                          </div>
                          
-                         <div className="flex items-center gap-2 mb-2">
+                         <div className="flex items-center justify-between mb-2">
                             <span className="text-lg font-bold text-red-600">{item.level}</span>
+                            {/* TOMBOL EDIT UNTUK SANKSI TANPA TUGAS (OTOMATIS) */}
+                            {item.redemptionStatus === RedemptionStatus.NONE && (
+                                <button 
+                                    onClick={() => startEditSanction(item)}
+                                    className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 font-bold flex items-center gap-1 border border-orange-200 shadow-sm"
+                                >
+                                    <PenSquare className="h-3 w-3" /> Beri Tugas / Edit
+                                </button>
+                            )}
                          </div>
 
                          <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">
                             "{item.notes}"
                          </p>
 
-                         {item.redemptionTask && (
+                         {item.redemptionTask ? (
                             <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3">
                                <b>Tugas:</b> {item.redemptionTask}
+                            </div>
+                         ) : (
+                            <div className="text-xs text-slate-400 italic mb-3">
+                               Belum ada tugas penebusan.
                             </div>
                          )}
 
@@ -1206,7 +1270,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 4 (Locked State for Kesiswaan) === */}
+        {/* ... (Existing Tabs for Kesiswaan Locked) ... */}
         {activeTab === 'SANCTIONS' && !canAccessKesiswaan && isKesiswaan && (
             <div className="lg:col-span-3">
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
