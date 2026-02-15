@@ -55,7 +55,7 @@ const AccountManagement: React.FC = () => {
 
     // Validate Student Class Assignment
     if (formData.roles.includes(Role.STUDENT) && !formData.assignedClassId) {
-        alert("Untuk akun Siswa/Bendahara, Anda wajib memilih Kelas!");
+        alert("Untuk akun Siswa, Anda wajib memilih Kelas!");
         return;
     }
 
@@ -127,7 +127,7 @@ const AccountManagement: React.FC = () => {
     { id: Role.BK, label: 'Guru BK', color: 'bg-blue-100 text-blue-700' },
     { id: Role.KESISWAAN, label: 'Staf Kesiswaan', color: 'bg-orange-100 text-orange-700' },
     { id: Role.ADMIN, label: 'Admin / Tata Usaha', color: 'bg-purple-100 text-purple-700' },
-    { id: Role.STUDENT, label: 'Siswa / Bendahara', color: 'bg-pink-100 text-pink-700' },
+    { id: Role.STUDENT, label: 'Siswa', color: 'bg-pink-100 text-pink-700' },
   ];
 
   return (

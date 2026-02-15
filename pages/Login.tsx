@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User, AlertCircle } from 'lucide-react';
@@ -28,12 +29,14 @@ const Login: React.FC = () => {
       if (user) {
         const roles = user.roles || [];
         
-        // Priority Redirect:
-        // 1. If Admin, go to Admin Panel
-        // 2. Else go to Teacher Dashboard
+        // Priority Redirect Logic
         if (roles.includes(Role.ADMIN)) {
           navigate('/admin/students');
+        } else if (roles.includes(Role.STUDENT)) {
+          // FIX: Siswa langsung ke Poe Ibu, tidak boleh ke Dashboard Guru
+          navigate('/teacher/poe-ibu');
         } else {
+          // Guru, BK, Walikelas, Kesiswaan ke Dashboard
           navigate('/teacher/dashboard');
         }
       } else {

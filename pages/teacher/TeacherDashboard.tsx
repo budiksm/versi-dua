@@ -47,6 +47,12 @@ const TeacherDashboard: React.FC = () => {
   const refreshDashboard = () => {
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
+
+    // SECURITY CHECK: If user is STUDENT, kick them out to Poe Ibu
+    if (user && user.roles.includes(Role.STUDENT) && !user.roles.includes(Role.TEACHER)) {
+        navigate('/teacher/poe-ibu');
+        return;
+    }
     
     const recs = DataService.getRecords();
     const incs = DataService.getIncidentTypes();
