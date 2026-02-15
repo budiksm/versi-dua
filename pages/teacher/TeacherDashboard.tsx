@@ -526,10 +526,16 @@ const TeacherDashboard: React.FC = () => {
       {/* BK Section */}
       {isBK && !isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
-           <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-              <div className="absolute right-0 top-0 opacity-10">
-                <HeartHandshake className="h-64 w-64 -mr-16 -mt-16" />
+           {/* Removing overflow-hidden to allow dropdowns to spill out */}
+           <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative">
+              
+              {/* Separate container for background decoration to keep clipping */}
+              <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+                  <div className="absolute right-0 top-0 opacity-10">
+                    <HeartHandshake className="h-64 w-64 -mr-16 -mt-16" />
+                  </div>
               </div>
+
               <div className="relative z-10">
                 <div className="flex items-center gap-3 mb-4">
                    <div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div>
@@ -558,7 +564,7 @@ const TeacherDashboard: React.FC = () => {
                             onChange={handleGlobalSearch} 
                           />
                           {globalSearchResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden text-slate-800 border border-slate-200 max-h-60 overflow-y-auto" style={{ zIndex: 9999 }}>
+                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden text-slate-800 border border-slate-200 max-h-96 overflow-y-auto" style={{ zIndex: 9999 }}>
                                {globalSearchResults.map(s => (
                                  <Link 
                                    key={s.id} 
