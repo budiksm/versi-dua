@@ -40,7 +40,8 @@ import {
   User,
   PenSquare,
   FileText,
-  Calendar
+  Calendar,
+  FileWarning
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -158,7 +159,7 @@ const StudentProfile: React.FC = () => {
   const canViewEvidence = currentUser && !roles.includes(Role.STUDENT) && !roles.includes(Role.OSIS);
 
   // Akses BK: User BK AND (Poin >= 40 OR Ada Rujukan Walikelas)
-  const canAccessBK = isBK && (stats.effectiveViolationScore >= 40 || hasReferralToBK);
+  const canAccessBK = isBK && (stats.effectiveViolationScore >= 40 || hasReferralToBK || records.some(r => r.bkStatus === 'REQUIRED'));
 
   // Akses Kesiswaan: User Kesiswaan AND (Poin >= 80 OR Ada Rujukan BK)
   const canAccessKesiswaan = isKesiswaan && (stats.effectiveViolationScore >= 80 || hasReferralToKesiswaan);
@@ -261,6 +262,16 @@ const StudentProfile: React.FC = () => {
     };
 
     const allRecords = DataService.getRecords();
+    // Use dataService helper to ensure side effects (like BK trigger) are handled if we were using it, 
+    // but here we are constructing object manually.
+    // Ideally we should move 'save' logic to a method that handles the 'resolution' trigger too if auto-approved.
+    // For now, let's just save. The 'resolveIncident' is what triggers the BK Status usually.
+    // BUT, if it is auto-approved here (isReporterHomeroom), we need to set BK Status manually if points >= 40.
+    
+    if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= 40 && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) {
+        newRecord.bkStatus = 'REQUIRED';
+    }
+
     DataService.saveRecords([...allRecords, newRecord]);
 
     let autoSanctionMsg = '';
@@ -268,6 +279,9 @@ const StudentProfile: React.FC = () => {
         const appliedSanction = DataService.evaluateAndApplySanction(student.id);
         if (appliedSanction) {
             autoSanctionMsg = ` & Otomatis menerbitkan ${appliedSanction}`;
+        }
+        if (newRecord.bkStatus === 'REQUIRED') {
+            autoSanctionMsg += " & Wajib Konseling BK";
         }
     } else if (initialStatus === 'PENDING') {
         autoSanctionMsg = '. Menunggu persetujuan Wali Kelas.';
@@ -770,7 +784,19 @@ const StudentProfile: React.FC = () => {
                           </div>
                           
                           <div className="flex justify-between items-center mt-2">
-                             <div>{getStatusBadge(record.status)}</div>
+                             <div>
+                                {getStatusBadge(record.status)}
+                                {record.bkStatus === 'REQUIRED' && (
+                                    <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold animate-pulse border border-red-200">
+                                        <FileWarning className="h-3 w-3" /> BUTUH KONSELING BK
+                                    </span>
+                                )}
+                                {record.bkStatus === 'COMPLETED' && (
+                                    <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold border border-blue-200">
+                                        <HeartHandshake className="h-3 w-3" /> BK SELESAI
+                                    </span>
+                                )}
+                             </div>
                              <div className="flex items-center gap-1 text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
                                 Lihat Detail <ArrowLeft className="h-3 w-3 rotate-180" />
                              </div>
@@ -858,7 +884,7 @@ const StudentProfile: React.FC = () => {
                    
                    <form onSubmit={(e) => handleSubmitCounseling(e, 'BK')} className="p-6 space-y-6">
                       <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100">
-                         Form ini terbuka karena siswa memiliki Poin ≥ 40 atau dirujuk oleh Wali Kelas.
+                         Form ini terbuka karena siswa memiliki Poin ≥ 40, ada kasus berat, atau dirujuk oleh Wali Kelas.
                       </div>
 
                       {/* --- RECORD SELECTOR --- */}
@@ -874,6 +900,7 @@ const StudentProfile: React.FC = () => {
                                 violationRecords.map(record => {
                                     const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
                                     const isSelected = selectedCounselingRecords.includes(record.id);
+                                    const isRequired = record.bkStatus === 'REQUIRED';
                                     return (
                                         <div 
                                             key={record.id} 
@@ -885,6 +912,7 @@ const StudentProfile: React.FC = () => {
                                             </div>
                                             <div className="flex-1">
                                                 <span className="font-bold">{incidentName}</span> <span className="text-red-600">({record.pointSnapshot} Pt)</span>
+                                                {isRequired && <span className="ml-2 bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}
                                                 <div className="text-slate-500">{new Date(record.date).toLocaleDateString()}</div>
                                             </div>
                                         </div>
@@ -892,6 +920,9 @@ const StudentProfile: React.FC = () => {
                                 })
                             )}
                          </div>
+                         <p className="text-[10px] text-slate-500 mt-1">
+                            *Jika Anda mencentang kasus bertanda <b>WAJIB</b>, statusnya akan berubah menjadi selesai setelah disimpan.
+                         </p>
                       </div>
                       
                       <div>
@@ -949,7 +980,7 @@ const StudentProfile: React.FC = () => {
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
                   <Lock className="h-16 w-16 mb-4 text-slate-300" />
                   <h3 className="text-lg font-bold text-slate-700">Akses Pembinaan Dibatasi</h3>
-                  <p className="max-w-md mt-2 mb-4">Sesuai hirarki, BK hanya dapat menangani siswa jika: Poin ≥ 40 atau ada rujukan.</p>
+                  <p className="max-w-md mt-2 mb-4">Sesuai hirarki, BK hanya dapat menangani siswa jika: Poin ≥ 40, ada kasus berat (≥ 40 poin), atau ada rujukan.</p>
                </div>
             </div>
         )}
@@ -1038,6 +1069,16 @@ const StudentProfile: React.FC = () => {
                             </div>
                             <div className="w-full md:w-1/3 bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center items-center text-center">
                                 <p className="text-xs font-bold text-slate-400 uppercase mb-2">Status</p>{getStatusBadge(selectedRecord.status)}
+                                {selectedRecord.bkStatus === 'REQUIRED' && (
+                                    <div className="mt-2 bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold border border-red-200 flex items-center gap-1">
+                                        <FileWarning className="h-3 w-3" /> WAJIB BK
+                                    </div>
+                                )}
+                                {selectedRecord.bkStatus === 'COMPLETED' && (
+                                    <div className="mt-2 bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold border border-blue-200 flex items-center gap-1">
+                                        <HeartHandshake className="h-3 w-3" /> BK SELESAI
+                                    </div>
+                                )}
                                 <div className={`mt-3 text-3xl font-bold ${selectedRecord.typeSnapshot === 'VIOLATION' ? 'text-red-600' : 'text-blue-600'}`}>{selectedRecord.typeSnapshot === 'VIOLATION' ? '+' : ''}{selectedRecord.pointSnapshot}</div>
                                 <p className="text-xs text-slate-400 font-bold uppercase mt-1">Poin</p>
                             </div>

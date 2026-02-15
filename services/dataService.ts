@@ -16,7 +16,8 @@ import {
   IncidentStatus,
   CashflowRecord,
   CashflowStatus,
-  ActivityLog
+  ActivityLog,
+  BkCounselingStatus
 } from '../types';
 
 import { db, connectToFirebase } from '../firebaseConfig';
@@ -100,8 +101,6 @@ const saveToStorage = (key: string, data: any) => {
 const syncToCloud = async (collectionName: string, data: any) => {
   if (!db) return; 
   
-  // SAFETY CHECK: Jangan sync jika kita belum pernah load dari cloud
-  // Ini mencegah Mock Data menimpa Real Data saat browser di-reset.
   if (!isInitializedFromCloud) {
       console.warn(`[Cloud] Sync blocked for ${collectionName}. Data not yet loaded from cloud.`);
       return;
@@ -115,16 +114,8 @@ const syncToCloud = async (collectionName: string, data: any) => {
     console.log(`[Cloud] Synced ${collectionName} successfully.`);
   } catch (error: any) {
     console.error(`[Cloud] Failed to sync ${collectionName}:`, error);
-    
     let errorMsg = error.message || "Unknown error";
-    if (error.code === 'permission-denied') {
-        errorMsg = "IZIN DITOLAK. Cek Rules & Anonymous Auth.";
-    } else if (error.code === 'resource-exhausted') {
-        errorMsg = "Dokumen terlalu besar (>1MB).";
-    } else if (error.code === 'unavailable') {
-        errorMsg = "Koneksi ke server Firestore gagal (Offline).";
-    }
-    
+    if (error.code === 'permission-denied') errorMsg = "IZIN DITOLAK. Cek Rules & Anonymous Auth.";
     notifyListeners('ERROR', errorMsg);
   }
 };
@@ -150,23 +141,16 @@ export const DataService = {
         onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
             if (docSnapshot.exists()) {
                 const data = docSnapshot.data().data;
-                
-                // Cek apakah data berbeda dengan localstorage untuk menghindari loop/refresh berlebih
                 const currentLocal = localStorage.getItem(colName);
                 const stringifiedData = JSON.stringify(data);
                 
                 if (currentLocal !== stringifiedData) {
                     console.log(`🔄 [Realtime] New data received for: ${colName}`);
                     saveToStorage(colName, data);
-                    notifyDataChange(); // Beritahu komponen React untuk re-render
+                    notifyDataChange();
                 }
-                
-                // Mark as initialized once we get data
                 isInitializedFromCloud = true;
             } else {
-                console.log(`⚠️ [Realtime] Collection ${colName} is empty on server.`);
-                // If document doesn't exist on server, we might be starting fresh or wiped.
-                // In this case, we allow local data to take precedence after a short delay
                 if (!isInitializedFromCloud) isInitializedFromCloud = true; 
             }
         }, (error) => {
@@ -195,8 +179,6 @@ export const DataService = {
        return false;
     }
 
-    // FORCE PULL: Tarik data sekali di awal untuk memastikan LocalStorage sinkron
-    // sebelum UI dirender sepenuhnya.
     const collections = [
         'teachers', 'students', 'classes', 'records', 'counseling', 
         'sanctions', 'categories', 'incidentTypes', 'rules', 'cashflow'
@@ -214,14 +196,12 @@ export const DataService = {
             }
         }));
         console.log("✅ [Init] Data synchronized.");
-        isInitializedFromCloud = true; // Izinkan sync kembali
+        isInitializedFromCloud = true; 
     } catch (e) {
         console.error("❌ [Init] Failed to pull initial data:", e);
     }
 
-    // Start Listeners immediately after auth
     DataService.startRealtimeListeners();
-
     return true; 
   },
 
@@ -249,10 +229,7 @@ export const DataService = {
     });
     
     if (needsUpdate) {
-      // FIX: HANYA SIMPAN KE LOCAL, JANGAN SYNC KE CLOUD DULU
-      // Ini mencegah overwrite data cloud dengan mock data saat migrasi struktur
       saveToStorage('teachers', migrated);
-      // syncToCloud('teachers', migrated); // <--- REMOVED DANGEROUS SYNC
     }
     return migrated;
   },
@@ -265,7 +242,29 @@ export const DataService = {
   saveRules: (data: CoachingRule[]) => { saveToStorage('rules', data); syncToCloud('rules', data); },
   saveRecords: (data: IncidentRecord[]) => { saveToStorage('records', data); syncToCloud('records', data); },
   saveTeachers: (data: Teacher[]) => { saveToStorage('teachers', data); syncToCloud('teachers', data); },
-  saveCounselingSessions: (data: CounselingSession[]) => { saveToStorage('counseling', data); syncToCloud('counseling', data); },
+  // UPDATE: Use custom logic inside a new helper for sessions
+  saveCounselingSessions: (data: CounselingSession[]) => { 
+      saveToStorage('counseling', data); 
+      syncToCloud('counseling', data); 
+      
+      // SIDE EFFECT: Check if the latest session completed any required records
+      const latestSession = data[data.length - 1]; // Assume appended
+      if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
+          const allRecords = DataService.getRecords();
+          let recordsChanged = false;
+          const updatedRecords = allRecords.map(r => {
+              if (latestSession.relatedRecordIds?.includes(r.id) && r.bkStatus === 'REQUIRED') {
+                  recordsChanged = true;
+                  return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+              }
+              return r;
+          });
+          
+          if (recordsChanged) {
+              DataService.saveRecords(updatedRecords);
+          }
+      }
+  },
   saveSanctions: (data: StudentSanction[]) => { saveToStorage('sanctions', data); syncToCloud('sanctions', data); },
   saveCashflows: (data: CashflowRecord[]) => { saveToStorage('cashflow', data); syncToCloud('cashflow', data); },
   saveActivityLogs: (data: ActivityLog[]) => { saveToStorage('activity_logs', data); syncToCloud('activity_logs', data); },
@@ -282,7 +281,6 @@ export const DataService = {
       timestamp: new Date().toISOString(),
       deviceInfo: navigator.userAgent
     };
-    // Keep only last 500 logs to prevent bloat
     const updatedLogs = [newLog, ...logs].slice(0, 500);
     DataService.saveActivityLogs(updatedLogs);
   },
@@ -294,7 +292,6 @@ export const DataService = {
     
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
-        // Only update if last active was > 1 min ago to reduce writes
         const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
         if (new Date().getTime() - last > 60000) {
            changed = true;
@@ -372,7 +369,6 @@ export const DataService = {
             const existingAdminIndex = teachers.findIndex(t => t.roles.includes(Role.ADMIN));
             if (existingAdminIndex === -1) {
                 const newTeachers = [...teachers, defaultAdmin];
-                // HANYA LOCAL SAVE SAAT LOGIN ADMIN DEFAULT, JANGAN SYNC
                 saveToStorage('teachers', newTeachers);
             }
             user = defaultAdmin;
@@ -381,9 +377,7 @@ export const DataService = {
 
     if (user) {
       localStorage.setItem('currentUser', JSON.stringify(user));
-      // CATAT LOG LOGIN
       DataService.logActivity(user, 'LOGIN');
-      // UPDATE ONLINE STATUS SEGERA
       DataService.updateHeartbeat(user.id);
       return user;
     }
@@ -506,10 +500,20 @@ export const DataService = {
     const allRecords = DataService.getRecords();
     const updatedRecords = allRecords.map(r => {
       if (r.id === recordId) {
+        // UPDATE LOGIC: Check for mandatory BK Counseling (>= 40 Points)
+        let bkStatus: BkCounselingStatus = r.bkStatus || 'NONE';
+        
+        if (status === 'APPROVED') {
+            if (r.pointSnapshot >= 40 && r.typeSnapshot === IncidentTypeCategory.VIOLATION) {
+                bkStatus = 'REQUIRED';
+            }
+        }
+
         return { 
           ...r, 
           status: status,
-          rejectionReason: status === 'REJECTED' ? reason : undefined
+          rejectionReason: status === 'REJECTED' ? reason : undefined,
+          bkStatus: bkStatus // Set BK Status
         };
       }
       return r;

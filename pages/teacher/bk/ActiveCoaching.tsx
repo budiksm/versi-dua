@@ -2,14 +2,16 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, CounselingSession, Role, IncidentRecord, MasterIncidentType } from '../../../types';
-import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, Clock, User, X, Save, Archive, AlertTriangle } from 'lucide-react';
+import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, Clock, User, X, Save, Archive, AlertTriangle, FileWarning } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const ActiveCoaching: React.FC = () => {
   const [activeCases, setActiveCases] = useState<any[]>([]);
   const [closedCases, setClosedCases] = useState<any[]>([]);
+  const [mandatoryCases, setMandatoryCases] = useState<any[]>([]); // New State for >= 40 incidents
+  
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+  const [activeTab, setActiveTab] = useState<'MANDATORY' | 'ACTIVE' | 'HISTORY'>('MANDATORY');
   
   // Data for Selectors
   const [incidents, setIncidents] = useState<MasterIncidentType[]>([]);
@@ -24,7 +26,7 @@ const ActiveCoaching: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [recommendation, setRecommendation] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
   const [sessionStatus, setSessionStatus] = useState<'OPEN' | 'CLOSED'>('OPEN');
-  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]); // New: Linked Cases
+  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -51,7 +53,33 @@ const ActiveCoaching: React.FC = () => {
 
     const activeList: any[] = [];
     const historyList: any[] = [];
+    const mandatoryList: any[] = [];
 
+    // Filter Incidents that are REQUIRED
+    const requiredRecords = records.filter(r => r.bkStatus === 'REQUIRED');
+    
+    // Group required records by student
+    const studentMandatoryMap = new Map<string, IncidentRecord[]>();
+    requiredRecords.forEach(r => {
+        const list = studentMandatoryMap.get(r.studentId) || [];
+        list.push(r);
+        studentMandatoryMap.set(r.studentId, list);
+    });
+
+    studentMandatoryMap.forEach((recs, studId) => {
+        const s = students.find(st => st.id === studId);
+        if (s) {
+            mandatoryList.push({
+                student: s,
+                className: classes.find(c => c.id === s.classId)?.name || '-',
+                violationCount: recs.length,
+                violations: recs,
+                totalPendingPoints: recs.reduce((sum, r) => sum + r.pointSnapshot, 0)
+            });
+        }
+    });
+
+    // General Active/History Logic
     students.forEach(s => {
       const stats = DataService.calculateStudentPoints(s.id, records, incidentsData);
       const studentCounselings = counselings.filter(c => c.studentId === s.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -59,16 +87,10 @@ const ActiveCoaching: React.FC = () => {
       const latestSession = studentCounselings[0];
       const hasOpenSession = latestSession?.status === 'OPEN';
       
-      // LOGIKA HIRARKI BK:
-      // 1. Poin >= 40 (High Risk)
-      // 2. Ada Referral dari Wali Kelas ('TO_BK')
-      
       const latestHomeroomSession = studentCounselings.find(c => c.sessionType === 'HOMEROOM');
       const hasReferralFromHomeroom = latestHomeroomSession?.recommendation === 'TO_BK';
-      
       const isHighRisk = stats.effectiveViolationScore >= 40;
 
-      // Base Data Object
       const caseData = {
         student: s,
         className: classes.find(c => c.id === s.classId)?.name || '-',
@@ -81,7 +103,6 @@ const ActiveCoaching: React.FC = () => {
         historyCount: studentCounselings.length
       };
 
-      // Filter Logic:
       const isNewCase = !latestSession && (isHighRisk || hasReferralFromHomeroom);
       const needsAttention = hasOpenSession || isNewCase;
 
@@ -92,37 +113,29 @@ const ActiveCoaching: React.FC = () => {
       }
     });
 
-    // Sort Active: Open sessions first, then by score
-    activeList.sort((a, b) => {
-      if (a.hasOpenSession && !b.hasOpenSession) return -1;
-      if (!a.hasOpenSession && b.hasOpenSession) return 1;
-      return b.score - a.score;
-    });
-
-    // Sort History: Latest session date
+    activeList.sort((a, b) => b.score - a.score);
     historyList.sort((a, b) => {
        const dateA = a.latestSession ? new Date(a.latestSession.date).getTime() : 0;
        const dateB = b.latestSession ? new Date(b.latestSession.date).getTime() : 0;
        return dateB - dateA;
     });
 
+    setMandatoryCases(mandatoryList);
     setActiveCases(activeList);
     setClosedCases(historyList);
   };
 
-  const handleOpenModal = (student: Student) => {
+  const handleOpenModal = (student: Student, preSelectedRecordIds: string[] = []) => {
     setSelectedStudent(student);
     setNotes('');
     setRecommendation('NONE');
     setSessionStatus('OPEN');
-    setSelectedRecordIds([]); // Reset selection
+    setSelectedRecordIds(preSelectedRecordIds);
 
-    // Ambil data pelanggaran siswa ini untuk ditampilkan di checklist
-    // Hanya tampilkan pelanggaran (VIOLATION)
     const violations = allRecords
         .filter(r => r.studentId === student.id && r.typeSnapshot === 'VIOLATION')
         .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 10); // Ambil 10 terakhir
+        .slice(0, 15);
     
     setStudentViolations(violations);
     setShowModal(true);
@@ -154,7 +167,7 @@ const ActiveCoaching: React.FC = () => {
       recommendation: recommendation,
       status: sessionStatus,
       sessionType: 'BK',
-      relatedRecordIds: selectedRecordIds // LINK KE KASUS
+      relatedRecordIds: selectedRecordIds
     };
 
     DataService.saveCounselingSessions([...allSessions, newSession]);
@@ -162,12 +175,16 @@ const ActiveCoaching: React.FC = () => {
     setTimeout(() => {
       setIsSubmitting(false);
       setShowModal(false);
-      loadData(); // Refresh list
+      loadData(); 
     }, 600);
   };
 
   const getFilteredList = () => {
-     const list = activeTab === 'ACTIVE' ? activeCases : closedCases;
+     let list: any[] = [];
+     if (activeTab === 'MANDATORY') list = mandatoryCases;
+     else if (activeTab === 'ACTIVE') list = activeCases;
+     else list = closedCases;
+
      return list.filter(c => 
         c.student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.student.nis.includes(searchTerm)
@@ -185,16 +202,22 @@ const ActiveCoaching: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 overflow-x-auto">
+         <button 
+           onClick={() => setActiveTab('MANDATORY')}
+           className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'MANDATORY' ? 'border-red-600 text-red-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+         >
+           <FileWarning className="h-4 w-4" /> Antrean Kasus Berat ({mandatoryCases.length})
+         </button>
          <button 
            onClick={() => setActiveTab('ACTIVE')}
-           className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${activeTab === 'ACTIVE' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+           className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'ACTIVE' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
          >
-           <AlertCircle className="h-4 w-4" /> Dalam Pantauan ({activeCases.length})
+           <AlertCircle className="h-4 w-4" /> Pantauan Umum ({activeCases.length})
          </button>
          <button 
            onClick={() => setActiveTab('HISTORY')}
-           className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${activeTab === 'HISTORY' ? 'border-slate-500 text-slate-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+           className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'HISTORY' ? 'border-slate-500 text-slate-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
          >
            <Archive className="h-4 w-4" /> Riwayat Selesai ({closedCases.length})
          </button>
@@ -218,15 +241,11 @@ const ActiveCoaching: React.FC = () => {
            <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-500">
              <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
              <p className="font-bold text-slate-700">Daftar Kosong.</p>
-             <p className="text-sm">
-                {activeTab === 'ACTIVE' 
-                    ? "Tidak ada siswa yang sedang dalam sesi aktif atau kasus baru." 
-                    : "Belum ada riwayat konseling yang selesai."}
-             </p>
+             <p className="text-sm">Tidak ada data yang sesuai filter saat ini.</p>
            </div>
         ) : (
           displayedCases.map((item, idx) => (
-            <div key={idx} className={`bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-all ${item.hasOpenSession ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200'}`}>
+            <div key={idx} className={`bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-all ${item.hasOpenSession || activeTab === 'MANDATORY' ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200'}`}>
               <div className="p-5 flex flex-col md:flex-row gap-4 justify-between">
                 
                 {/* Info Siswa */}
@@ -236,50 +255,51 @@ const ActiveCoaching: React.FC = () => {
                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs font-bold border border-slate-200">
                        {item.className}
                      </span>
-                     {item.hasOpenSession && (
+                     {activeTab === 'MANDATORY' && (
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-bold flex items-center gap-1 animate-pulse">
+                            <FileWarning className="h-3 w-3" /> WAJIB KONSELING
+                        </span>
+                     )}
+                     {item.hasOpenSession && activeTab !== 'MANDATORY' && (
                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-bold flex items-center gap-1 animate-pulse">
                          <Clock className="h-3 w-3" /> SESI AKTIF
                        </span>
                      )}
-                     {item.isReferral && (
-                       <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-bold flex items-center gap-1">
-                         <AlertCircle className="h-3 w-3" /> RUJUKAN WALI KELAS
-                       </span>
-                     )}
                    </div>
                    
-                   <div className="flex flex-wrap gap-4 text-sm mb-3">
-                      <div className={`flex items-center gap-1.5 font-bold px-2 py-1 rounded ${item.score >= 40 ? 'text-red-600 bg-red-50' : 'text-slate-600 bg-slate-50'}`}>
-                         <AlertCircle className="h-4 w-4" /> {item.score} Poin
-                      </div>
-                      <div className={`flex items-center gap-1.5 px-2 py-1 rounded font-medium ${item.statusColor}`}>
-                         {item.statusLabel}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-500 px-2 py-1 bg-slate-50 rounded">
-                         <MessageSquare className="h-4 w-4" /> {item.historyCount}x Riwayat
-                      </div>
-                   </div>
+                   {activeTab === 'MANDATORY' ? (
+                       <div className="bg-red-50 p-3 rounded-lg border border-red-100 mb-3">
+                           <p className="text-xs font-bold text-red-800 mb-1">Daftar Pelanggaran Berat (≥ 40 Poin):</p>
+                           <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
+                               {item.violations.map((v: any) => {
+                                   const incName = incidents.find(i => i.id === v.incidentTypeId)?.name || 'Unknown';
+                                   return <li key={v.id}>{incName} ({v.pointSnapshot} Poin) - {new Date(v.date).toLocaleDateString()}</li>
+                               })}
+                           </ul>
+                           <p className="text-[10px] text-red-600 mt-2 italic">*Klik "Tangani Kasus" untuk melakukan konseling pada pelanggaran ini.</p>
+                       </div>
+                   ) : (
+                       <div className="flex flex-wrap gap-4 text-sm mb-3">
+                          <div className={`flex items-center gap-1.5 font-bold px-2 py-1 rounded ${item.score >= 40 ? 'text-red-600 bg-red-50' : 'text-slate-600 bg-slate-50'}`}>
+                             <AlertCircle className="h-4 w-4" /> {item.score} Poin
+                          </div>
+                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded font-medium ${item.statusColor}`}>
+                             {item.statusLabel}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-500 px-2 py-1 bg-slate-50 rounded">
+                             <MessageSquare className="h-4 w-4" /> {item.historyCount}x Riwayat
+                          </div>
+                       </div>
+                   )}
 
-                   {/* Last Session Info */}
-                   {item.latestSession ? (
+                   {/* Last Session Info (Only show in Active/History tabs) */}
+                   {activeTab !== 'MANDATORY' && item.latestSession && (
                       <div className={`p-3 rounded-lg border text-sm ${item.latestSession.status === 'CLOSED' ? 'bg-slate-50 border-slate-200' : 'bg-blue-50 border-blue-100'}`}>
                         <p className="text-slate-500 text-xs mb-1 flex items-center gap-1">
                            <User className="h-3 w-3" /> 
                            Terakhir oleh <b>{item.latestSession.counselorName}</b> pada {new Date(item.latestSession.date).toLocaleDateString()}
                         </p>
                         <p className="text-slate-700 italic">"{item.latestSession.notes}"</p>
-                        {item.latestSession.relatedRecordIds && item.latestSession.relatedRecordIds.length > 0 && (
-                            <div className="mt-2 text-[10px] bg-white bg-opacity-50 p-1 rounded inline-block border border-opacity-20 border-black">
-                                <span className="font-bold">Kasus terkait:</span> {item.latestSession.relatedRecordIds.length} pelanggaran
-                            </div>
-                        )}
-                        <p className={`text-[10px] mt-1 uppercase font-bold ${item.latestSession.status === 'CLOSED' ? 'text-emerald-600' : 'text-blue-600'}`}>
-                            Status: {item.latestSession.status === 'CLOSED' ? 'SELESAI (CLOSED)' : 'SEDANG BERJALAN (OPEN)'}
-                        </p>
-                      </div>
-                   ) : (
-                      <div className="text-xs text-slate-400 italic bg-slate-50 p-2 rounded">
-                        Belum ada riwayat konseling tercatat. Kasus baru.
                       </div>
                    )}
                 </div>
@@ -287,11 +307,11 @@ const ActiveCoaching: React.FC = () => {
                 {/* Actions */}
                 <div className="flex flex-col gap-2 justify-center min-w-[160px]">
                    <button 
-                     onClick={() => handleOpenModal(item.student)}
-                     className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm"
+                     onClick={() => handleOpenModal(item.student, activeTab === 'MANDATORY' ? item.violations.map((v:any) => v.id) : [])}
+                     className={`w-full py-2 px-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 shadow-sm ${activeTab === 'MANDATORY' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                    >
                      <HeartHandshake className="h-4 w-4" />
-                     {activeTab === 'ACTIVE' ? (item.hasOpenSession ? 'Lanjutkan Sesi' : 'Mulai Sesi') : 'Catat Sesi Baru'}
+                     {activeTab === 'MANDATORY' ? 'Tangani Kasus' : (item.hasOpenSession ? 'Lanjutkan Sesi' : 'Mulai Sesi')}
                    </button>
                    <Link 
                      to={`/teacher/student/${item.student.id}`}
@@ -307,7 +327,7 @@ const ActiveCoaching: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL KONSELING BERBASIS KASUS */}
+      {/* MODAL KONSELING */}
       {showModal && selectedStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in">
            <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -326,7 +346,7 @@ const ActiveCoaching: React.FC = () => {
                         Mencatat untuk: <b>{selectedStudent.name}</b> ({selectedStudent.nis})
                     </div>
 
-                    {/* PILIH KASUS TERKAIT (NEW FEATURE) */}
+                    {/* PILIH KASUS TERKAIT */}
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-orange-500" />
@@ -339,6 +359,8 @@ const ActiveCoaching: React.FC = () => {
                                 studentViolations.map(record => {
                                     const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
                                     const isSelected = selectedRecordIds.includes(record.id);
+                                    const isRequired = record.bkStatus === 'REQUIRED';
+                                    
                                     return (
                                         <div 
                                             key={record.id} 
@@ -350,6 +372,7 @@ const ActiveCoaching: React.FC = () => {
                                             </div>
                                             <div className="flex-1">
                                                 <span className="font-bold">{incidentName}</span> <span className="text-red-600">({record.pointSnapshot} Pt)</span>
+                                                {isRequired && <span className="ml-2 bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}
                                                 <div className="text-slate-500">{new Date(record.date).toLocaleDateString()}</div>
                                             </div>
                                         </div>
@@ -357,7 +380,9 @@ const ActiveCoaching: React.FC = () => {
                                 })
                             )}
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-1">Centang pelanggaran yang sedang dibahas dalam sesi ini.</p>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                            *Centang pelanggaran yang sedang dibahas. Jika kasus bertanda <b>WAJIB</b> dicentang, statusnya akan berubah menjadi selesai setelah disimpan.
+                        </p>
                     </div>
 
                     <div>
@@ -382,9 +407,6 @@ const ActiveCoaching: React.FC = () => {
                             <option value="OPEN">OPEN (Masih Dipantau)</option>
                             <option value="CLOSED">CLOSED (Selesai)</option>
                         </select>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                            *Pilih CLOSED jika pembinaan kasus ini selesai.
-                        </p>
                         </div>
                         <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Rekomendasi</label>

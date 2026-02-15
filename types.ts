@@ -74,6 +74,7 @@ export interface MasterIncidentType {
 }
 
 export type IncidentStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
+export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED'; // NEW TYPE
 
 export interface IncidentRecord {
   id: string;
@@ -89,6 +90,9 @@ export interface IncidentRecord {
   // Approval Logic
   status?: IncidentStatus; // Optional for backward compatibility (default APPROVED)
   rejectionReason?: string;
+
+  // BK Logic (New)
+  bkStatus?: BkCounselingStatus; 
 }
 
 export interface CoachingRule {
