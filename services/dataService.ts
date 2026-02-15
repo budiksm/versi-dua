@@ -248,20 +248,24 @@ export const DataService = {
       syncToCloud('counseling', data); 
       
       // SIDE EFFECT: Check if the latest session completed any required records
-      const latestSession = data[data.length - 1]; // Assume appended
-      if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
-          const allRecords = DataService.getRecords();
-          let recordsChanged = false;
-          const updatedRecords = allRecords.map(r => {
-              if (latestSession.relatedRecordIds?.includes(r.id) && r.bkStatus === 'REQUIRED') {
-                  recordsChanged = true;
-                  return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+      if (data.length > 0) {
+          const latestSession = data[data.length - 1]; 
+          if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
+              const allRecords = DataService.getRecords();
+              let recordsChanged = false;
+              const relatedIds = latestSession.relatedRecordIds;
+              
+              const updatedRecords = allRecords.map(r => {
+                  if (relatedIds.includes(r.id) && r.bkStatus === 'REQUIRED') {
+                      recordsChanged = true;
+                      return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+                  }
+                  return r;
+              });
+              
+              if (recordsChanged) {
+                  DataService.saveRecords(updatedRecords);
               }
-              return r;
-          });
-          
-          if (recordsChanged) {
-              DataService.saveRecords(updatedRecords);
           }
       }
   },

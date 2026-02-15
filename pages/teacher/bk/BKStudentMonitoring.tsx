@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, ClassGroup, CoachingRule, IncidentRecord, MasterIncidentType, Role } from '../../../types';
-import { Search, ArrowUpRight, ChevronUp, ChevronDown, ArrowUpDown, Filter } from 'lucide-react';
+import { Search, ArrowUpRight, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 type SortKey = 'name' | 'violation' | 'status';

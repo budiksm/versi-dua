@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DataService } from '../../services/dataService';
@@ -40,8 +39,7 @@ import {
   User,
   PenSquare,
   FileText,
-  Calendar,
-  FileWarning
+  Calendar
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -262,11 +260,6 @@ const StudentProfile: React.FC = () => {
     };
 
     const allRecords = DataService.getRecords();
-    // Use dataService helper to ensure side effects (like BK trigger) are handled if we were using it, 
-    // but here we are constructing object manually.
-    // Ideally we should move 'save' logic to a method that handles the 'resolution' trigger too if auto-approved.
-    // For now, let's just save. The 'resolveIncident' is what triggers the BK Status usually.
-    // BUT, if it is auto-approved here (isReporterHomeroom), we need to set BK Status manually if points >= 40.
     
     if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= 40 && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) {
         newRecord.bkStatus = 'REQUIRED';
@@ -788,7 +781,7 @@ const StudentProfile: React.FC = () => {
                                 {getStatusBadge(record.status)}
                                 {record.bkStatus === 'REQUIRED' && (
                                     <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold animate-pulse border border-red-200">
-                                        <FileWarning className="h-3 w-3" /> BUTUH KONSELING BK
+                                        <AlertTriangle className="h-3 w-3" /> BUTUH KONSELING BK
                                     </span>
                                 )}
                                 {record.bkStatus === 'COMPLETED' && (
@@ -1071,7 +1064,7 @@ const StudentProfile: React.FC = () => {
                                 <p className="text-xs font-bold text-slate-400 uppercase mb-2">Status</p>{getStatusBadge(selectedRecord.status)}
                                 {selectedRecord.bkStatus === 'REQUIRED' && (
                                     <div className="mt-2 bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold border border-red-200 flex items-center gap-1">
-                                        <FileWarning className="h-3 w-3" /> WAJIB BK
+                                        <AlertTriangle className="h-3 w-3" /> WAJIB BK
                                     </div>
                                 )}
                                 {selectedRecord.bkStatus === 'COMPLETED' && (

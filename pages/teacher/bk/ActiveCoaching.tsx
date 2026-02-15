@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, CounselingSession, Role, IncidentRecord, MasterIncidentType } from '../../../types';
-import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, Clock, User, X, Save, Archive, AlertTriangle, FileWarning } from 'lucide-react';
+import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, Clock, User, X, Save, Archive, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const ActiveCoaching: React.FC = () => {
@@ -207,7 +207,7 @@ const ActiveCoaching: React.FC = () => {
            onClick={() => setActiveTab('MANDATORY')}
            className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'MANDATORY' ? 'border-red-600 text-red-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
          >
-           <FileWarning className="h-4 w-4" /> Antrean Kasus Berat ({mandatoryCases.length})
+           <AlertTriangle className="h-4 w-4" /> Antrean Kasus Berat ({mandatoryCases.length})
          </button>
          <button 
            onClick={() => setActiveTab('ACTIVE')}
@@ -257,7 +257,7 @@ const ActiveCoaching: React.FC = () => {
                      </span>
                      {activeTab === 'MANDATORY' && (
                         <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-bold flex items-center gap-1 animate-pulse">
-                            <FileWarning className="h-3 w-3" /> WAJIB KONSELING
+                            <AlertTriangle className="h-3 w-3" /> WAJIB KONSELING
                         </span>
                      )}
                      {item.hasOpenSession && activeTab !== 'MANDATORY' && (
