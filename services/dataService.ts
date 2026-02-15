@@ -32,6 +32,9 @@ let syncListeners: ((state: SyncState, time: Date | null, error: string | null) 
 // --- DATA CHANGE LISTENERS (REALTIME) ---
 let dataChangeListeners: (() => void)[] = [];
 
+// Flag to ensure we don't overwrite cloud data with mock data during init
+let isInitializedFromCloud = false;
+
 const notifyListeners = (state: SyncState, errorMsg: string | null = null) => {
   currentSyncState = state;
   lastError = errorMsg;
@@ -97,6 +100,13 @@ const saveToStorage = (key: string, data: any) => {
 const syncToCloud = async (collectionName: string, data: any) => {
   if (!db) return; 
   
+  // SAFETY CHECK: Jangan sync jika kita belum pernah load dari cloud
+  // Ini mencegah Mock Data menimpa Real Data saat browser di-reset.
+  if (!isInitializedFromCloud) {
+      console.warn(`[Cloud] Sync blocked for ${collectionName}. Data not yet loaded from cloud.`);
+      return;
+  }
+  
   notifyListeners('SYNCING');
   try {
     const cleanData = JSON.parse(JSON.stringify(data)); 
@@ -150,6 +160,14 @@ export const DataService = {
                     saveToStorage(colName, data);
                     notifyDataChange(); // Beritahu komponen React untuk re-render
                 }
+                
+                // Mark as initialized once we get data
+                isInitializedFromCloud = true;
+            } else {
+                console.log(`⚠️ [Realtime] Collection ${colName} is empty on server.`);
+                // If document doesn't exist on server, we might be starting fresh or wiped.
+                // In this case, we allow local data to take precedence after a short delay
+                if (!isInitializedFromCloud) isInitializedFromCloud = true; 
             }
         }, (error) => {
             console.error(`Error listening to ${colName}:`, error);
@@ -175,6 +193,30 @@ export const DataService = {
     if (!isAuthSuccess) {
        notifyListeners('ERROR', "Gagal Login Sistem (Anonymous Auth Failed)");
        return false;
+    }
+
+    // FORCE PULL: Tarik data sekali di awal untuk memastikan LocalStorage sinkron
+    // sebelum UI dirender sepenuhnya.
+    const collections = [
+        'teachers', 'students', 'classes', 'records', 'counseling', 
+        'sanctions', 'categories', 'incidentTypes', 'rules', 'cashflow'
+    ];
+
+    console.log("⬇️ [Init] Force pulling data from Cloud...");
+    try {
+        await Promise.all(collections.map(async (col) => {
+            const snap = await getDoc(doc(db, "school_data", col));
+            if (snap.exists()) {
+                const remoteData = snap.data().data;
+                if (remoteData) {
+                    saveToStorage(col, remoteData);
+                }
+            }
+        }));
+        console.log("✅ [Init] Data synchronized.");
+        isInitializedFromCloud = true; // Izinkan sync kembali
+    } catch (e) {
+        console.error("❌ [Init] Failed to pull initial data:", e);
     }
 
     // Start Listeners immediately after auth
@@ -205,9 +247,12 @@ export const DataService = {
       if (updated) needsUpdate = true;
       return t;
     });
+    
     if (needsUpdate) {
+      // FIX: HANYA SIMPAN KE LOCAL, JANGAN SYNC KE CLOUD DULU
+      // Ini mencegah overwrite data cloud dengan mock data saat migrasi struktur
       saveToStorage('teachers', migrated);
-      syncToCloud('teachers', migrated);
+      // syncToCloud('teachers', migrated); // <--- REMOVED DANGEROUS SYNC
     }
     return migrated;
   },
@@ -327,7 +372,8 @@ export const DataService = {
             const existingAdminIndex = teachers.findIndex(t => t.roles.includes(Role.ADMIN));
             if (existingAdminIndex === -1) {
                 const newTeachers = [...teachers, defaultAdmin];
-                DataService.saveTeachers(newTeachers); 
+                // HANYA LOCAL SAVE SAAT LOGIN ADMIN DEFAULT, JANGAN SYNC
+                saveToStorage('teachers', newTeachers);
             }
             user = defaultAdmin;
         }
