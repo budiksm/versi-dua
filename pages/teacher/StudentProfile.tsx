@@ -40,7 +40,8 @@ import {
   User,
   PenSquare,
   FileText,
-  Calendar
+  Calendar,
+  Check
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -402,6 +403,9 @@ const StudentProfile: React.FC = () => {
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
   const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 15);
 
+  // Filter for BK Form: ONLY Show ACTIVE (REQUIRED) Violations
+  const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');
+
   return (
     <div className="space-y-8 pb-12">
       <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -702,29 +706,38 @@ const StudentProfile: React.FC = () => {
                   ) : (
                     history.map(record => {
                       const incName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
+                      const isCompleted = record.bkStatus === 'COMPLETED';
+                      
                       return (
-                        <div key={record.id} onClick={() => setSelectedRecord(record)} className="bg-white p-3 rounded-lg border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group">
-                          <div className="flex justify-between items-start mb-1">
+                        <div 
+                            key={record.id} 
+                            onClick={() => setSelectedRecord(record)} 
+                            className={`bg-white p-3 rounded-lg border shadow-sm transition-all cursor-pointer group relative overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}
+                        >
+                          {/* Visual Indicator for Completed Case */}
+                          {isCompleted && (
+                              <div className="absolute top-0 right-0 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-emerald-200 flex items-center gap-1">
+                                  <Check className="h-3 w-3" /> KASUS SELESAI
+                              </div>
+                          )}
+
+                          <div className="flex justify-between items-start mb-1 pr-16">
                              <div className="flex-1">
-                                <h4 className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors line-clamp-1">{incName}</h4>
+                                <h4 className={`font-bold text-sm line-clamp-1 ${isCompleted ? 'text-emerald-900' : 'text-slate-800 group-hover:text-indigo-600'}`}>{incName}</h4>
                                 <p className="text-xs text-slate-500 mt-0.5">{new Date(record.date).toLocaleDateString()} • {record.recordedBy}</p>
                              </div>
-                             <span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${record.typeSnapshot === 'VIOLATION' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                                {record.typeSnapshot === 'VIOLATION' ? `+${record.pointSnapshot}` : record.pointSnapshot} Pt
-                             </span>
+                             
                           </div>
                           
                           <div className="flex justify-between items-center mt-2">
-                             <div>
+                             <div className="flex items-center gap-2">
                                 {getStatusBadge(record.status)}
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${record.typeSnapshot === 'VIOLATION' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                    {record.typeSnapshot === 'VIOLATION' ? `+${record.pointSnapshot}` : record.pointSnapshot} Pt
+                                </span>
                                 {record.bkStatus === 'REQUIRED' && (
-                                    <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold animate-pulse border border-red-200">
-                                        <AlertTriangle className="h-3 w-3" /> BUTUH KONSELING BK
-                                    </span>
-                                )}
-                                {record.bkStatus === 'COMPLETED' && (
-                                    <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold border border-blue-200">
-                                        <HeartHandshake className="h-3 w-3" /> BK SELESAI
+                                    <span className="inline-flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold animate-pulse border border-red-200">
+                                        <AlertTriangle className="h-3 w-3" /> BUTUH BK
                                     </span>
                                 )}
                              </div>
@@ -813,16 +826,17 @@ const StudentProfile: React.FC = () => {
                          Form ini terbuka karena siswa memiliki Poin ≥ 40, ada kasus berat, atau dirujuk oleh Wali Kelas.
                       </div>
 
+                      {/* --- RECORD SELECTOR --- */}
                       <div>
                          <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-orange-500" />
-                            Pilih Kasus / Pelanggaran Terkait
+                            Pilih Kasus / Pelanggaran Terkait (Wajib Selesaikan)
                          </label>
                          <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-40 overflow-y-auto p-2 space-y-1">
-                            {violationRecords.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic p-2">Tidak ada data pelanggaran tercatat.</p>
+                            {activeViolationRecordsForForm.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic p-2">Tidak ada data pelanggaran aktif.</p>
                             ) : (
-                                violationRecords.map(record => {
+                                activeViolationRecordsForForm.map(record => {
                                     const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
                                     const isSelected = selectedCounselingRecords.includes(record.id);
                                     const isRequired = record.bkStatus === 'REQUIRED';
@@ -898,6 +912,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
+        {/* ... (Existing Tabs for Sanctions & Locked States remain same) ... */}
         {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
             <div className="lg:col-span-3">
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
@@ -908,6 +923,7 @@ const StudentProfile: React.FC = () => {
             </div>
         )}
         
+        {/* TAB SANCTIONS (Same as previous implementation) */}
         {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
            <>
              <div className="lg:col-span-2 space-y-6">
@@ -972,6 +988,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
+        {/* ... (Existing Tab for Incident Detail Modal) ... */}
         {selectedRecord && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
                 <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -996,8 +1013,8 @@ const StudentProfile: React.FC = () => {
                                     </div>
                                 )}
                                 {selectedRecord.bkStatus === 'COMPLETED' && (
-                                    <div className="mt-2 bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold border border-blue-200 flex items-center gap-1">
-                                        <HeartHandshake className="h-3 w-3" /> BK SELESAI
+                                    <div className="mt-2 bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-bold border border-emerald-200 flex items-center gap-1">
+                                        <Check className="h-3 w-3" /> BK SELESAI
                                     </div>
                                 )}
                                 <div className={`mt-3 text-3xl font-bold ${selectedRecord.typeSnapshot === 'VIOLATION' ? 'text-red-600' : 'text-blue-600'}`}>{selectedRecord.typeSnapshot === 'VIOLATION' ? '+' : ''}{selectedRecord.pointSnapshot}</div>

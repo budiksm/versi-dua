@@ -132,10 +132,11 @@ const ActiveCoaching: React.FC = () => {
     setSessionStatus('OPEN');
     setSelectedRecordIds(preSelectedRecordIds);
 
+    // FILTER: Hanya ambil pelanggaran yang BELUM selesai (bkStatus !== 'COMPLETED')
+    // Ini memastikan kasus yang sudah ditangani hilang dari daftar checklist
     const violations = allRecords
-        .filter(r => r.studentId === student.id && r.typeSnapshot === 'VIOLATION')
-        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 15);
+        .filter(r => r.studentId === student.id && r.typeSnapshot === 'VIOLATION' && r.bkStatus !== 'COMPLETED')
+        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     setStudentViolations(violations);
     setShowModal(true);
@@ -350,11 +351,11 @@ const ActiveCoaching: React.FC = () => {
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-orange-500" />
-                            Pilih Kasus / Pelanggaran Terkait
+                            Pilih Kasus / Pelanggaran Aktif
                         </label>
                         <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-40 overflow-y-auto p-2 space-y-1">
                             {studentViolations.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic p-2">Tidak ada data pelanggaran tercatat.</p>
+                                <p className="text-xs text-slate-400 italic p-2 text-center">Tidak ada pelanggaran aktif/baru.</p>
                             ) : (
                                 studentViolations.map(record => {
                                     const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
@@ -381,7 +382,7 @@ const ActiveCoaching: React.FC = () => {
                             )}
                         </div>
                         <p className="text-[10px] text-slate-500 mt-1">
-                            *Centang pelanggaran yang sedang dibahas. Jika kasus bertanda <b>WAJIB</b> dicentang, statusnya akan berubah menjadi selesai setelah disimpan.
+                            *Kasus yang dicentang akan ditandai sebagai <b>SELESAI</b> dan dihapus dari daftar aktif.
                         </p>
                     </div>
 
