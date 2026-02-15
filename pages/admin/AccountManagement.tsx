@@ -128,7 +128,7 @@ const AccountManagement: React.FC = () => {
     { id: Role.KESISWAAN, label: 'Staf Kesiswaan', color: 'bg-orange-100 text-orange-700' },
     { id: Role.ADMIN, label: 'Admin / Tata Usaha', color: 'bg-purple-100 text-purple-700' },
     { id: Role.STUDENT, label: 'Siswa', color: 'bg-pink-100 text-pink-700' },
-    { id: Role.OSIS, label: 'OSIS (Petugas Gerbang)', color: 'bg-yellow-100 text-yellow-800' },
+    { id: Role.OSIS, label: 'OSIS', color: 'bg-yellow-100 text-yellow-800' },
   ];
 
   return (
