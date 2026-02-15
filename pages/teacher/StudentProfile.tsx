@@ -42,7 +42,10 @@ import {
   UserCheck,
   Ban,
   User,
-  PenSquare
+  PenSquare,
+  Eye,
+  FileText,
+  Calendar
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -81,6 +84,9 @@ const StudentProfile: React.FC = () => {
   
   // EDIT STATE FOR SANCTION
   const [editingSanctionId, setEditingSanctionId] = useState<string | null>(null);
+
+  // DETAIL MODAL STATE
+  const [selectedRecord, setSelectedRecord] = useState<IncidentRecord | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -149,6 +155,9 @@ const StudentProfile: React.FC = () => {
   const isEducator = roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r));
   const isBK = roles.includes(Role.BK);
   const isKesiswaan = roles.includes(Role.KESISWAAN);
+
+  // ACCESS CONTROL FOR MEDIA
+  const canViewEvidence = currentUser && !roles.includes(Role.STUDENT) && !roles.includes(Role.OSIS);
 
   // Akses BK: User BK AND (Poin >= 40 OR Ada Rujukan Walikelas)
   const canAccessBK = isBK && (stats.effectiveViolationScore >= 40 || hasReferralToBK);
@@ -419,12 +428,12 @@ const StudentProfile: React.FC = () => {
   // Helper untuk menampilkan status approval
   const getStatusBadge = (status?: IncidentStatus) => {
     if (status === 'PENDING') {
-      return <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold border border-yellow-200 flex items-center gap-1"><Clock className="h-3 w-3"/> MENUNGGU PERSETUJUAN</span>;
+      return <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold border border-yellow-200 flex items-center gap-1"><Clock className="h-3 w-3"/> MENUNGGU VERIFIKASI</span>;
     }
     if (status === 'REJECTED') {
-      return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold border border-red-200 flex items-center gap-1"><Ban className="h-3 w-3"/> DITOLAK (TIDAK DIHITUNG)</span>;
+      return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold border border-red-200 flex items-center gap-1"><Ban className="h-3 w-3"/> DITOLAK</span>;
     }
-    return null; // Approved is default/clean
+    return <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold border border-green-200 flex items-center gap-1"><CheckCircle2 className="h-3 w-3"/> TERVERIFIKASI</span>;
   };
 
   // --- FILTERED SESSIONS LISTS ---
@@ -802,7 +811,7 @@ const StudentProfile: React.FC = () => {
                   Riwayat Kejadian
                 </div>
 
-                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
+                <div className="space-y-3 max-h-[800px] overflow-y-auto pr-1">
                   {history.length === 0 ? (
                     <div className="text-slate-500 text-sm italic">Belum ada riwayat tercatat.</div>
                   ) : (
@@ -810,70 +819,43 @@ const StudentProfile: React.FC = () => {
                       const incName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
                       const type = record.typeSnapshot;
                       
-                      let borderColor = 'bg-slate-400';
                       let badgeColor = 'bg-slate-100 text-slate-700';
                       let sign = '';
 
                       if (type === IncidentTypeCategory.VIOLATION) {
-                        borderColor = 'bg-red-500';
-                        badgeColor = 'bg-red-100 text-red-700';
+                        badgeColor = 'bg-red-50 text-red-700';
                         sign = '+';
                       } else if (type === IncidentTypeCategory.ACHIEVEMENT) {
-                        borderColor = 'bg-emerald-500';
-                        badgeColor = 'bg-emerald-100 text-emerald-700';
+                        badgeColor = 'bg-emerald-50 text-emerald-700';
                         sign = '';
                       } else if (type === IncidentTypeCategory.REDEMPTION) {
-                        borderColor = 'bg-blue-500';
-                        badgeColor = 'bg-blue-100 text-blue-700';
-                        sign = '✓ '; // Redemption doesnt change score, just marks completion
-                      }
-
-                      // Override color for Rejected/Pending
-                      if (record.status === 'REJECTED') {
-                         borderColor = 'bg-slate-300';
-                         badgeColor = 'bg-slate-200 text-slate-500 line-through';
-                      } else if (record.status === 'PENDING') {
-                         borderColor = 'bg-yellow-400';
-                         badgeColor = 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+                        badgeColor = 'bg-blue-50 text-blue-700';
+                        sign = '✓ ';
                       }
 
                       return (
-                        <div key={record.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
-                          <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${borderColor}`} />
-                          <div className="flex justify-between items-start">
-                            <div className="text-xs font-semibold text-slate-400 mb-1">
-                              {new Date(record.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
-                            </div>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${badgeColor}`}>
-                              {type === IncidentTypeCategory.REDEMPTION ? 'Penebusan' : `${sign}${record.pointSnapshot} Poin`}
-                            </span>
+                        <div 
+                          key={record.id} 
+                          onClick={() => setSelectedRecord(record)}
+                          className="bg-white p-3 rounded-lg border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group"
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                             <div className="flex-1">
+                                <h4 className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors line-clamp-1">{incName}</h4>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                   {new Date(record.date).toLocaleDateString()} • {record.recordedBy}
+                                </p>
+                             </div>
+                             <span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${badgeColor}`}>
+                                {type === IncidentTypeCategory.REDEMPTION ? 'TEBUS' : `${sign}${record.pointSnapshot} Pt`}
+                             </span>
                           </div>
                           
-                          <div className="mb-1">
-                             {getStatusBadge(record.status)}
-                          </div>
-
-                          <h4 className="font-bold text-slate-800 text-sm">{incName}</h4>
-                          
-                          {record.proofImage && (
-                            <div className="mt-2 rounded-lg overflow-hidden border border-slate-100">
-                              <img src={record.proofImage} alt="Bukti" className="w-full h-32 object-cover" />
-                            </div>
-                          )}
-                          
-                          {record.notes && (
-                            <p className="text-xs text-slate-600 mt-2 bg-slate-50 p-2 rounded">"{record.notes}"</p>
-                          )}
-
-                          {record.status === 'REJECTED' && record.rejectionReason && (
-                             <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded border border-red-100">
-                                <b>Ditolak:</b> "{record.rejectionReason}"
-                             </p>
-                          )}
-
-                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400 flex justify-between">
-                            <span>Pencatat: {record.recordedBy}</span>
-                            <span className="font-semibold text-slate-500 text-[10px] uppercase tracking-wider">{type}</span>
+                          <div className="flex justify-between items-center mt-2">
+                             <div>{getStatusBadge(record.status)}</div>
+                             <div className="flex items-center gap-1 text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                Lihat Detail <ArrowLeft className="h-3 w-3 rotate-180" />
+                             </div>
                           </div>
                         </div>
                       )
@@ -884,8 +866,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* === TAB 2 & 3 HIDDEN FOR BREVITY AS REQUESTED IN CHANGES, SEE PREV FILE FOR CONTENT === */}
-        {/* ... (Existing Tabs for Homeroom & BK) ... */}
+        {/* ... (Other Tabs remain the same) ... */}
         {activeTab === 'HOMEROOM' && isReporterHomeroom && (
            <>
              {/* INPUT FORM HOMEROOM */}
@@ -1118,7 +1099,7 @@ const StudentProfile: React.FC = () => {
             </div>
         )}
 
-        {/* === TAB 4: SANCTIONS (UPDATED FOR EDIT) === */}
+        {/* ... (Existing Tabs for Sanctions) ... */}
         {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
            <>
              {/* INPUT FORM SANKSI */}
@@ -1298,6 +1279,118 @@ const StudentProfile: React.FC = () => {
             </div>
         )}
       </div>
+
+      {/* --- INCIDENT DETAIL MODAL --- */}
+      {selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
+           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
+                 <h2 className="font-bold text-lg flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-indigo-400" />
+                    Detail Kasus Kejadian
+                 </h2>
+                 <button onClick={() => setSelectedRecord(null)} className="text-slate-400 hover:text-white transition-colors">
+                    <X className="h-6 w-6" />
+                 </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                 {/* Header Info */}
+                 <div className="flex flex-col md:flex-row gap-6">
+                    <div className="flex-1 space-y-4">
+                       <div>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Jenis Kejadian</p>
+                          <p className="text-lg font-bold text-slate-800 leading-tight">
+                             {incidents.find(i => i.id === selectedRecord.incidentTypeId)?.name || 'Unknown Incident'}
+                          </p>
+                       </div>
+                       
+                       <div className="grid grid-cols-2 gap-4">
+                          <div>
+                             <p className="text-xs text-slate-500 font-semibold mb-1 flex items-center gap-1"><Calendar className="h-3 w-3" /> Tanggal</p>
+                             <p className="text-sm font-medium text-slate-900">
+                                {new Date(selectedRecord.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                             </p>
+                             <p className="text-xs text-slate-500">
+                                Pukul {new Date(selectedRecord.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                             </p>
+                          </div>
+                          <div>
+                             <p className="text-xs text-slate-500 font-semibold mb-1 flex items-center gap-1"><User className="h-3 w-3" /> Pelapor</p>
+                             <p className="text-sm font-medium text-slate-900">{selectedRecord.recordedBy}</p>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="w-full md:w-1/3 bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center items-center text-center">
+                       <p className="text-xs font-bold text-slate-400 uppercase mb-2">Status Kasus</p>
+                       {getStatusBadge(selectedRecord.status)}
+                       <div className={`mt-3 text-3xl font-bold ${selectedRecord.typeSnapshot === 'VIOLATION' ? 'text-red-600' : selectedRecord.typeSnapshot === 'ACHIEVEMENT' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                          {selectedRecord.typeSnapshot === 'VIOLATION' ? '+' : ''}{selectedRecord.pointSnapshot}
+                       </div>
+                       <p className="text-xs text-slate-400 font-bold uppercase mt-1">Poin</p>
+                    </div>
+                 </div>
+
+                 {/* Notes Section */}
+                 <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Keterangan Tambahan</p>
+                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm text-slate-700 italic">
+                       "{selectedRecord.notes || 'Tidak ada catatan tambahan.'}"
+                    </div>
+                    {selectedRecord.status === 'REJECTED' && selectedRecord.rejectionReason && (
+                        <div className="mt-2 bg-red-50 p-3 rounded-lg border border-red-200 text-sm text-red-700">
+                           <b>Alasan Penolakan:</b> {selectedRecord.rejectionReason}
+                        </div>
+                    )}
+                 </div>
+
+                 {/* MEDIA SECTION - PROTECTED */}
+                 <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                       <ImageIcon className="h-4 w-4" /> Bukti Media (Foto/Dokumen)
+                    </p>
+                    
+                    {canViewEvidence ? (
+                       selectedRecord.proofImage ? (
+                          <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-black group">
+                             <img 
+                                src={selectedRecord.proofImage} 
+                                alt="Bukti Kejadian" 
+                                className="w-full max-h-[400px] object-contain mx-auto"
+                             />
+                             <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                <p className="text-white font-bold text-sm"><Eye className="h-5 w-5 inline mr-2" /> Bukti Terlampir</p>
+                             </div>
+                          </div>
+                       ) : (
+                          <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-8 text-center text-slate-400 text-sm">
+                             Tidak ada bukti media yang dilampirkan pada kasus ini.
+                          </div>
+                       )
+                    ) : (
+                       <div className="bg-slate-100 border border-slate-200 rounded-xl p-6 text-center">
+                          <Lock className="h-8 w-8 mx-auto text-slate-400 mb-2" />
+                          <p className="font-bold text-slate-600 text-sm">Akses Terbatas</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                             Bukti media hanya dapat diakses oleh Guru, Wali Kelas, BK, dan Kesiswaan.
+                          </p>
+                       </div>
+                    )}
+                 </div>
+              </div>
+
+              <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
+                 <button 
+                   onClick={() => setSelectedRecord(null)}
+                   className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-colors text-sm"
+                 >
+                    Tutup Detail
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
