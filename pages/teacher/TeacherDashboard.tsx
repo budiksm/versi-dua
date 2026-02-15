@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -31,6 +31,7 @@ const TeacherDashboard: React.FC = () => {
   const [sp1Candidates, setSp1Candidates] = useState<number>(0);
   const [sp2Candidates, setSp2Candidates] = useState<number>(0);
   const [sp3Candidates, setSp3Candidates] = useState<number>(0);
+  const [doCandidates, setDoCandidates] = useState<number>(0); // NEW: Drop Out Candidates
   const [activeRedemptions, setActiveRedemptions] = useState<number>(0);
   const [monitoringList, setMonitoringList] = useState<any[]>([]);
   
@@ -100,9 +101,9 @@ const TeacherDashboard: React.FC = () => {
         setHighRiskStudents(riskList.sort((a,b) => b.score - a.score).slice(0, 10));
       }
 
-      // KESISWAAN LOGIC: Based on new 80, 120, 160 thresholds
+      // KESISWAAN LOGIC: Based on new thresholds
       if (user.roles.includes(Role.KESISWAAN)) {
-        let countSP1 = 0, countSP2 = 0, countSP3 = 0;
+        let countSP1 = 0, countSP2 = 0, countSP3 = 0, countDO = 0;
         const monitorData: any[] = [];
         const bkReferrals: {student: Student, score: number, session: CounselingSession}[] = [];
 
@@ -119,10 +120,11 @@ const TeacherDashboard: React.FC = () => {
           const hasSP3 = sanctions.some(san => san.studentId === s.id && san.level === SanctionLevel.SP3);
 
           let candidateLevel = null;
-          // Updated thresholds: 80, 120, 160
+          // Updated thresholds: 80, 120, 160, 201
           if (score >= 80 && score <= 119 && !hasSP1) { countSP1++; candidateLevel = 'SP 1'; }
           if (score >= 120 && score <= 159 && !hasSP2) { countSP2++; candidateLevel = 'SP 2'; }
-          if (score >= 160 && !hasSP3) { countSP3++; candidateLevel = 'SP 3'; }
+          if (score >= 160 && score <= 200 && !hasSP3) { countSP3++; candidateLevel = 'SP 3'; }
+          if (score > 200) { countDO++; candidateLevel = 'DROP OUT'; }
 
           if (candidateLevel) {
             monitorData.push({
@@ -157,6 +159,7 @@ const TeacherDashboard: React.FC = () => {
         setSp1Candidates(countSP1);
         setSp2Candidates(countSP2);
         setSp3Candidates(countSP3);
+        setDoCandidates(countDO);
         setActiveRedemptions(activeRedemptionCount);
         // Show top 20 prioritized
         setMonitoringList(monitorData.sort((a,b) => b.score - a.score).slice(0, 20)); 
@@ -360,7 +363,7 @@ const TeacherDashboard: React.FC = () => {
                    </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
                       <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider">Kandidat SP 1</p>
                       <p className="text-3xl font-bold mt-1">{sp1Candidates}</p>
@@ -374,7 +377,14 @@ const TeacherDashboard: React.FC = () => {
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
                       <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider">Kandidat SP 3</p>
                       <p className="text-3xl font-bold mt-1">{sp3Candidates}</p>
-                      <p className="text-[10px] text-slate-400">Poin ≥ 160</p>
+                      <p className="text-[10px] text-slate-400">Poin 160-200</p>
+                   </div>
+                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30">
+                      <p className="text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                         <Skull className="h-3 w-3" /> Kandidat DO
+                      </p>
+                      <p className="text-3xl font-bold mt-1">{doCandidates}</p>
+                      <p className="text-[10px] text-slate-400">Poin {'>'} 200</p>
                    </div>
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
                       <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider">Penebusan Aktif</p>
@@ -416,7 +426,9 @@ const TeacherDashboard: React.FC = () => {
                                     <td className="px-3 py-2 font-medium">{item.student.name}</td>
                                     <td className="px-3 py-2 text-center font-bold text-red-600">{item.score}</td>
                                     <td className="px-3 py-2">
-                                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold animate-pulse flex items-center gap-1 w-fit">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold animate-pulse flex items-center gap-1 w-fit
+                                            ${item.candidateFor === 'DROP OUT' ? 'bg-slate-800 text-white' : 'bg-red-100 text-red-700'}
+                                        `}>
                                           <AlertCircle className="h-3 w-3" /> Layak {item.candidateFor}
                                         </span>
                                     </td>

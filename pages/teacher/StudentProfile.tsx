@@ -119,6 +119,15 @@ const StudentProfile: React.FC = () => {
   const className = studentClass ? `Kelas ${studentClass.name}` : 'Kelas Tidak Diketahui';
   const isReporterHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
 
+  // HIERARCHY LOGIC
+  // 1. Walikelas Referral to BK
+  const latestHomeroomSession = counselingSessions.filter(s => s.sessionType === 'HOMEROOM').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const hasReferralToBK = latestHomeroomSession?.recommendation === 'TO_BK';
+
+  // 2. BK Referral to Kesiswaan
+  const latestBKSession = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const hasReferralToKesiswaan = latestBKSession?.recommendation === 'TO_KESISWAAN' || latestBKSession?.recommendation === 'SUSPENSION_REVIEW';
+
   // PERMISSION LOGIC (Updated for Multi-Role)
   const roles = currentUser?.roles || [];
   
@@ -126,6 +135,12 @@ const StudentProfile: React.FC = () => {
   const isEducator = roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r));
   const isBK = roles.includes(Role.BK);
   const isKesiswaan = roles.includes(Role.KESISWAAN);
+
+  // Akses BK: User BK AND (Poin >= 40 OR Ada Rujukan Walikelas)
+  const canAccessBK = isBK && (stats.effectiveViolationScore >= 40 || hasReferralToBK);
+
+  // Akses Kesiswaan: User Kesiswaan AND (Poin >= 80 OR Ada Rujukan BK)
+  const canAccessKesiswaan = isKesiswaan && (stats.effectiveViolationScore >= 80 || hasReferralToKesiswaan);
 
   // Can Record Incident: Educators
   const canRecord = isEducator; 
@@ -201,6 +216,9 @@ const StudentProfile: React.FC = () => {
     const incidentDef = incidents.find(i => i.id === selectedIncident);
     if (!incidentDef) return;
 
+    // LOGIKA REVISI:
+    // Jika pelapor adalah wali kelas -> APPROVED
+    // Jika bukan -> PENDING
     const initialStatus: IncidentStatus = isReporterHomeroom ? 'APPROVED' : 'PENDING';
 
     const newRecord: IncidentRecord = {
@@ -220,13 +238,14 @@ const StudentProfile: React.FC = () => {
     DataService.saveRecords([...allRecords, newRecord]);
 
     let autoSanctionMsg = '';
+    // Otomatisasi sanksi hanya jika Approved (Wali Kelas)
     if (incidentDef.type === IncidentTypeCategory.VIOLATION && initialStatus === 'APPROVED') {
         const appliedSanction = DataService.evaluateAndApplySanction(student.id);
         if (appliedSanction) {
             autoSanctionMsg = ` & Otomatis menerbitkan ${appliedSanction}`;
         }
     } else if (initialStatus === 'PENDING') {
-        autoSanctionMsg = '. Menunggu persetujuan Wali Kelas.';
+        autoSanctionMsg = '. Menunggu persetujuan Wali Kelas agar poin dihitung.';
     }
 
     setTimeout(() => {
@@ -349,7 +368,7 @@ const StudentProfile: React.FC = () => {
       return <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold border border-yellow-200 flex items-center gap-1"><Clock className="h-3 w-3"/> MENUNGGU PERSETUJUAN</span>;
     }
     if (status === 'REJECTED') {
-      return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold border border-red-200 flex items-center gap-1"><Ban className="h-3 w-3"/> DITOLAK</span>;
+      return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold border border-red-200 flex items-center gap-1"><Ban className="h-3 w-3"/> DITOLAK (TIDAK DIHITUNG)</span>;
     }
     return null; // Approved is default/clean
   };
@@ -483,7 +502,7 @@ const StudentProfile: React.FC = () => {
                </span>
             </button>
             
-            {/* TAB WALI KELAS */}
+            {/* TAB WALI KELAS - Accessible by Homeroom Teacher */}
             {isReporterHomeroom && (
               <button
                  onClick={() => {
@@ -502,8 +521,8 @@ const StudentProfile: React.FC = () => {
               </button>
             )}
 
-            {/* TAB BK */}
-            {isBK && (
+            {/* TAB BK - Accessible if BK Role AND (Points >= 40 OR Referred) */}
+            {canAccessBK && (
               <button
                  onClick={() => {
                     setActiveTab('BK_COUNSELING');
@@ -521,7 +540,8 @@ const StudentProfile: React.FC = () => {
               </button>
             )}
 
-            {isKesiswaan && (
+            {/* TAB SANKSI - Accessible if Kesiswaan Role AND (Points >= 80 OR Referred) */}
+            {canAccessKesiswaan && (
               <button
                  onClick={() => setActiveTab('SANCTIONS')}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
@@ -571,8 +591,8 @@ const StudentProfile: React.FC = () => {
                             <div>
                                <p className="font-bold">Menunggu Persetujuan Wali Kelas</p>
                                <p className="text-xs mt-1">
-                                  Anda bukan wali kelas siswa ini. Laporan pelanggaran akan berstatus <b>PENDING</b> sampai disetujui oleh Wali Kelas, 
-                                  atau otomatis diterima setelah 2x24 jam.
+                                  Anda bukan wali kelas siswa ini. Laporan pelanggaran akan berstatus <b>PENDING</b> sampai disetujui oleh Wali Kelas.
+                                  <b> Poin belum akan dihitung.</b>
                                </p>
                             </div>
                          </div>
@@ -826,7 +846,8 @@ const StudentProfile: React.FC = () => {
                    
                    <form onSubmit={(e) => handleSubmitCounseling(e, 'HOMEROOM')} className="p-6 space-y-6">
                       <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100">
-                         Form ini khusus untuk pencatatan pembinaan oleh Wali Kelas. Data ini akan membantu BK dan Kesiswaan dalam pemantauan.
+                         Form ini khusus untuk pencatatan pembinaan oleh Wali Kelas. 
+                         Poin 20-39 ditangani Wali Kelas. Jika perlu penanganan lebih lanjut, gunakan opsi rujukan.
                       </div>
                       
                       <div>
@@ -850,11 +871,11 @@ const StudentProfile: React.FC = () => {
                          >
                             <option value="NONE">Cukup Pembinaan (Selesai)</option>
                             <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
-                            <option value="TO_BK">Rujuk ke BK</option>
+                            <option value="TO_BK">Rujuk ke BK (Eskalasi Masalah)</option>
                          </select>
-                         {counselingRec !== 'NONE' && (
-                           <p className="text-xs text-orange-600 mt-2">
-                             *Status pembinaan ini akan diset OPEN untuk ditindaklanjuti.
+                         {counselingRec === 'TO_BK' && (
+                           <p className="text-xs text-blue-600 mt-2 font-bold animate-pulse">
+                             *Rujukan ini akan membuka akses siswa ini di Dashboard Guru BK.
                            </p>
                          )}
                       </div>
@@ -919,7 +940,7 @@ const StudentProfile: React.FC = () => {
         )}
 
         {/* === TAB 3: BIMBINGAN KONSELING (Specific for BK) === */}
-        {activeTab === 'BK_COUNSELING' && isBK && (
+        {activeTab === 'BK_COUNSELING' && canAccessBK && (
            <>
              {/* INPUT FORM BK */}
              <div className="lg:col-span-2 space-y-6">
@@ -933,7 +954,7 @@ const StudentProfile: React.FC = () => {
                    
                    <form onSubmit={(e) => handleSubmitCounseling(e, 'BK')} className="p-6 space-y-6">
                       <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100">
-                         Form khusus Guru BK. Gunakan untuk mencatat konseling mendalam, pemanggilan orang tua, atau rujukan sanksi.
+                         Form ini terbuka karena siswa memiliki Poin ≥ 40 atau dirujuk oleh Wali Kelas.
                       </div>
                       
                       <div>
@@ -957,12 +978,12 @@ const StudentProfile: React.FC = () => {
                          >
                             <option value="NONE">Cukup Pembinaan (Selesai)</option>
                             <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
-                            <option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Sanksi Berat)</option>
+                            <option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Perlu Sanksi Tegas)</option>
                             <option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option>
                          </select>
-                         {counselingRec !== 'NONE' && (
-                           <p className="text-xs text-blue-600 mt-2">
-                             *Status konseling ini akan otomatis diset OPEN agar dipantau Kesiswaan.
+                         {counselingRec === 'TO_KESISWAAN' && (
+                           <p className="text-xs text-red-600 mt-2 font-bold animate-pulse">
+                             *Rujukan ini akan membuka akses siswa ini di Dashboard Kesiswaan untuk SP/Sanksi.
                            </p>
                          )}
                       </div>
@@ -1026,8 +1047,26 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (TAB SANCTIONS kept same) ... */}
-        {activeTab === 'SANCTIONS' && isKesiswaan && (
+        {/* === TAB 3 (Locked State for BK) === */}
+        {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
+            <div className="lg:col-span-3">
+               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
+                  <Lock className="h-16 w-16 mb-4 text-slate-300" />
+                  <h3 className="text-lg font-bold text-slate-700">Akses Pembinaan Dibatasi</h3>
+                  <p className="max-w-md mt-2 mb-4">
+                     Sesuai hirarki, BK hanya dapat menangani siswa jika:
+                     <br/>1. Total Poin ≥ 40
+                     <br/>2. Ada rujukan resmi dari Wali Kelas (TO_BK)
+                  </p>
+                  <p className="text-xs bg-white px-3 py-1 rounded border border-slate-200">
+                     Poin Saat Ini: <b>{stats.effectiveViolationScore}</b>
+                  </p>
+               </div>
+            </div>
+        )}
+
+        {/* ... (TAB SANCTIONS) ... */}
+        {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
            <>
              {/* INPUT FORM SANKSI */}
              <div className="lg:col-span-2 space-y-6">
@@ -1041,7 +1080,7 @@ const StudentProfile: React.FC = () => {
                    
                    <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
                       <div className="bg-red-50 p-4 rounded-lg text-sm text-red-800 border border-red-100 mb-4">
-                         Hanya Kesiswaan yang dapat menetapkan sanksi formal (SP 1, SP 2, SP 3).
+                         Form terbuka karena Poin ≥ 80 atau ada rujukan dari BK.
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1165,6 +1204,24 @@ const StudentProfile: React.FC = () => {
                 </div>
              </div>
            </>
+        )}
+
+        {/* === TAB 4 (Locked State for Kesiswaan) === */}
+        {activeTab === 'SANCTIONS' && !canAccessKesiswaan && isKesiswaan && (
+            <div className="lg:col-span-3">
+               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
+                  <Lock className="h-16 w-16 mb-4 text-slate-300" />
+                  <h3 className="text-lg font-bold text-slate-700">Akses Sanksi Dibatasi</h3>
+                  <p className="max-w-md mt-2 mb-4">
+                     Sesuai hirarki, Kesiswaan hanya dapat menangani siswa jika:
+                     <br/>1. Total Poin ≥ 80
+                     <br/>2. Ada rujukan resmi dari BK (TO_KESISWAAN)
+                  </p>
+                  <p className="text-xs bg-white px-3 py-1 rounded border border-slate-200">
+                     Poin Saat Ini: <b>{stats.effectiveViolationScore}</b>
+                  </p>
+               </div>
+            </div>
         )}
       </div>
     </div>

@@ -41,14 +41,21 @@ const ActiveCoaching: React.FC = () => {
     students.forEach(s => {
       const stats = DataService.calculateStudentPoints(s.id, records, incidents);
       const studentCounselings = counselings.filter(c => c.studentId === s.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
       const latestSession = studentCounselings[0];
       const hasOpenSession = latestSession?.status === 'OPEN';
       
-      // Threshold BK: >= 40 Poin
+      // LOGIKA HIRARKI BK:
+      // 1. Poin >= 40
+      // 2. Ada Referral dari Wali Kelas ('TO_BK')
+      
+      const latestHomeroomSession = studentCounselings.find(c => c.sessionType === 'HOMEROOM');
+      const hasReferralFromHomeroom = latestHomeroomSession?.recommendation === 'TO_BK';
+      
       const isHighRisk = stats.effectiveViolationScore >= 40;
 
-      // Filter: Show if High Risk OR Has Open Session
-      if (isHighRisk || hasOpenSession) {
+      // Filter: Show if High Risk OR Has Open Session OR Has Referral
+      if (isHighRisk || hasOpenSession || hasReferralFromHomeroom) {
         const status = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
         const className = classes.find(c => c.id === s.classId)?.name || '-';
 
@@ -60,6 +67,7 @@ const ActiveCoaching: React.FC = () => {
           statusColor: status.color,
           latestSession,
           hasOpenSession,
+          isReferral: hasReferralFromHomeroom && !isHighRisk, // Mark if it's purely a referral case
           historyCount: studentCounselings.length
         });
       }
@@ -142,7 +150,7 @@ const ActiveCoaching: React.FC = () => {
            <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-500">
              <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
              <p className="font-bold text-slate-700">Tidak ada kasus aktif.</p>
-             <p className="text-sm">Saat ini tidak ada siswa dengan poin tinggi (≥ 40) atau sesi konseling terbuka.</p>
+             <p className="text-sm">Saat ini tidak ada siswa dengan poin tinggi (≥ 40) atau rujukan aktif.</p>
            </div>
         ) : (
           filteredCases.map((item, idx) => (
@@ -159,6 +167,11 @@ const ActiveCoaching: React.FC = () => {
                      {item.hasOpenSession && (
                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-bold flex items-center gap-1 animate-pulse">
                          <Clock className="h-3 w-3" /> SESI AKTIF
+                       </span>
+                     )}
+                     {item.isReferral && (
+                       <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-bold flex items-center gap-1">
+                         <AlertCircle className="h-3 w-3" /> RUJUKAN WALI KELAS
                        </span>
                      )}
                    </div>

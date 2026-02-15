@@ -52,13 +52,15 @@ const INITIAL_INCIDENTS: MasterIncidentType[] = [
   { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
 ];
 
+// REVISI ATURAN POIN (HIRARKI UPDATE SP3 & DO)
 const INITIAL_RULES: CoachingRule[] = [
   { id: 'r1', minPoints: 0, maxPoints: 19, statusLabel: 'Normal', color: 'bg-green-100 text-green-800' },
   { id: 'r2', minPoints: 20, maxPoints: 39, statusLabel: 'Pembinaan Wali Kelas', color: 'bg-yellow-100 text-yellow-800' },
   { id: 'r3', minPoints: 40, maxPoints: 79, statusLabel: 'Pembinaan BK + Ortu', color: 'bg-orange-100 text-orange-800' },
   { id: 'r4', minPoints: 80, maxPoints: 119, statusLabel: 'SP 1', color: 'bg-red-100 text-red-800' },
   { id: 'r5', minPoints: 120, maxPoints: 159, statusLabel: 'SP 2', color: 'bg-red-200 text-red-900' },
-  { id: 'r6', minPoints: 160, maxPoints: 9999, statusLabel: 'SP 3', color: 'bg-red-600 text-white' },
+  { id: 'r6', minPoints: 160, maxPoints: 200, statusLabel: 'SP 3 (Perjanjian Terakhir)', color: 'bg-red-600 text-white' },
+  { id: 'r7', minPoints: 201, maxPoints: 9999, statusLabel: 'DO (Dikembalikan ke Ortu)', color: 'bg-slate-900 text-white border-2 border-red-500' },
 ];
 
 // Helper for LocalStorage
@@ -263,11 +265,13 @@ export const DataService = {
       // 2. Status 'PENDING' tapi sudah > 48 jam -> Hitung (Auto Accept)
       // 3. Status 'PENDING' < 48 jam -> JANGAN Hitung
       // 4. Status 'REJECTED' -> JANGAN Hitung
-      // 5. Undefined status -> Hitung (Backward compatibility)
       
       const recordTime = new Date(record.date).getTime();
       const isAutoAccepted = (record.status === 'PENDING') && ((now - recordTime) > AUTO_ACCEPT_MS);
-      const isEffective = record.status === 'APPROVED' || !record.status || isAutoAccepted;
+      
+      // Default to APPROVED for legacy data without status
+      const effectiveStatus = record.status || 'APPROVED';
+      const isEffective = effectiveStatus === 'APPROVED' || isAutoAccepted;
 
       if (isEffective) {
         if (record.typeSnapshot === IncidentTypeCategory.VIOLATION) {
@@ -302,25 +306,30 @@ export const DataService = {
     // Filter active/relevant sanctions
     const studentSanctions = sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
     
-    // Check existing levels
     const hasSP1 = studentSanctions.some(s => s.level === SanctionLevel.SP1);
     const hasSP2 = studentSanctions.some(s => s.level === SanctionLevel.SP2);
     const hasSP3 = studentSanctions.some(s => s.level === SanctionLevel.SP3);
+    const hasDO = studentSanctions.some(s => s.level === SanctionLevel.DROP_OUT);
 
     let newLevel: SanctionLevel | null = null;
 
-    // Logic Priority: Highest score triggers highest sanction if not already present
-    // SP3 Threshold: 160
+    // Revised Thresholds based on Prompt
+    // DO: > 200 (Requires Manual Decree usually, system just warns or stops at SP3 auto)
+    // But we will allow SP3 automation up to 200.
+    
+    // SP3: 160-200
     if (score >= 160) {
-        if (!hasSP3) newLevel = SanctionLevel.SP3;
+       // If no SP3 and no DO yet, apply SP3. 
+       // DO usually not auto-applied, but system suggests it.
+       if (!hasSP3 && !hasDO) newLevel = SanctionLevel.SP3;
     }
-    // SP2 Threshold: 120
+    // SP2: 120-159
     else if (score >= 120) {
-        if (!hasSP2 && !hasSP3) newLevel = SanctionLevel.SP2;
+        if (!hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP2;
     }
-    // SP1 Threshold: 80
+    // SP1: 80-119
     else if (score >= 80) {
-        if (!hasSP1 && !hasSP2 && !hasSP3) newLevel = SanctionLevel.SP1;
+        if (!hasSP1 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP1;
     }
 
     if (newLevel) {
