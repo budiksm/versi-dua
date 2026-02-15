@@ -70,26 +70,23 @@ const ActiveCoaching: React.FC = () => {
         historyCount: studentCounselings.length
       };
 
-      // Filter Logic:
+      // --- LOGIKA FILTER DIPERBAIKI ---
       
-      // A. Masuk "Dalam Pantauan" jika:
-      // 1. Sedang ada sesi OPEN.
-      // 2. ATAU Poin >= 40 tapi belum ada sesi sama sekali / sesi terakhir closed (Perlu ditindaklanjuti lagi).
-      // 3. ATAU Ada rujukan Wali Kelas tapi belum dihandle (sesi terakhir bukan BK atau sesi terakhir BK closed).
-      const needsAttention = hasOpenSession || isHighRisk || hasReferralFromHomeroom;
+      // Kriteria Masuk Tab "Dalam Pantauan" (Active):
+      // 1. Memiliki sesi yang statusnya masih OPEN.
+      // 2. ATAU (Belum pernah ada sesi BK sama sekali) DAN (Poin >= 40 atau Ada Rujukan).
+      //    Artinya: Jika sudah pernah ada sesi dan statusnya CLOSED, dia TIDAK masuk sini lagi 
+      //    (karena diasumsikan sudah ditangani di sesi terakhir tersebut).
+      
+      const isNewCase = !latestSession && (isHighRisk || hasReferralFromHomeroom);
+      const needsAttention = hasOpenSession || isNewCase;
 
-      // B. Masuk "Riwayat Selesai" jika:
-      // 1. Pernah ada sesi.
-      // 2. Sesi terakhir CLOSED.
-      // 3. Tidak memenuhi syarat "Dalam Pantauan" (artinya poin sudah aman atau rujukan selesai - walaupun poin tidak turun, status penanganan closed).
-      
       if (needsAttention) {
-         // Jika sesi terakhir closed TAPI poin masih tinggi atau ada referral baru, tetap masuk active untuk dicek
-         // Kecuali jika sesi closed itu BARU SAJA terjadi dan dianggap selesai sementara. 
-         // Untuk keamanan, High Risk selalu muncul di Active agar BK aware.
          activeList.push(caseData);
       } else if (studentCounselings.length > 0) {
-         // Tidak perlu perhatian khusus saat ini, tapi punya riwayat.
+         // Jika punya riwayat dan sesi terakhir CLOSED, masuk ke History.
+         // Meskipun Poin masih tinggi, ini masuk history karena status terakhir adalah "Selesai/Closed".
+         // Jika ingin memantau poin tinggi yang sudah closed, BK bisa menggunakan menu "Monitoring Siswa".
          historyList.push(caseData);
       }
     });
@@ -201,7 +198,11 @@ const ActiveCoaching: React.FC = () => {
            <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-500">
              <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
              <p className="font-bold text-slate-700">Daftar Kosong.</p>
-             <p className="text-sm">Tidak ada siswa yang sesuai kriteria pada tab ini.</p>
+             <p className="text-sm">
+                {activeTab === 'ACTIVE' 
+                    ? "Tidak ada siswa yang sedang dalam sesi aktif atau kasus baru." 
+                    : "Belum ada riwayat konseling yang selesai."}
+             </p>
            </div>
         ) : (
           displayedCases.map((item, idx) => (
@@ -241,7 +242,7 @@ const ActiveCoaching: React.FC = () => {
 
                    {/* Last Session Info */}
                    {item.latestSession ? (
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-sm">
+                      <div className={`p-3 rounded-lg border text-sm ${item.latestSession.status === 'CLOSED' ? 'bg-slate-50 border-slate-200' : 'bg-blue-50 border-blue-100'}`}>
                         <p className="text-slate-500 text-xs mb-1 flex items-center gap-1">
                            <User className="h-3 w-3" /> 
                            Terakhir oleh <b>{item.latestSession.counselorName}</b> pada {new Date(item.latestSession.date).toLocaleDateString()}
@@ -252,11 +253,13 @@ const ActiveCoaching: React.FC = () => {
                              Rekomendasi: {item.latestSession.recommendation.replace(/_/g, ' ')}
                            </div>
                         )}
-                        <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold">Status: {item.latestSession.status}</p>
+                        <p className={`text-[10px] mt-1 uppercase font-bold ${item.latestSession.status === 'CLOSED' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                            Status: {item.latestSession.status === 'CLOSED' ? 'SELESAI (CLOSED)' : 'SEDANG BERJALAN (OPEN)'}
+                        </p>
                       </div>
                    ) : (
                       <div className="text-xs text-slate-400 italic bg-slate-50 p-2 rounded">
-                        Belum ada riwayat konseling tercatat.
+                        Belum ada riwayat konseling tercatat. Kasus baru.
                       </div>
                    )}
                 </div>
@@ -268,7 +271,7 @@ const ActiveCoaching: React.FC = () => {
                      className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm"
                    >
                      <HeartHandshake className="h-4 w-4" />
-                     {activeTab === 'ACTIVE' ? 'Tindak Lanjut' : 'Catat Sesi Baru'}
+                     {activeTab === 'ACTIVE' ? (item.hasOpenSession ? 'Lanjutkan Sesi' : 'Mulai Sesi') : 'Catat Sesi Baru'}
                    </button>
                    <Link 
                      to={`/teacher/student/${item.student.id}`}
@@ -324,6 +327,9 @@ const ActiveCoaching: React.FC = () => {
                          <option value="OPEN">OPEN (Masih Dipantau)</option>
                          <option value="CLOSED">CLOSED (Selesai)</option>
                        </select>
+                       <p className="text-[10px] text-slate-500 mt-1">
+                          *Pilih CLOSED jika pembinaan selesai. Siswa akan pindah ke menu Riwayat.
+                       </p>
                     </div>
                     <div>
                        <label className="block text-sm font-semibold text-slate-700 mb-1">Rekomendasi</label>
