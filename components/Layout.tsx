@@ -24,7 +24,8 @@ import {
   RefreshCw,
   AlertOctagon,
   RotateCcw,
-  ClipboardList
+  ClipboardList,
+  Wallet
 } from 'lucide-react';
 import { Role } from '../types';
 
@@ -138,11 +139,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },
     { path: '/teacher/kesiswaan/action', label: 'Pembinaan & SP', icon: Gavel },
     { path: '/teacher/kesiswaan/logs', label: 'Log Input Guru', icon: ClipboardList },
+    { path: '/teacher/kesiswaan/poe-monitoring', label: 'Monitoring Poe Ibu', icon: Wallet },
   ];
   const adminLinks = [
     { path: '/admin/students', label: 'Manajemen Siswa', icon: Users },
     { path: '/admin/accounts', label: 'Manajemen Akun', icon: UserCog },
     { path: '/admin/config', label: 'Konfigurasi Poin', icon: ShieldCheck },
+  ];
+  const studentLinks = [
+    { path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet },
   ];
 
   const roles = currentUser?.roles || [];
@@ -153,12 +158,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r))) {
        finalLinks = [...finalLinks, ...teacherLinks];
     }
+  } else if (roles.includes(Role.STUDENT)) {
+    // Student only sees Poe Ibu for now
+    finalLinks = [...studentLinks];
   } else {
     finalLinks = [...teacherLinks];
   }
+
+  // Add Wali Kelas Specific Link (Poe Ibu)
+  if (roles.includes(Role.WALIKELAS) || roles.includes(Role.STUDENT)) {
+      if (!finalLinks.find(l => l.path === '/teacher/poe-ibu')) {
+          finalLinks.push({ path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
+      }
+  }
+
   if (roles.includes(Role.BK)) finalLinks = [...finalLinks, ...bkLinks];
   if (roles.includes(Role.KESISWAAN)) finalLinks = [...finalLinks, ...kesiswaanLinks];
   
+  // Deduplicate links
   finalLinks = finalLinks.filter((link, index, self) =>
     index === self.findIndex((t) => t.path === link.path)
   );

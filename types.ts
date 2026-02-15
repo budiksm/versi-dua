@@ -5,6 +5,7 @@ export enum Role {
   BK = 'BK',
   KESISWAAN = 'KESISWAAN',
   WALIKELAS = 'WALIKELAS',
+  STUDENT = 'STUDENT', // Bendahara Kelas
 }
 
 export enum IncidentTypeCategory {
@@ -16,11 +17,12 @@ export enum IncidentTypeCategory {
 export interface Teacher {
   id: string;
   name: string;
-  nip: string;
+  nip: string; // Bisa NIS untuk siswa
   roles: Role[]; 
   username?: string; 
   password?: string;
   mustChangePassword?: boolean; // Flag to force password change
+  assignedClassId?: string; // Khusus Role STUDENT agar tahu kelas mana
 }
 
 export interface ClassGroup {
@@ -125,4 +127,30 @@ export interface StudentSanction {
   redemptionTask?: string; // e.g. "Membersihkan Perpustakaan selama 3 hari"
   redemptionDate?: string; // Tanggal selesai
   isRedeemed?: boolean; // Backward compatibility
+}
+
+// --- POE IBU (CASHFLOW) TYPES ---
+export type CashflowType = 'IN' | 'OUT';
+export type CashflowStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CORRECTED';
+
+export interface CashflowRecord {
+  id: string;
+  classId: string;
+  type: CashflowType;
+  amount: number;
+  date: string;
+  description: string;
+  recipient?: string; // Wajib jika OUT
+  
+  recordedBy: string; // Nama Penginput
+  recordedById: string;
+  recordedByRole: Role;
+  
+  status: CashflowStatus;
+  
+  verifiedBy?: string; // Nama Wali Kelas
+  verifiedDate?: string;
+  
+  isCorrection?: boolean; // Menandakan ini data pengganti
+  originalRecordId?: string; // ID data yang dikoreksi (jika ada)
 }

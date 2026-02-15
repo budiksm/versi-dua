@@ -13,7 +13,9 @@ import {
   StudentSanction, 
   RedemptionStatus,
   SanctionLevel,
-  IncidentStatus
+  IncidentStatus,
+  CashflowRecord,
+  CashflowStatus
 } from '../types';
 
 import { db, connectToFirebase } from '../firebaseConfig';
@@ -40,6 +42,8 @@ const notifyListeners = (state: SyncState, errorMsg: string | null = null) => {
 const INITIAL_TEACHERS: Teacher[] = [
   { id: 'admin1', name: 'Administrator', nip: '000000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false },
   { id: 't1', name: 'Budi Raharjo, S.Pd', nip: '19800101', roles: [Role.TEACHER, Role.WALIKELAS], username: 'budi', password: '123', mustChangePassword: false },
+  // MOCK BENDAHARA (SISWA)
+  { id: 's_bendahara', name: 'Siti Aminah (Bendahara)', nip: '1001', roles: [Role.STUDENT], username: 'siti', password: '123', mustChangePassword: false, assignedClassId: 'c1' },
 ];
 const INITIAL_CLASSES: ClassGroup[] = [{ id: 'c1', name: 'X IPA 1', level: 10, homeroomTeacherId: 't1' }];
 const INITIAL_STUDENTS: Student[] = [{ id: 's1', name: 'Contoh Siswa', nis: '1001', classId: 'c1', gender: 'L', status: 'ACTIVE' }];
@@ -130,7 +134,8 @@ export const DataService = {
     try {
       const collections = [
         'classes', 'students', 'categories', 'incidentTypes', 
-        'rules', 'records', 'teachers', 'counseling', 'sanctions'
+        'rules', 'records', 'teachers', 'counseling', 'sanctions',
+        'cashflow' // Added new collection
       ];
 
       notifyListeners('SYNCING');
@@ -169,6 +174,7 @@ export const DataService = {
   getRecords: () => loadFromStorage<IncidentRecord[]>('records', []),
   getCounselingSessions: () => loadFromStorage<CounselingSession[]>('counseling', []),
   getSanctions: () => loadFromStorage<StudentSanction[]>('sanctions', []),
+  getCashflows: () => loadFromStorage<CashflowRecord[]>('cashflow', []),
 
   getTeachers: (): Teacher[] => {
     let teachers = loadFromStorage<Teacher[]>('teachers', INITIAL_TEACHERS);
@@ -197,6 +203,61 @@ export const DataService = {
   saveTeachers: (data: Teacher[]) => { saveToStorage('teachers', data); syncToCloud('teachers', data); },
   saveCounselingSessions: (data: CounselingSession[]) => { saveToStorage('counseling', data); syncToCloud('counseling', data); },
   saveSanctions: (data: StudentSanction[]) => { saveToStorage('sanctions', data); syncToCloud('sanctions', data); },
+  saveCashflows: (data: CashflowRecord[]) => { saveToStorage('cashflow', data); syncToCloud('cashflow', data); },
+
+  // --- CASHFLOW HELPER ---
+  getClassBalance: (classId: string) => {
+    const flows = DataService.getCashflows();
+    // Only count APPROVED transactions
+    const classFlows = flows.filter(f => f.classId === classId && f.status === 'APPROVED');
+    
+    let totalIn = 0;
+    let totalOut = 0;
+
+    classFlows.forEach(f => {
+       if (f.type === 'IN') totalIn += f.amount;
+       if (f.type === 'OUT') totalOut += f.amount;
+    });
+
+    return {
+        balance: totalIn - totalOut,
+        totalIn,
+        totalOut,
+        transactionCount: classFlows.length
+    };
+  },
+
+  verifyCashflow: (recordId: string, verifierName: string, isRejected = false) => {
+    const flows = DataService.getCashflows();
+    const updatedFlows = flows.map(f => {
+        if (f.id === recordId) {
+            return {
+                ...f,
+                status: isRejected ? 'REJECTED' : 'APPROVED',
+                verifiedBy: verifierName,
+                verifiedDate: new Date().toISOString()
+            } as CashflowRecord;
+        }
+        return f;
+    });
+    DataService.saveCashflows(updatedFlows);
+  },
+
+  // Soft Delete (Mark as Corrected/Void)
+  voidCashflow: (recordId: string, user: Teacher) => {
+    const flows = DataService.getCashflows();
+    const updatedFlows = flows.map(f => {
+        if (f.id === recordId) {
+             return {
+                 ...f,
+                 status: 'CORRECTED',
+                 description: f.description + ` [DIKOREKSI oleh ${user.name}]`
+             } as CashflowRecord;
+        }
+        return f;
+    });
+    DataService.saveCashflows(updatedFlows);
+  },
 
   // --- AUTH LOGIC (Aplikasi) ---
   login: (username: string, password: string): Teacher | null => {

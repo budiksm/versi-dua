@@ -11,6 +11,8 @@ import ActiveCoaching from './pages/teacher/bk/ActiveCoaching';
 import KesiswaanMonitoring from './pages/teacher/KesiswaanMonitoring';
 import KesiswaanAction from './pages/teacher/KesiswaanAction';
 import TeacherInputLog from './pages/teacher/TeacherInputLog';
+import PoeIbu from './pages/teacher/PoeIbu';
+import KesiswaanPoeMonitoring from './pages/teacher/KesiswaanPoeMonitoring';
 import ManageStudents from './pages/admin/ManageStudents';
 import AccountManagement from './pages/admin/AccountManagement';
 import PointConfiguration from './pages/admin/PointConfiguration';
@@ -54,14 +56,18 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<Login />} />
         
-        {/* Teacher / Kesiswaan / BK Routes */}
+        {/* Teacher / Kesiswaan / BK / Student Routes */}
         <Route path="/teacher/*" element={
           <Layout role={Role.TEACHER}>
             <Routes>
+              {/* Role STUDENT will be redirected to poe-ibu if they try to access dashboard via logic inside components but we keep routes flexible */}
               <Route path="dashboard" element={<TeacherDashboard />} />
               <Route path="classes" element={<ClassList />} />
               <Route path="classes/:classId" element={<StudentList />} />
               <Route path="student/:studentId" element={<StudentProfile />} />
+              
+              {/* POE IBU (Wali Kelas & Bendahara) */}
+              <Route path="poe-ibu" element={<PoeIbu />} />
               
               {/* BK Specific Routes */}
               <Route path="bk/active" element={<ActiveCoaching />} />
@@ -70,6 +76,7 @@ const App: React.FC = () => {
               <Route path="kesiswaan/monitoring" element={<KesiswaanMonitoring />} />
               <Route path="kesiswaan/action" element={<KesiswaanAction />} />
               <Route path="kesiswaan/logs" element={<TeacherInputLog />} />
+              <Route path="kesiswaan/poe-monitoring" element={<KesiswaanPoeMonitoring />} />
               
               <Route path="*" element={<Navigate to="dashboard" />} />
             </Routes>
