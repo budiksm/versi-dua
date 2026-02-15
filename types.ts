@@ -109,6 +109,7 @@ export interface CounselingSession {
   recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK';
   status: 'OPEN' | 'CLOSED';
   sessionType?: 'BK' | 'HOMEROOM'; // Distinguish between BK session and Homeroom coaching
+  relatedRecordIds?: string[]; // LINK TO SPECIFIC INCIDENTS (CASE BASED)
 }
 
 export enum SanctionLevel {

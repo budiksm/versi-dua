@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
-import { Student, CounselingSession, Role } from '../../../types';
-import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, Clock, User, X, Save, Archive } from 'lucide-react';
+import { Student, CounselingSession, Role, IncidentRecord, MasterIncidentType } from '../../../types';
+import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, Clock, User, X, Save, Archive, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const ActiveCoaching: React.FC = () => {
@@ -11,12 +11,20 @@ const ActiveCoaching: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   
+  // Data for Selectors
+  const [incidents, setIncidents] = useState<MasterIncidentType[]>([]);
+  const [allRecords, setAllRecords] = useState<IncidentRecord[]>([]);
+
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [studentViolations, setStudentViolations] = useState<IncidentRecord[]>([]);
+  
+  // Form State
   const [notes, setNotes] = useState('');
   const [recommendation, setRecommendation] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
   const [sessionStatus, setSessionStatus] = useState<'OPEN' | 'CLOSED'>('OPEN');
+  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]); // New: Linked Cases
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -33,16 +41,19 @@ const ActiveCoaching: React.FC = () => {
   const loadData = () => {
     const students = DataService.getStudents();
     const records = DataService.getRecords();
-    const incidents = DataService.getIncidentTypes();
+    const incidentsData = DataService.getIncidentTypes();
     const counselings = DataService.getCounselingSessions();
     const rules = DataService.getRules();
     const classes = DataService.getClasses();
+
+    setIncidents(incidentsData);
+    setAllRecords(records);
 
     const activeList: any[] = [];
     const historyList: any[] = [];
 
     students.forEach(s => {
-      const stats = DataService.calculateStudentPoints(s.id, records, incidents);
+      const stats = DataService.calculateStudentPoints(s.id, records, incidentsData);
       const studentCounselings = counselings.filter(c => c.studentId === s.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
       const latestSession = studentCounselings[0];
@@ -70,23 +81,13 @@ const ActiveCoaching: React.FC = () => {
         historyCount: studentCounselings.length
       };
 
-      // --- LOGIKA FILTER DIPERBAIKI ---
-      
-      // Kriteria Masuk Tab "Dalam Pantauan" (Active):
-      // 1. Memiliki sesi yang statusnya masih OPEN.
-      // 2. ATAU (Belum pernah ada sesi BK sama sekali) DAN (Poin >= 40 atau Ada Rujukan).
-      //    Artinya: Jika sudah pernah ada sesi dan statusnya CLOSED, dia TIDAK masuk sini lagi 
-      //    (karena diasumsikan sudah ditangani di sesi terakhir tersebut).
-      
+      // Filter Logic:
       const isNewCase = !latestSession && (isHighRisk || hasReferralFromHomeroom);
       const needsAttention = hasOpenSession || isNewCase;
 
       if (needsAttention) {
          activeList.push(caseData);
       } else if (studentCounselings.length > 0) {
-         // Jika punya riwayat dan sesi terakhir CLOSED, masuk ke History.
-         // Meskipun Poin masih tinggi, ini masuk history karena status terakhir adalah "Selesai/Closed".
-         // Jika ingin memantau poin tinggi yang sudah closed, BK bisa menggunakan menu "Monitoring Siswa".
          historyList.push(caseData);
       }
     });
@@ -114,7 +115,25 @@ const ActiveCoaching: React.FC = () => {
     setNotes('');
     setRecommendation('NONE');
     setSessionStatus('OPEN');
+    setSelectedRecordIds([]); // Reset selection
+
+    // Ambil data pelanggaran siswa ini untuk ditampilkan di checklist
+    // Hanya tampilkan pelanggaran (VIOLATION)
+    const violations = allRecords
+        .filter(r => r.studentId === student.id && r.typeSnapshot === 'VIOLATION')
+        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 10); // Ambil 10 terakhir
+    
+    setStudentViolations(violations);
     setShowModal(true);
+  };
+
+  const toggleRecordSelection = (recordId: string) => {
+      if (selectedRecordIds.includes(recordId)) {
+          setSelectedRecordIds(prev => prev.filter(id => id !== recordId));
+      } else {
+          setSelectedRecordIds(prev => [...prev, recordId]);
+      }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -134,7 +153,8 @@ const ActiveCoaching: React.FC = () => {
       notes: notes,
       recommendation: recommendation,
       status: sessionStatus,
-      sessionType: 'BK'
+      sessionType: 'BK',
+      relatedRecordIds: selectedRecordIds // LINK KE KASUS
     };
 
     DataService.saveCounselingSessions([...allSessions, newSession]);
@@ -248,10 +268,10 @@ const ActiveCoaching: React.FC = () => {
                            Terakhir oleh <b>{item.latestSession.counselorName}</b> pada {new Date(item.latestSession.date).toLocaleDateString()}
                         </p>
                         <p className="text-slate-700 italic">"{item.latestSession.notes}"</p>
-                        {item.latestSession.recommendation !== 'NONE' && (
-                           <div className="mt-1 text-xs font-bold text-red-600 uppercase">
-                             Rekomendasi: {item.latestSession.recommendation.replace(/_/g, ' ')}
-                           </div>
+                        {item.latestSession.relatedRecordIds && item.latestSession.relatedRecordIds.length > 0 && (
+                            <div className="mt-2 text-[10px] bg-white bg-opacity-50 p-1 rounded inline-block border border-opacity-20 border-black">
+                                <span className="font-bold">Kasus terkait:</span> {item.latestSession.relatedRecordIds.length} pelanggaran
+                            </div>
                         )}
                         <p className={`text-[10px] mt-1 uppercase font-bold ${item.latestSession.status === 'CLOSED' ? 'text-emerald-600' : 'text-blue-600'}`}>
                             Status: {item.latestSession.status === 'CLOSED' ? 'SELESAI (CLOSED)' : 'SEDANG BERJALAN (OPEN)'}
@@ -287,11 +307,11 @@ const ActiveCoaching: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL KONSELING */}
+      {/* MODAL KONSELING BERBASIS KASUS */}
       {showModal && selectedStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in">
-           <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
-              <div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white">
+           <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white shrink-0">
                  <h2 className="font-bold text-lg flex items-center gap-2">
                     <HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling
                  </h2>
@@ -300,53 +320,90 @@ const ActiveCoaching: React.FC = () => {
                  </button>
               </div>
               
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                 <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-900 mb-2">
-                    Mencatat untuk: <b>{selectedStudent.name}</b> ({selectedStudent.nis})
-                 </div>
-
-                 <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Catatan / Hasil Konseling</label>
-                    <textarea 
-                      required
-                      className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none h-32 bg-white text-slate-900"
-                      placeholder="Deskripsikan masalah, solusi, dan komitmen siswa..."
-                      value={notes}
-                      onChange={e => setNotes(e.target.value)}
-                    />
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <label className="block text-sm font-semibold text-slate-700 mb-1">Status Sesi</label>
-                       <select 
-                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
-                         value={sessionStatus}
-                         onChange={e => setSessionStatus(e.target.value as any)}
-                       >
-                         <option value="OPEN">OPEN (Masih Dipantau)</option>
-                         <option value="CLOSED">CLOSED (Selesai)</option>
-                       </select>
-                       <p className="text-[10px] text-slate-500 mt-1">
-                          *Pilih CLOSED jika pembinaan selesai. Siswa akan pindah ke menu Riwayat.
-                       </p>
+              <div className="overflow-y-auto p-6 flex-1">
+                <form id="counselingForm" onSubmit={handleSubmit} className="space-y-4">
+                    <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-900 mb-2">
+                        Mencatat untuk: <b>{selectedStudent.name}</b> ({selectedStudent.nis})
                     </div>
-                    <div>
-                       <label className="block text-sm font-semibold text-slate-700 mb-1">Rekomendasi</label>
-                       <select 
-                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
-                         value={recommendation}
-                         onChange={e => setRecommendation(e.target.value as any)}
-                       >
-                         <option value="NONE">Tidak Ada (Cukup Pembinaan)</option>
-                         <option value="PARENT_CALL">Panggil Orang Tua</option>
-                         <option value="TO_KESISWAAN">Rujuk ke Kesiswaan</option>
-                         <option value="SUSPENSION_REVIEW">Tinjau Skorsing</option>
-                       </select>
-                    </div>
-                 </div>
 
-                 <div className="pt-4 flex justify-end gap-2">
+                    {/* PILIH KASUS TERKAIT (NEW FEATURE) */}
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 text-orange-500" />
+                            Pilih Kasus / Pelanggaran Terkait
+                        </label>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-40 overflow-y-auto p-2 space-y-1">
+                            {studentViolations.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic p-2">Tidak ada data pelanggaran tercatat.</p>
+                            ) : (
+                                studentViolations.map(record => {
+                                    const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
+                                    const isSelected = selectedRecordIds.includes(record.id);
+                                    return (
+                                        <div 
+                                            key={record.id} 
+                                            onClick={() => toggleRecordSelection(record.id)}
+                                            className={`p-2 rounded border cursor-pointer text-xs flex items-center gap-2 transition-all ${isSelected ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-slate-200 hover:bg-slate-100'}`}
+                                        >
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                                                {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
+                                            </div>
+                                            <div className="flex-1">
+                                                <span className="font-bold">{incidentName}</span> <span className="text-red-600">({record.pointSnapshot} Pt)</span>
+                                                <div className="text-slate-500">{new Date(record.date).toLocaleDateString()}</div>
+                                            </div>
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">Centang pelanggaran yang sedang dibahas dalam sesi ini.</p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Catatan / Hasil Konseling</label>
+                        <textarea 
+                        required
+                        className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none h-32 bg-white text-slate-900"
+                        placeholder="Deskripsikan masalah, solusi, dan komitmen siswa..."
+                        value={notes}
+                        onChange={e => setNotes(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Status Sesi</label>
+                        <select 
+                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
+                            value={sessionStatus}
+                            onChange={e => setSessionStatus(e.target.value as any)}
+                        >
+                            <option value="OPEN">OPEN (Masih Dipantau)</option>
+                            <option value="CLOSED">CLOSED (Selesai)</option>
+                        </select>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                            *Pilih CLOSED jika pembinaan kasus ini selesai.
+                        </p>
+                        </div>
+                        <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Rekomendasi</label>
+                        <select 
+                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
+                            value={recommendation}
+                            onChange={e => setRecommendation(e.target.value as any)}
+                        >
+                            <option value="NONE">Tidak Ada (Cukup Pembinaan)</option>
+                            <option value="PARENT_CALL">Panggil Orang Tua</option>
+                            <option value="TO_KESISWAAN">Rujuk ke Kesiswaan</option>
+                            <option value="SUSPENSION_REVIEW">Tinjau Skorsing</option>
+                        </select>
+                        </div>
+                    </div>
+                </form>
+              </div>
+
+              <div className="p-4 border-t border-slate-100 flex justify-end gap-2 shrink-0">
                     <button 
                       type="button" 
                       onClick={() => setShowModal(false)}
@@ -355,14 +412,14 @@ const ActiveCoaching: React.FC = () => {
                       Batal
                     </button>
                     <button 
+                      form="counselingForm"
                       type="submit"
                       disabled={isSubmitting || !notes}
                       className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       <Save className="h-4 w-4" /> Simpan
                     </button>
-                 </div>
-              </form>
+              </div>
            </div>
         </div>
       )}

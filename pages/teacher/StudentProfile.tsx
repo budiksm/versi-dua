@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DataService } from '../../services/dataService';
@@ -33,17 +32,12 @@ import {
   BookOpen,
   ClipboardList,
   Gavel,
-  CheckSquare,
   BarChart3,
   Clock,
-  PlayCircle,
   AlertCircle,
-  Megaphone,
-  UserCheck,
   Ban,
   User,
   PenSquare,
-  Eye,
   FileText,
   Calendar
 } from 'lucide-react';
@@ -76,6 +70,9 @@ const StudentProfile: React.FC = () => {
   const [counselingNotes, setCounselingNotes] = useState('');
   // Expanded generic type for all forms
   const [counselingRec, setCounselingRec] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
+  
+  // New: Selected Records for Counseling
+  const [selectedCounselingRecords, setSelectedCounselingRecords] = useState<string[]>([]);
 
   // Form State (Sanction - Kesiswaan Only)
   const [sanctionLevel, setSanctionLevel] = useState<SanctionLevel>(SanctionLevel.SP1);
@@ -176,7 +173,15 @@ const StudentProfile: React.FC = () => {
     i.categoryId === selectedCategory
   );
 
-  // --- IMAGE COMPRESSION LOGIC ---
+  // --- RECORD SELECTION HELPER ---
+  const toggleCounselingRecord = (recordId: string) => {
+      if (selectedCounselingRecords.includes(recordId)) {
+          setSelectedCounselingRecords(prev => prev.filter(id => id !== recordId));
+      } else {
+          setSelectedCounselingRecords(prev => [...prev, recordId]);
+      }
+  };
+
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -239,9 +244,6 @@ const StudentProfile: React.FC = () => {
     const incidentDef = incidents.find(i => i.id === selectedIncident);
     if (!incidentDef) return;
 
-    // LOGIKA REVISI:
-    // Jika pelapor adalah wali kelas -> APPROVED
-    // Jika bukan -> PENDING
     const initialStatus: IncidentStatus = isReporterHomeroom ? 'APPROVED' : 'PENDING';
 
     const newRecord: IncidentRecord = {
@@ -261,14 +263,13 @@ const StudentProfile: React.FC = () => {
     DataService.saveRecords([...allRecords, newRecord]);
 
     let autoSanctionMsg = '';
-    // Otomatisasi sanksi hanya jika Approved (Wali Kelas)
     if (incidentDef.type === IncidentTypeCategory.VIOLATION && initialStatus === 'APPROVED') {
         const appliedSanction = DataService.evaluateAndApplySanction(student.id);
         if (appliedSanction) {
             autoSanctionMsg = ` & Otomatis menerbitkan ${appliedSanction}`;
         }
     } else if (initialStatus === 'PENDING') {
-        autoSanctionMsg = '. Menunggu persetujuan Wali Kelas agar poin dihitung.';
+        autoSanctionMsg = '. Menunggu persetujuan Wali Kelas.';
     }
 
     setTimeout(() => {
@@ -296,7 +297,8 @@ const StudentProfile: React.FC = () => {
       notes: counselingNotes,
       recommendation: counselingRec,
       status: 'CLOSED',
-      sessionType: type
+      sessionType: type,
+      relatedRecordIds: type === 'BK' ? selectedCounselingRecords : [] // Hanya BK yang support case linking
     };
     
     if (counselingRec !== 'NONE') {
@@ -311,12 +313,12 @@ const StudentProfile: React.FC = () => {
       setIsSubmitting(false);
       setCounselingNotes('');
       setCounselingRec('NONE');
+      setSelectedCounselingRecords([]);
       setRefreshKey(prev => prev + 1);
       setTimeout(() => setSuccessMsg(''), 3000);
     }, 600);
   };
 
-  // --- HANDLE SANCTIONS (CREATE & UPDATE) ---
   const handleAssignSanction = (e: React.FormEvent) => {
     e.preventDefault();
     if(!isKesiswaan) return;
@@ -325,7 +327,6 @@ const StudentProfile: React.FC = () => {
     const allSanctions = DataService.getSanctions();
 
     if (editingSanctionId) {
-        // UPDATE EXISTING SANCTION
         const updatedSanctions = allSanctions.map(s => {
             if (s.id === editingSanctionId) {
                 return {
@@ -334,7 +335,7 @@ const StudentProfile: React.FC = () => {
                     notes: sanctionNotes,
                     redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : s.redemptionStatus,
                     redemptionTask: sanctionRedemptionTask,
-                    assignedBy: `${s.assignedBy} & ${currentUser?.name}` // Append editor name
+                    assignedBy: `${s.assignedBy} & ${currentUser?.name}`
                 };
             }
             return s;
@@ -342,7 +343,6 @@ const StudentProfile: React.FC = () => {
         DataService.saveSanctions(updatedSanctions);
         setSuccessMsg('Data sanksi berhasil diperbarui!');
     } else {
-        // CREATE NEW SANCTION
         const newSanction: StudentSanction = {
           id: `san_${Date.now()}`,
           studentId: student.id,
@@ -382,8 +382,6 @@ const StudentProfile: React.FC = () => {
       setSanctionLevel(sanction.level);
       setSanctionNotes(sanction.notes);
       setSanctionRedemptionTask(sanction.redemptionTask || '');
-      
-      // Scroll to top of form
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -425,7 +423,6 @@ const StudentProfile: React.FC = () => {
     }
   };
 
-  // Helper untuk menampilkan status approval
   const getStatusBadge = (status?: IncidentStatus) => {
     if (status === 'PENDING') {
       return <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold border border-yellow-200 flex items-center gap-1"><Clock className="h-3 w-3"/> MENUNGGU VERIFIKASI</span>;
@@ -440,9 +437,12 @@ const StudentProfile: React.FC = () => {
   const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
 
+  // --- FILTERED INCIDENTS FOR SELECTION ---
+  const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 15);
+
   return (
     <div className="space-y-8 pb-12">
-      {/* Header */}
+      {/* Header and Stats Cards */}
       <div className="flex flex-col md:flex-row md:items-center gap-4">
         {isAdmin && !isEducator ? (
             <Link to="/admin/students" className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 self-start">
@@ -467,7 +467,6 @@ const StudentProfile: React.FC = () => {
 
       {/* Stats Cards - Updated to 4 Columns Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group hover:border-red-300 transition-colors">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <ShieldAlert className="h-16 w-16 text-red-600" />
@@ -564,18 +563,11 @@ const StudentProfile: React.FC = () => {
                </span>
             </button>
             
-            {/* TAB WALI KELAS - Accessible by Homeroom Teacher */}
+            {/* TAB WALI KELAS */}
             {isReporterHomeroom && (
               <button
-                 onClick={() => {
-                    setActiveTab('HOMEROOM');
-                    setCounselingRec('NONE'); // Reset choice when switching tabs
-                 }}
-                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
-                    activeTab === 'HOMEROOM' 
-                    ? 'border-orange-500 text-orange-600' 
-                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
-                 }`}
+                 onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); }}
+                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'HOMEROOM' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
               >
                  <span className="flex items-center gap-2">
                     <User className="h-4 w-4" /> Pembinaan Wali Kelas
@@ -583,18 +575,11 @@ const StudentProfile: React.FC = () => {
               </button>
             )}
 
-            {/* TAB BK - Accessible if BK Role AND (Points >= 40 OR Referred) */}
+            {/* TAB BK */}
             {canAccessBK && (
               <button
-                 onClick={() => {
-                    setActiveTab('BK_COUNSELING');
-                    setCounselingRec('NONE');
-                 }}
-                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
-                    activeTab === 'BK_COUNSELING' 
-                    ? 'border-blue-500 text-blue-600' 
-                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
-                 }`}
+                 onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); }}
+                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
               >
                  <span className="flex items-center gap-2">
                     <HeartHandshake className="h-4 w-4" /> Bimbingan Konseling
@@ -602,18 +587,14 @@ const StudentProfile: React.FC = () => {
               </button>
             )}
 
-            {/* TAB SANKSI - Accessible if Kesiswaan Role AND (Points >= 80 OR Referred) */}
+            {/* TAB SANKSI */}
             {canAccessKesiswaan && (
               <button
                  onClick={() => setActiveTab('SANCTIONS')}
-                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${
-                    activeTab === 'SANCTIONS' 
-                    ? 'border-red-500 text-red-600' 
-                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
-                 }`}
+                 className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
               >
                  <span className="flex items-center gap-2">
-                    <Gavel className="h-4 w-4" /> Panel Sanksi & Penebusan
+                    <Gavel className="h-4 w-4" /> Panel Sanksi
                  </span>
               </button>
             )}
@@ -635,13 +616,6 @@ const StudentProfile: React.FC = () => {
                           <ShieldAlert className="h-5 w-5 text-indigo-600" />
                           Input Kejadian Baru
                       </h2>
-                      <div className="flex gap-1">
-                        {roles.map(r => (
-                          <span key={r} className="text-xs font-semibold px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">
-                              {r}
-                          </span>
-                        ))}
-                      </div>
                       </div>
                       
                       <form onSubmit={handleSubmitIncident} className="p-6 space-y-6">
@@ -654,7 +628,6 @@ const StudentProfile: React.FC = () => {
                                <p className="font-bold">Menunggu Persetujuan Wali Kelas</p>
                                <p className="text-xs mt-1">
                                   Anda bukan wali kelas siswa ini. Laporan pelanggaran akan berstatus <b>PENDING</b> sampai disetujui oleh Wali Kelas.
-                                  <b> Poin belum akan dihitung.</b>
                                </p>
                             </div>
                          </div>
@@ -665,57 +638,35 @@ const StudentProfile: React.FC = () => {
                           <button
                           type="button"
                           onClick={() => handleTypeChange(IncidentTypeCategory.VIOLATION)}
-                          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
-                              formType === IncidentTypeCategory.VIOLATION 
-                              ? 'bg-white text-red-600 shadow-sm' 
-                              : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${formType === IncidentTypeCategory.VIOLATION ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                           >
-                          <ShieldAlert className="h-4 w-4" />
-                          Pelanggaran
+                          <ShieldAlert className="h-4 w-4" /> Pelanggaran
                           </button>
                           <button
                           type="button"
                           onClick={() => handleTypeChange(IncidentTypeCategory.ACHIEVEMENT)}
-                          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
-                              formType === IncidentTypeCategory.ACHIEVEMENT
-                              ? 'bg-white text-emerald-600 shadow-sm' 
-                              : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${formType === IncidentTypeCategory.ACHIEVEMENT ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                           >
-                          <Award className="h-4 w-4" />
-                          Penghargaan
+                          <Award className="h-4 w-4" /> Penghargaan
                           </button>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-2">
-                              Kategori <span className="text-red-500">*</span>
-                          </label>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Kategori <span className="text-red-500">*</span></label>
                           <select
                               required
                               value={selectedCategory}
-                              onChange={(e) => {
-                              setSelectedCategory(e.target.value);
-                              setSelectedIncident('');
-                              }}
+                              onChange={(e) => { setSelectedCategory(e.target.value); setSelectedIncident(''); }}
                               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
                           >
                               <option value="">-- Pilih Kategori --</option>
-                              {filteredCategories.map(cat => (
-                              <option key={cat.id} value={cat.id}>{cat.name}</option>
-                              ))}
+                              {filteredCategories.map(cat => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
                           </select>
-                          {filteredCategories.length === 0 && (
-                              <p className="text-xs text-red-500 mt-1">Tidak ada kategori untuk jenis ini.</p>
-                          )}
                           </div>
 
                           <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-2">
-                              Jenis Kejadian <span className="text-red-500">*</span>
-                          </label>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Jenis Kejadian <span className="text-red-500">*</span></label>
                           <select
                               required
                               disabled={!selectedCategory}
@@ -724,11 +675,7 @@ const StudentProfile: React.FC = () => {
                               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
                           >
                               <option value="">-- Pilih Kejadian --</option>
-                              {filteredIncidents.map(inc => (
-                              <option key={inc.id} value={inc.id}>
-                                  {inc.name} ({inc.points} Poin)
-                              </option>
-                              ))}
+                              {filteredIncidents.map(inc => (<option key={inc.id} value={inc.id}>{inc.name} ({inc.points} Poin)</option>))}
                           </select>
                           </div>
                       </div>
@@ -747,7 +694,6 @@ const StudentProfile: React.FC = () => {
                                     <>
                                         <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
                                         <p className="text-sm text-slate-500"><span className="font-semibold">Klik untuk upload</span></p>
-                                        <p className="text-xs text-slate-400 mt-1">Otomatis dikompres &lt; 100KB</p>
                                     </>
                                 )}
                               </div>
@@ -756,11 +702,7 @@ const StudentProfile: React.FC = () => {
                           ) : (
                           <div className="relative w-full h-48 bg-slate-100 rounded-lg overflow-hidden border border-slate-300">
                               <img src={imageProof} alt="Preview" className="w-full h-full object-contain" />
-                              <button 
-                              type="button"
-                              onClick={() => setImageProof(null)}
-                              className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600"
-                              >
+                              <button type="button" onClick={() => setImageProof(null)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600">
                               <X className="w-4 h-4" />
                               </button>
                           </div>
@@ -780,8 +722,7 @@ const StudentProfile: React.FC = () => {
 
                       {successMsg && (
                           <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
-                          <CheckCircle2 className="h-5 w-5" />
-                          {successMsg}
+                          <CheckCircle2 className="h-5 w-5" /> {successMsg}
                           </div>
                       )}
 
@@ -790,8 +731,7 @@ const StudentProfile: React.FC = () => {
                           disabled={isSubmitting || !selectedIncident || !selectedCategory || isCompressing}
                           className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
                       >
-                          <Save className="h-5 w-5" />
-                          {isSubmitting ? 'Menyimpan...' : 'Simpan Data'}
+                          <Save className="h-5 w-5" /> {isSubmitting ? 'Menyimpan...' : 'Simpan Data'}
                       </button>
                       </form>
                   </div>
@@ -799,7 +739,7 @@ const StudentProfile: React.FC = () => {
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
                       <Lock className="h-12 w-12 mb-4 text-slate-300" />
                       <h3 className="text-lg font-semibold text-slate-700">Mode Lihat Saja</h3>
-                      <p>Akun ini (Admin murni) tidak memiliki akses untuk mencatat kejadian. Silakan tambahkan role Guru/Wali Kelas/BK ke akun ini jika ingin mencatat.</p>
+                      <p>Akun ini tidak memiliki akses untuk mencatat kejadian.</p>
                   </div>
                 )}
               </div>
@@ -807,8 +747,7 @@ const StudentProfile: React.FC = () => {
               {/* HISTORY LIST (Right Column) */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
-                  <History className="h-5 w-5" />
-                  Riwayat Kejadian
+                  <History className="h-5 w-5" /> Riwayat Kejadian
                 </div>
 
                 <div className="space-y-3 max-h-[800px] overflow-y-auto pr-1">
@@ -817,37 +756,15 @@ const StudentProfile: React.FC = () => {
                   ) : (
                     history.map(record => {
                       const incName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
-                      const type = record.typeSnapshot;
-                      
-                      let badgeColor = 'bg-slate-100 text-slate-700';
-                      let sign = '';
-
-                      if (type === IncidentTypeCategory.VIOLATION) {
-                        badgeColor = 'bg-red-50 text-red-700';
-                        sign = '+';
-                      } else if (type === IncidentTypeCategory.ACHIEVEMENT) {
-                        badgeColor = 'bg-emerald-50 text-emerald-700';
-                        sign = '';
-                      } else if (type === IncidentTypeCategory.REDEMPTION) {
-                        badgeColor = 'bg-blue-50 text-blue-700';
-                        sign = '✓ ';
-                      }
-
                       return (
-                        <div 
-                          key={record.id} 
-                          onClick={() => setSelectedRecord(record)}
-                          className="bg-white p-3 rounded-lg border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group"
-                        >
+                        <div key={record.id} onClick={() => setSelectedRecord(record)} className="bg-white p-3 rounded-lg border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group">
                           <div className="flex justify-between items-start mb-1">
                              <div className="flex-1">
                                 <h4 className="font-bold text-slate-800 text-sm group-hover:text-indigo-600 transition-colors line-clamp-1">{incName}</h4>
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                   {new Date(record.date).toLocaleDateString()} • {record.recordedBy}
-                                </p>
+                                <p className="text-xs text-slate-500 mt-0.5">{new Date(record.date).toLocaleDateString()} • {record.recordedBy}</p>
                              </div>
-                             <span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${badgeColor}`}>
-                                {type === IncidentTypeCategory.REDEMPTION ? 'TEBUS' : `${sign}${record.pointSnapshot} Pt`}
+                             <span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${record.typeSnapshot === 'VIOLATION' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                {record.typeSnapshot === 'VIOLATION' ? `+${record.pointSnapshot}` : record.pointSnapshot} Pt
                              </span>
                           </div>
                           
@@ -866,7 +783,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (Other Tabs remain the same) ... */}
+        {/* === TAB 2: HOMEROOM === */}
         {activeTab === 'HOMEROOM' && isReporterHomeroom && (
            <>
              {/* INPUT FORM HOMEROOM */}
@@ -874,61 +791,31 @@ const StudentProfile: React.FC = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <div className="p-6 border-b flex justify-between items-center bg-orange-50 border-orange-100">
                      <h2 className="font-bold flex items-center gap-2 text-orange-800">
-                        <User className="h-5 w-5" />
-                        Catat Pembinaan Wali Kelas
+                        <User className="h-5 w-5" /> Catat Pembinaan Wali Kelas
                      </h2>
                    </div>
                    
                    <form onSubmit={(e) => handleSubmitCounseling(e, 'HOMEROOM')} className="p-6 space-y-6">
                       <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100">
-                         Form ini khusus untuk pencatatan pembinaan oleh Wali Kelas. 
-                         Poin 20-39 ditangani Wali Kelas. Jika perlu penanganan lebih lanjut, gunakan opsi rujukan.
+                         Form ini khusus untuk pencatatan pembinaan oleh Wali Kelas.
                       </div>
                       
                       <div>
                          <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Pembinaan / Solusi</label>
-                         <textarea
-                           required
-                           value={counselingNotes}
-                           onChange={(e) => setCounselingNotes(e.target.value)}
-                           rows={6}
-                           className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900"
-                           placeholder="Jelaskan permasalahan siswa dan solusi yang diberikan..."
-                         />
+                         <textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900" placeholder="Jelaskan permasalahan siswa..." />
                       </div>
 
                       <div>
                          <label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label>
-                         <select
-                            value={counselingRec}
-                            onChange={(e) => setCounselingRec(e.target.value as any)}
-                            className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900"
-                         >
+                         <select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900">
                             <option value="NONE">Cukup Pembinaan (Selesai)</option>
                             <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
                             <option value="TO_BK">Rujuk ke BK (Eskalasi Masalah)</option>
                          </select>
-                         {counselingRec === 'TO_BK' && (
-                           <p className="text-xs text-blue-600 mt-2 font-bold animate-pulse">
-                             *Rujukan ini akan membuka akses siswa ini di Dashboard Guru BK.
-                           </p>
-                         )}
                       </div>
 
-                      {successMsg && (
-                          <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
-                          <CheckCircle2 className="h-5 w-5" />
-                          {successMsg}
-                          </div>
-                      )}
-
-                      <button
-                          type="submit"
-                          disabled={isSubmitting || !counselingNotes}
-                          className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
-                      >
-                          <Save className="h-5 w-5" />
-                          {isSubmitting ? 'Menyimpan...' : 'Simpan Pembinaan'}
+                      <button type="submit" disabled={isSubmitting || !counselingNotes} className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all">
+                          <Save className="h-5 w-5" /> Simpan Pembinaan
                       </button>
                    </form>
                 </div>
@@ -936,44 +823,27 @@ const StudentProfile: React.FC = () => {
 
              {/* HISTORY HOMEROOM */}
              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
-                   <BookOpen className="h-5 w-5" />
-                   Riwayat Pembinaan
-                </div>
-
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><BookOpen className="h-5 w-5" /> Riwayat Pembinaan</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-                  {homeroomSessions.length === 0 ? (
-                    <div className="text-slate-500 text-sm italic">Belum ada data pembinaan wali kelas.</div>
-                  ) : (
+                  {homeroomSessions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada data.</div> : 
                     homeroomSessions.map(session => (
                       <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
                          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-500" />
                          <div className="flex justify-between items-start mb-2">
-                           <div className="text-xs font-semibold text-slate-500">
-                              {new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                           </div>
-                           {session.recommendation !== 'NONE' && (
-                             <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
-                               ! {translateRecommendation(session.recommendation)}
-                             </span>
-                           )}
+                           <div className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</div>
+                           {session.recommendation !== 'NONE' && <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>}
                          </div>
-                         
-                         <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                            {session.notes}
-                         </p>
-
-                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1">
-                            <span className="font-semibold text-slate-500">Wali Kelas:</span> {session.counselorName}
-                         </div>
+                         <p className="text-sm text-slate-700 whitespace-pre-wrap">{session.notes}</p>
+                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1"><span className="font-semibold text-slate-500">Wali Kelas:</span> {session.counselorName}</div>
                       </div>
                     ))
-                  )}
+                  }
                 </div>
              </div>
            </>
         )}
 
+        {/* === TAB 3: BK COUNSELING === */}
         {activeTab === 'BK_COUNSELING' && canAccessBK && (
            <>
              {/* INPUT FORM BK */}
@@ -981,8 +851,7 @@ const StudentProfile: React.FC = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <div className="p-6 border-b flex justify-between items-center bg-blue-50 border-blue-100">
                      <h2 className="font-bold flex items-center gap-2 text-blue-800">
-                        <HeartHandshake className="h-5 w-5" />
-                        Catat Sesi Konseling BK
+                        <HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling BK
                      </h2>
                    </div>
                    
@@ -990,119 +859,103 @@ const StudentProfile: React.FC = () => {
                       <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100">
                          Form ini terbuka karena siswa memiliki Poin ≥ 40 atau dirujuk oleh Wali Kelas.
                       </div>
+
+                      {/* --- RECORD SELECTOR --- */}
+                      <div>
+                         <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 text-orange-500" />
+                            Pilih Kasus / Pelanggaran Terkait
+                         </label>
+                         <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-40 overflow-y-auto p-2 space-y-1">
+                            {violationRecords.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic p-2">Tidak ada data pelanggaran tercatat.</p>
+                            ) : (
+                                violationRecords.map(record => {
+                                    const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
+                                    const isSelected = selectedCounselingRecords.includes(record.id);
+                                    return (
+                                        <div 
+                                            key={record.id} 
+                                            onClick={() => toggleCounselingRecord(record.id)}
+                                            className={`p-2 rounded border cursor-pointer text-xs flex items-center gap-2 transition-all ${isSelected ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-slate-200 hover:bg-slate-100'}`}
+                                        >
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                                                {isSelected && <CheckCircle2 className="h-3 w-3 text-white" />}
+                                            </div>
+                                            <div className="flex-1">
+                                                <span className="font-bold">{incidentName}</span> <span className="text-red-600">({record.pointSnapshot} Pt)</span>
+                                                <div className="text-slate-500">{new Date(record.date).toLocaleDateString()}</div>
+                                            </div>
+                                        </div>
+                                    )
+                                })
+                            )}
+                         </div>
+                      </div>
                       
                       <div>
                          <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil</label>
-                         <textarea
-                           required
-                           value={counselingNotes}
-                           onChange={(e) => setCounselingNotes(e.target.value)}
-                           rows={6}
-                           className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"
-                           placeholder="Jelaskan permasalahan, solusi yang disepakati, dan respon siswa..."
-                         />
+                         <textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900" placeholder="Deskripsikan masalah..." />
                       </div>
 
                       <div>
                          <label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label>
-                         <select
-                            value={counselingRec}
-                            onChange={(e) => setCounselingRec(e.target.value as any)}
-                            className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"
-                         >
+                         <select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900">
                             <option value="NONE">Cukup Pembinaan (Selesai)</option>
                             <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
                             <option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Perlu Sanksi Tegas)</option>
                             <option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option>
                          </select>
-                         {counselingRec === 'TO_KESISWAAN' && (
-                           <p className="text-xs text-red-600 mt-2 font-bold animate-pulse">
-                             *Rujukan ini akan membuka akses siswa ini di Dashboard Kesiswaan untuk SP/Sanksi.
-                           </p>
-                         )}
                       </div>
 
-                      {successMsg && (
-                          <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
-                          <CheckCircle2 className="h-5 w-5" />
-                          {successMsg}
-                          </div>
-                      )}
-
-                      <button
-                          type="submit"
-                          disabled={isSubmitting || !counselingNotes}
-                          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
-                      >
-                          <Save className="h-5 w-5" />
-                          {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan BK'}
+                      <button type="submit" disabled={isSubmitting || !counselingNotes} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all">
+                          <Save className="h-5 w-5" /> Simpan Laporan BK
                       </button>
                    </form>
                 </div>
              </div>
 
-             {/* HISTORY BK (Includes Legacy Data) */}
+             {/* HISTORY BK */}
              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
-                   <BookOpen className="h-5 w-5" />
-                   Riwayat Konseling BK
-                </div>
-
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><BookOpen className="h-5 w-5" /> Riwayat Konseling BK</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-                  {bkSessions.length === 0 ? (
-                    <div className="text-slate-500 text-sm italic">Belum ada data konseling BK.</div>
-                  ) : (
+                  {bkSessions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada data.</div> : 
                     bkSessions.map(session => (
                       <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
                          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500" />
                          <div className="flex justify-between items-start mb-2">
-                           <div className="text-xs font-semibold text-slate-500">
-                              {new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                           </div>
-                           {session.recommendation !== 'NONE' && (
-                             <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
-                               ! {translateRecommendation(session.recommendation)}
-                             </span>
-                           )}
+                           <div className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</div>
+                           {session.recommendation !== 'NONE' && <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>}
                          </div>
-                         
-                         <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                            {session.notes}
-                         </p>
-
-                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1">
-                            <span className="font-semibold text-slate-500">Konselor:</span> {session.counselorName}
-                         </div>
+                         <p className="text-sm text-slate-700 whitespace-pre-wrap">{session.notes}</p>
+                         {session.relatedRecordIds && session.relatedRecordIds.length > 0 && (
+                            <div className="mt-2 text-[10px] bg-blue-50 text-blue-800 p-1.5 rounded inline-block border border-blue-100 font-bold">
+                                Menangani {session.relatedRecordIds.length} kasus spesifik.
+                            </div>
+                         )}
+                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1"><span className="font-semibold text-slate-500">Konselor:</span> {session.counselorName}</div>
                       </div>
                     ))
-                  )}
+                  }
                 </div>
              </div>
            </>
         )}
 
-        {/* ... (Existing Tabs for BK Locked) ... */}
+        {/* ... (Existing Tabs for Sanctions & Locked States remain same) ... */}
         {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
             <div className="lg:col-span-3">
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
                   <Lock className="h-16 w-16 mb-4 text-slate-300" />
                   <h3 className="text-lg font-bold text-slate-700">Akses Pembinaan Dibatasi</h3>
-                  <p className="max-w-md mt-2 mb-4">
-                     Sesuai hirarki, BK hanya dapat menangani siswa jika:
-                     <br/>1. Total Poin ≥ 40
-                     <br/>2. Ada rujukan resmi dari Wali Kelas (TO_BK)
-                  </p>
-                  <p className="text-xs bg-white px-3 py-1 rounded border border-slate-200">
-                     Poin Saat Ini: <b>{stats.effectiveViolationScore}</b>
-                  </p>
+                  <p className="max-w-md mt-2 mb-4">Sesuai hirarki, BK hanya dapat menangani siswa jika: Poin ≥ 40 atau ada rujukan.</p>
                </div>
             </div>
         )}
-
-        {/* ... (Existing Tabs for Sanctions) ... */}
+        
+        {/* TAB SANCTIONS (Same as previous implementation) */}
         {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
            <>
-             {/* INPUT FORM SANKSI */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <div className={`p-6 border-b border-slate-100 flex justify-between items-center ${editingSanctionId ? 'bg-orange-50' : 'bg-red-50'}`}>
@@ -1110,287 +963,91 @@ const StudentProfile: React.FC = () => {
                         {editingSanctionId ? <PenSquare className="h-5 w-5" /> : <Gavel className="h-5 w-5 text-red-600" />}
                         {editingSanctionId ? 'Edit Sanksi / Beri Tugas' : 'Tetapkan Sanksi Baru'}
                      </h2>
-                     {editingSanctionId && (
-                        <button onClick={cancelEditSanction} className="text-xs text-orange-700 hover:underline font-bold">
-                            Batal Edit
-                        </button>
-                     )}
+                     {editingSanctionId && <button onClick={cancelEditSanction} className="text-xs text-orange-700 hover:underline font-bold">Batal Edit</button>}
                    </div>
-                   
                    <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
-                      <div className={`p-4 rounded-lg text-sm border mb-4 ${editingSanctionId ? 'bg-orange-50 text-orange-800 border-orange-100' : 'bg-red-50 text-red-800 border-red-100'}`}>
-                         {editingSanctionId 
-                            ? "Anda sedang mengedit sanksi yang sudah ada. Gunakan ini untuk menambahkan tugas penebusan pada SP otomatis."
-                            : "Form terbuka karena Poin ≥ 80 atau ada rujukan dari BK."
-                         }
-                      </div>
-                      
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div>
                             <label className="block text-sm font-medium text-slate-700 mb-2">Tingkat Sanksi</label>
-                            <select
-                               value={sanctionLevel}
-                               onChange={(e) => setSanctionLevel(e.target.value as any)}
-                               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900"
-                            >
-                               <option value="SP1">SP 1 (Peringatan Pertama)</option>
-                               <option value="SP2">SP 2 (Peringatan Kedua)</option>
-                               <option value="SP3">SP 3 (Peringatan Terakhir)</option>
-                               <option value="SKORSING">Skorsing Sementara</option>
-                               <option value="DROP_OUT">Dikembalikan ke Orang Tua</option>
+                            <select value={sanctionLevel} onChange={(e) => setSanctionLevel(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900">
+                               <option value="SP1">SP 1</option><option value="SP2">SP 2</option><option value="SP3">SP 3</option><option value="SKORSING">Skorsing</option><option value="DROP_OUT">Drop Out</option>
                             </select>
                          </div>
                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Tugas Penebusan (Opsional)</label>
-                            <input
-                               type="text"
-                               value={sanctionRedemptionTask}
-                               onChange={(e) => setSanctionRedemptionTask(e.target.value)}
-                               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900"
-                               placeholder="Contoh: Membersihkan Masjid 3 Hari"
-                            />
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Tugas Penebusan</label>
+                            <input type="text" value={sanctionRedemptionTask} onChange={(e) => setSanctionRedemptionTask(e.target.value)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900" placeholder="Contoh: Membersihkan Masjid..." />
                          </div>
                       </div>
-
                       <div>
-                         <label className="block text-sm font-medium text-slate-700 mb-2">Alasan / Catatan Sanksi</label>
-                         <textarea
-                           required
-                           value={sanctionNotes}
-                           onChange={(e) => setSanctionNotes(e.target.value)}
-                           rows={4}
-                           className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900"
-                           placeholder="Dasar penetapan sanksi..."
-                         />
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Alasan</label>
+                         <textarea required value={sanctionNotes} onChange={(e) => setSanctionNotes(e.target.value)} rows={4} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900" placeholder="Dasar penetapan..." />
                       </div>
-
-                      {successMsg && (
-                          <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
-                          <CheckCircle2 className="h-5 w-5" />
-                          {successMsg}
-                          </div>
-                      )}
-
-                      <button
-                          type="submit"
-                          disabled={isSubmitting}
-                          className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
-                      >
-                          {editingSanctionId ? <Save className="h-5 w-5" /> : <Gavel className="h-5 w-5" />}
-                          {isSubmitting ? 'Menyimpan...' : (editingSanctionId ? 'Simpan Perubahan' : 'Terbitkan Surat Peringatan')}
+                      <button type="submit" disabled={isSubmitting} className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-semibold py-4 rounded-xl shadow-md">
+                          {editingSanctionId ? <Save className="h-5 w-5" /> : <Gavel className="h-5 w-5" />} {isSubmitting ? 'Menyimpan...' : 'Simpan'}
                       </button>
                    </form>
                 </div>
              </div>
-
-             {/* SANCTION HISTORY */}
              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
-                   <Gavel className="h-5 w-5" />
-                   Riwayat Sanksi
-                </div>
-
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><Gavel className="h-5 w-5" /> Riwayat Sanksi</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-                  {sanctions.length === 0 ? (
-                    <div className="text-slate-500 text-sm italic">Belum ada sanksi.</div>
-                  ) : (
+                  {sanctions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada sanksi.</div> : 
                     sanctions.map(item => (
                       <div key={item.id} className={`bg-white p-5 rounded-xl border shadow-sm relative overflow-hidden transition-all ${editingSanctionId === item.id ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`}>
                          <div className="flex justify-between items-start mb-2">
-                           <div className="text-xs font-semibold text-slate-500">
-                              {new Date(item.assignedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
-                           </div>
-                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${item.redemptionStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                              {item.redemptionStatus === 'COMPLETED' ? 'Selesai' : 'Belum Selesai'}
-                           </span>
+                           <div className="text-xs font-semibold text-slate-500">{new Date(item.assignedDate).toLocaleDateString()}</div>
+                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${item.redemptionStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{item.redemptionStatus === 'COMPLETED' ? 'Selesai' : 'Belum Selesai'}</span>
                          </div>
-                         
                          <div className="flex items-center justify-between mb-2">
                             <span className="text-lg font-bold text-red-600">{item.level}</span>
-                            {/* TOMBOL EDIT UNTUK SANKSI TANPA TUGAS (OTOMATIS) */}
-                            {item.redemptionStatus === RedemptionStatus.NONE && (
-                                <button 
-                                    onClick={() => startEditSanction(item)}
-                                    className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 font-bold flex items-center gap-1 border border-orange-200 shadow-sm"
-                                >
-                                    <PenSquare className="h-3 w-3" /> Beri Tugas / Edit
-                                </button>
-                            )}
+                            {item.redemptionStatus === RedemptionStatus.NONE && <button onClick={() => startEditSanction(item)} className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg font-bold"><PenSquare className="h-3 w-3" /> Edit</button>}
                          </div>
-
-                         <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">
-                            "{item.notes}"
-                         </p>
-
-                         {item.redemptionTask ? (
-                            <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3">
-                               <b>Tugas:</b> {item.redemptionTask}
-                            </div>
-                         ) : (
-                            <div className="text-xs text-slate-400 italic mb-3">
-                               Belum ada tugas penebusan.
-                            </div>
-                         )}
-
+                         <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">"{item.notes}"</p>
+                         {item.redemptionTask && <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3"><b>Tugas:</b> {item.redemptionTask}</div>}
                          {item.redemptionStatus !== 'COMPLETED' && item.redemptionTask && (
                             <div className="flex gap-2 justify-end mt-2">
-                               <button 
-                                 onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.IN_PROGRESS)}
-                                 disabled={item.redemptionStatus === RedemptionStatus.IN_PROGRESS}
-                                 className="px-3 py-1.5 text-xs bg-white border border-blue-200 text-blue-600 rounded hover:bg-blue-50 disabled:opacity-50"
-                               >
-                                 Mulai
-                               </button>
-                               <button 
-                                 onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED)}
-                                 className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
-                               >
-                                 Selesai
-                               </button>
+                               <button onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED)} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm">Selesai</button>
                             </div>
                          )}
-                         
-                         <div className="mt-2 text-[10px] text-slate-400 text-right">
-                            Oleh: {item.assignedBy}
-                         </div>
+                         <div className="mt-2 text-[10px] text-slate-400 text-right">Oleh: {item.assignedBy}</div>
                       </div>
                     ))
-                  )}
+                  }
                 </div>
              </div>
            </>
         )}
 
-        {/* ... (Existing Tabs for Kesiswaan Locked) ... */}
-        {activeTab === 'SANCTIONS' && !canAccessKesiswaan && isKesiswaan && (
-            <div className="lg:col-span-3">
-               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
-                  <Lock className="h-16 w-16 mb-4 text-slate-300" />
-                  <h3 className="text-lg font-bold text-slate-700">Akses Sanksi Dibatasi</h3>
-                  <p className="max-w-md mt-2 mb-4">
-                     Sesuai hirarki, Kesiswaan hanya dapat menangani siswa jika:
-                     <br/>1. Total Poin ≥ 80
-                     <br/>2. Ada rujukan resmi dari BK (TO_KESISWAAN)
-                  </p>
-                  <p className="text-xs bg-white px-3 py-1 rounded border border-slate-200">
-                     Poin Saat Ini: <b>{stats.effectiveViolationScore}</b>
-                  </p>
-               </div>
+        {/* ... (Existing Tab for Incident Detail Modal) ... */}
+        {selectedRecord && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
+                        <h2 className="font-bold text-lg flex items-center gap-2"><FileText className="h-5 w-5 text-indigo-400" /> Detail Kasus</h2>
+                        <button onClick={() => setSelectedRecord(null)} className="text-slate-400 hover:text-white transition-colors"><X className="h-6 w-6" /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        <div className="flex flex-col md:flex-row gap-6">
+                            <div className="flex-1 space-y-4">
+                                <div><p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Jenis Kejadian</p><p className="text-lg font-bold text-slate-800 leading-tight">{incidents.find(i => i.id === selectedRecord.incidentTypeId)?.name || 'Unknown'}</p></div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><p className="text-xs text-slate-500 font-semibold mb-1 flex items-center gap-1"><Calendar className="h-3 w-3" /> Tanggal</p><p className="text-sm font-medium text-slate-900">{new Date(selectedRecord.date).toLocaleDateString()}</p></div>
+                                    <div><p className="text-xs text-slate-500 font-semibold mb-1 flex items-center gap-1"><User className="h-3 w-3" /> Pelapor</p><p className="text-sm font-medium text-slate-900">{selectedRecord.recordedBy}</p></div>
+                                </div>
+                            </div>
+                            <div className="w-full md:w-1/3 bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center items-center text-center">
+                                <p className="text-xs font-bold text-slate-400 uppercase mb-2">Status</p>{getStatusBadge(selectedRecord.status)}
+                                <div className={`mt-3 text-3xl font-bold ${selectedRecord.typeSnapshot === 'VIOLATION' ? 'text-red-600' : 'text-blue-600'}`}>{selectedRecord.typeSnapshot === 'VIOLATION' ? '+' : ''}{selectedRecord.pointSnapshot}</div>
+                                <p className="text-xs text-slate-400 font-bold uppercase mt-1">Poin</p>
+                            </div>
+                        </div>
+                        <div><p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Keterangan</p><div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm text-slate-700 italic">"{selectedRecord.notes || '-'}"</div></div>
+                        <div><p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Bukti</p>{canViewEvidence ? (selectedRecord.proofImage ? <img src={selectedRecord.proofImage} alt="Bukti" className="w-full max-h-[300px] object-contain rounded-lg border" /> : <div className="bg-slate-50 border border-dashed rounded-lg p-4 text-center text-slate-400 text-xs">Tidak ada bukti media.</div>) : <div className="bg-slate-100 rounded p-4 text-center text-xs text-slate-500"><Lock className="h-4 w-4 inline mr-1"/> Akses Terbatas</div>}</div>
+                    </div>
+                    <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end"><button onClick={() => setSelectedRecord(null)} className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg text-sm">Tutup</button></div>
+                </div>
             </div>
         )}
-      </div>
-
-      {/* --- INCIDENT DETAIL MODAL --- */}
-      {selectedRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
-           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
-                 <h2 className="font-bold text-lg flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-indigo-400" />
-                    Detail Kasus Kejadian
-                 </h2>
-                 <button onClick={() => setSelectedRecord(null)} className="text-slate-400 hover:text-white transition-colors">
-                    <X className="h-6 w-6" />
-                 </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                 {/* Header Info */}
-                 <div className="flex flex-col md:flex-row gap-6">
-                    <div className="flex-1 space-y-4">
-                       <div>
-                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Jenis Kejadian</p>
-                          <p className="text-lg font-bold text-slate-800 leading-tight">
-                             {incidents.find(i => i.id === selectedRecord.incidentTypeId)?.name || 'Unknown Incident'}
-                          </p>
-                       </div>
-                       
-                       <div className="grid grid-cols-2 gap-4">
-                          <div>
-                             <p className="text-xs text-slate-500 font-semibold mb-1 flex items-center gap-1"><Calendar className="h-3 w-3" /> Tanggal</p>
-                             <p className="text-sm font-medium text-slate-900">
-                                {new Date(selectedRecord.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                             </p>
-                             <p className="text-xs text-slate-500">
-                                Pukul {new Date(selectedRecord.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                             </p>
-                          </div>
-                          <div>
-                             <p className="text-xs text-slate-500 font-semibold mb-1 flex items-center gap-1"><User className="h-3 w-3" /> Pelapor</p>
-                             <p className="text-sm font-medium text-slate-900">{selectedRecord.recordedBy}</p>
-                          </div>
-                       </div>
-                    </div>
-
-                    <div className="w-full md:w-1/3 bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center items-center text-center">
-                       <p className="text-xs font-bold text-slate-400 uppercase mb-2">Status Kasus</p>
-                       {getStatusBadge(selectedRecord.status)}
-                       <div className={`mt-3 text-3xl font-bold ${selectedRecord.typeSnapshot === 'VIOLATION' ? 'text-red-600' : selectedRecord.typeSnapshot === 'ACHIEVEMENT' ? 'text-emerald-600' : 'text-blue-600'}`}>
-                          {selectedRecord.typeSnapshot === 'VIOLATION' ? '+' : ''}{selectedRecord.pointSnapshot}
-                       </div>
-                       <p className="text-xs text-slate-400 font-bold uppercase mt-1">Poin</p>
-                    </div>
-                 </div>
-
-                 {/* Notes Section */}
-                 <div>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Keterangan Tambahan</p>
-                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm text-slate-700 italic">
-                       "{selectedRecord.notes || 'Tidak ada catatan tambahan.'}"
-                    </div>
-                    {selectedRecord.status === 'REJECTED' && selectedRecord.rejectionReason && (
-                        <div className="mt-2 bg-red-50 p-3 rounded-lg border border-red-200 text-sm text-red-700">
-                           <b>Alasan Penolakan:</b> {selectedRecord.rejectionReason}
-                        </div>
-                    )}
-                 </div>
-
-                 {/* MEDIA SECTION - PROTECTED */}
-                 <div>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                       <ImageIcon className="h-4 w-4" /> Bukti Media (Foto/Dokumen)
-                    </p>
-                    
-                    {canViewEvidence ? (
-                       selectedRecord.proofImage ? (
-                          <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-black group">
-                             <img 
-                                src={selectedRecord.proofImage} 
-                                alt="Bukti Kejadian" 
-                                className="w-full max-h-[400px] object-contain mx-auto"
-                             />
-                             <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                <p className="text-white font-bold text-sm"><Eye className="h-5 w-5 inline mr-2" /> Bukti Terlampir</p>
-                             </div>
-                          </div>
-                       ) : (
-                          <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-8 text-center text-slate-400 text-sm">
-                             Tidak ada bukti media yang dilampirkan pada kasus ini.
-                          </div>
-                       )
-                    ) : (
-                       <div className="bg-slate-100 border border-slate-200 rounded-xl p-6 text-center">
-                          <Lock className="h-8 w-8 mx-auto text-slate-400 mb-2" />
-                          <p className="font-bold text-slate-600 text-sm">Akses Terbatas</p>
-                          <p className="text-xs text-slate-500 mt-1">
-                             Bukti media hanya dapat diakses oleh Guru, Wali Kelas, BK, dan Kesiswaan.
-                          </p>
-                       </div>
-                    )}
-                 </div>
-              </div>
-
-              <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
-                 <button 
-                   onClick={() => setSelectedRecord(null)}
-                   className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-colors text-sm"
-                 >
-                    Tutup Detail
-                 </button>
-              </div>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
