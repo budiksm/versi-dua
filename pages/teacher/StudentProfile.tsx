@@ -622,7 +622,7 @@ const StudentProfile: React.FC = () => {
                               setSelectedCategory(e.target.value);
                               setSelectedIncident('');
                               }}
-                              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
                           >
                               <option value="">-- Pilih Kategori --</option>
                               {filteredCategories.map(cat => (
@@ -643,7 +643,7 @@ const StudentProfile: React.FC = () => {
                               disabled={!selectedCategory}
                               value={selectedIncident}
                               onChange={(e) => setSelectedIncident(e.target.value)}
-                              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
                           >
                               <option value="">-- Pilih Kejadian --</option>
                               {filteredIncidents.map(inc => (
@@ -695,7 +695,7 @@ const StudentProfile: React.FC = () => {
                           value={notes}
                           onChange={(e) => setNotes(e.target.value)}
                           rows={3}
-                          className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-slate-900"
                           placeholder="Keterangan kejadian..."
                           />
                       </div>
@@ -815,7 +815,116 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (TAB COUNSELING & SANCTIONS kept same) ... */}
+        {/* === TAB 2: COUNSELING (BK Only) === */}
+        {activeTab === 'COUNSELING' && isBK && (
+           <>
+             {/* INPUT FORM COUNSELING */}
+             <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className="p-6 border-b border-slate-100 bg-blue-50 flex justify-between items-center">
+                     <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                        <HeartHandshake className="h-5 w-5 text-blue-600" />
+                        Catat Sesi Konseling
+                     </h2>
+                   </div>
+                   
+                   <form onSubmit={handleSubmitCounseling} className="p-6 space-y-6">
+                      <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100 mb-4">
+                         Gunakan form ini untuk mencatat hasil wawancara, pembinaan mental, atau pemanggilan siswa. 
+                         Data ini bersifat rahasia.
+                      </div>
+                      
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil Pembinaan</label>
+                         <textarea
+                           required
+                           value={counselingNotes}
+                           onChange={(e) => setCounselingNotes(e.target.value)}
+                           rows={6}
+                           className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"
+                           placeholder="Jelaskan permasalahan, solusi yang disepakati, dan respon siswa..."
+                         />
+                      </div>
+
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label>
+                         <select
+                            value={counselingRec}
+                            onChange={(e) => setCounselingRec(e.target.value as any)}
+                            className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"
+                         >
+                            <option value="NONE">Cukup Pembinaan (Selesai)</option>
+                            <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
+                            <option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Sanksi Berat)</option>
+                            <option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option>
+                         </select>
+                         {counselingRec !== 'NONE' && (
+                           <p className="text-xs text-blue-600 mt-2">
+                             *Status konseling ini akan otomatis diset OPEN agar dipantau Kesiswaan.
+                           </p>
+                         )}
+                      </div>
+
+                      {successMsg && (
+                          <div className="p-4 bg-emerald-100 text-emerald-700 rounded-lg flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5" />
+                          {successMsg}
+                          </div>
+                      )}
+
+                      <button
+                          type="submit"
+                          disabled={isSubmitting || !counselingNotes}
+                          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"
+                      >
+                          <Save className="h-5 w-5" />
+                          {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan Konseling'}
+                      </button>
+                   </form>
+                </div>
+             </div>
+
+             {/* COUNSELING HISTORY */}
+             <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2">
+                   <BookOpen className="h-5 w-5" />
+                   Riwayat Konseling
+                </div>
+
+                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
+                  {counselingSessions.length === 0 ? (
+                    <div className="text-slate-500 text-sm italic">Belum ada data konseling.</div>
+                  ) : (
+                    counselingSessions.map(session => (
+                      <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
+                         <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500" />
+                         <div className="flex justify-between items-start mb-2">
+                           <div className="text-xs font-semibold text-slate-500">
+                              {new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                           </div>
+                           {session.recommendation !== 'NONE' && (
+                             <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
+                               ! {translateRecommendation(session.recommendation)}
+                             </span>
+                           )}
+                         </div>
+                         
+                         <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                            {session.notes}
+                         </p>
+
+                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1">
+                            <span className="font-semibold text-slate-500">Konselor:</span> {session.counselorName}
+                         </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+             </div>
+           </>
+        )}
+
+        {/* ... (TAB SANCTIONS kept same) ... */}
       </div>
     </div>
   );

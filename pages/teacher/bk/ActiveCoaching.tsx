@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, CounselingSession, Role, IncidentRecord, MasterIncidentType, CoachingRule } from '../../../types';
@@ -129,7 +130,7 @@ const ActiveCoaching: React.FC = () => {
           <input 
             type="text" 
             placeholder="Cari siswa dalam daftar pembinaan..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -240,7 +241,7 @@ const ActiveCoaching: React.FC = () => {
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Catatan / Hasil Konseling</label>
                     <textarea 
                       required
-                      className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none h-32"
+                      className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none h-32 bg-white text-slate-900"
                       placeholder="Deskripsikan masalah, solusi, dan komitmen siswa..."
                       value={notes}
                       onChange={e => setNotes(e.target.value)}
@@ -251,7 +252,7 @@ const ActiveCoaching: React.FC = () => {
                     <div>
                        <label className="block text-sm font-semibold text-slate-700 mb-1">Status Sesi</label>
                        <select 
-                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
                          value={sessionStatus}
                          onChange={e => setSessionStatus(e.target.value as any)}
                        >
@@ -262,7 +263,7 @@ const ActiveCoaching: React.FC = () => {
                     <div>
                        <label className="block text-sm font-semibold text-slate-700 mb-1">Rekomendasi</label>
                        <select 
-                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
                          value={recommendation}
                          onChange={e => setRecommendation(e.target.value as any)}
                        >
