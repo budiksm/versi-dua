@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { DataService } from '../../services/dataService';
-import { Teacher, Role } from '../../types';
-import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X } from 'lucide-react';
+import { Teacher, Role, ClassGroup } from '../../types';
+import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet } from 'lucide-react';
 
 const AccountManagement: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [classes, setClasses] = useState<ClassGroup[]>([]); // Load Classes
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Edit Mode State
@@ -14,17 +15,18 @@ const AccountManagement: React.FC = () => {
 
   // Form State
   const [formData, setFormData] = useState<Partial<Teacher>>({
-    name: '', nip: '', roles: [Role.TEACHER], username: '', password: ''
+    name: '', nip: '', roles: [Role.TEACHER], username: '', password: '', assignedClassId: ''
   });
 
   useEffect(() => {
     setTeachers(DataService.getTeachers());
+    setClasses(DataService.getClasses());
   }, []);
 
   const openAddModal = () => {
     setIsEditMode(false);
     setEditingId(null);
-    setFormData({ name: '', nip: '', roles: [Role.TEACHER], username: '', password: '123' }); // Default password suggestion
+    setFormData({ name: '', nip: '', roles: [Role.TEACHER], username: '', password: '123', assignedClassId: '' }); 
     setIsModalOpen(true);
   };
 
@@ -36,7 +38,8 @@ const AccountManagement: React.FC = () => {
       nip: teacher.nip,
       roles: teacher.roles,
       username: teacher.username,
-      password: teacher.password
+      password: teacher.password,
+      assignedClassId: teacher.assignedClassId || ''
     });
     setIsModalOpen(true);
   };
@@ -50,6 +53,12 @@ const AccountManagement: React.FC = () => {
       return;
     }
 
+    // Validate Student Class Assignment
+    if (formData.roles.includes(Role.STUDENT) && !formData.assignedClassId) {
+        alert("Untuk akun Siswa/Bendahara, Anda wajib memilih Kelas!");
+        return;
+    }
+
     // Check if username already exists (exclude current user if editing)
     const isUsernameTaken = teachers.some(t => 
       t.username === formData.username && t.id !== editingId
@@ -60,18 +69,20 @@ const AccountManagement: React.FC = () => {
       return;
     }
 
+    const userDataToSave = {
+        name: formData.name || '',
+        nip: formData.nip || '',
+        roles: formData.roles || [],
+        username: formData.username,
+        password: formData.password,
+        assignedClassId: formData.roles?.includes(Role.STUDENT) ? formData.assignedClassId : undefined // Only save class ID for students
+    };
+
     if (isEditMode && editingId) {
       // --- UPDATE LOGIC ---
       const updatedTeachers = teachers.map(t => {
         if (t.id === editingId) {
-          return {
-            ...t,
-            name: formData.name || '',
-            nip: formData.nip || '',
-            roles: formData.roles || [],
-            username: formData.username,
-            password: formData.password
-          };
+          return { ...t, ...userDataToSave };
         }
         return t;
       });
@@ -81,12 +92,8 @@ const AccountManagement: React.FC = () => {
       // --- CREATE LOGIC ---
       const newTeacher: Teacher = {
         id: `t_${Date.now()}`,
-        name: formData.name || '',
-        nip: formData.nip || '',
-        roles: formData.roles || [],
-        username: formData.username,
-        password: formData.password,
-        mustChangePassword: true // FORCE CHANGE ON FIRST LOGIN FOR NEW ACCOUNTS
+        ...userDataToSave,
+        mustChangePassword: true 
       };
       const updatedTeachers = [...teachers, newTeacher];
       DataService.saveTeachers(updatedTeachers);
@@ -94,11 +101,11 @@ const AccountManagement: React.FC = () => {
     }
 
     setIsModalOpen(false);
-    setFormData({ name: '', nip: '', roles: [Role.TEACHER], username: '', password: '' });
+    setFormData({ name: '', nip: '', roles: [Role.TEACHER], username: '', password: '', assignedClassId: '' });
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Hapus akun guru ini?')) {
+    if (confirm('Hapus akun ini?')) {
       const updated = teachers.filter(t => t.id !== id);
       DataService.saveTeachers(updated);
       setTeachers(updated);
@@ -115,19 +122,20 @@ const AccountManagement: React.FC = () => {
   };
 
   const availableRoles = [
-    { id: Role.TEACHER, label: 'Guru Mata Pelajaran' },
-    { id: Role.WALIKELAS, label: 'Wali Kelas' },
-    { id: Role.BK, label: 'Guru BK' },
-    { id: Role.KESISWAAN, label: 'Staf Kesiswaan' },
-    { id: Role.ADMIN, label: 'Admin / Tata Usaha' },
+    { id: Role.TEACHER, label: 'Guru Mata Pelajaran', color: 'bg-slate-100 text-slate-700' },
+    { id: Role.WALIKELAS, label: 'Wali Kelas', color: 'bg-green-100 text-green-700' },
+    { id: Role.BK, label: 'Guru BK', color: 'bg-blue-100 text-blue-700' },
+    { id: Role.KESISWAAN, label: 'Staf Kesiswaan', color: 'bg-orange-100 text-orange-700' },
+    { id: Role.ADMIN, label: 'Admin / Tata Usaha', color: 'bg-purple-100 text-purple-700' },
+    { id: Role.STUDENT, label: 'Siswa / Bendahara', color: 'bg-pink-100 text-pink-700' },
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Manajemen Akun Guru</h1>
-          <p className="text-slate-500">Kelola akun, NIP, hak akses (Role), dan kredensial login.</p>
+          <h1 className="text-2xl font-bold text-slate-800">Manajemen Akun</h1>
+          <p className="text-slate-500">Kelola akun Guru, Staf, dan Bendahara Kelas (Siswa).</p>
         </div>
         <button 
           onClick={openAddModal}
@@ -141,32 +149,39 @@ const AccountManagement: React.FC = () => {
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 border-b">
             <tr>
-              <th className="px-6 py-3 font-semibold text-slate-700">Nama Guru</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">NIP</th>
+              <th className="px-6 py-3 font-semibold text-slate-700">Nama Lengkap</th>
+              <th className="px-6 py-3 font-semibold text-slate-700">NIP / NIS</th>
               <th className="px-6 py-3 font-semibold text-slate-700">Username</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">Role / Jabatan</th>
+              <th className="px-6 py-3 font-semibold text-slate-700">Role & Akses</th>
               <th className="px-6 py-3 font-semibold text-slate-700 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {teachers.map(t => (
               <tr key={t.id} className="hover:bg-slate-50">
-                <td className="px-6 py-3 font-medium text-slate-900">{t.name}</td>
+                <td className="px-6 py-3 font-medium text-slate-900">
+                    {t.name}
+                    {t.roles.includes(Role.STUDENT) && t.assignedClassId && (
+                        <div className="text-xs text-slate-500 font-normal flex items-center gap-1 mt-0.5">
+                            <School className="h-3 w-3" />
+                            {classes.find(c => c.id === t.assignedClassId)?.name || 'Kelas Terhapus'}
+                        </div>
+                    )}
+                </td>
                 <td className="px-6 py-3">{t.nip}</td>
                 <td className="px-6 py-3 text-slate-600">{t.username || '-'}</td>
                 <td className="px-6 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {t.roles && t.roles.map(r => (
-                      <span key={r} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium 
-                        ${r === Role.ADMIN ? 'bg-purple-100 text-purple-700' :
-                          r === Role.BK ? 'bg-blue-100 text-blue-700' :
-                          r === Role.KESISWAAN ? 'bg-orange-100 text-orange-700' :
-                          r === Role.WALIKELAS ? 'bg-green-100 text-green-700' :
-                          'bg-slate-100 text-slate-700'}`}>
-                        {r === Role.ADMIN ? <Shield className="h-3 w-3" /> : ''}
-                        {r}
-                      </span>
-                    ))}
+                    {t.roles && t.roles.map(r => {
+                       const roleConfig = availableRoles.find(ar => ar.id === r);
+                       return (
+                        <span key={r} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${roleConfig?.color || 'bg-slate-100'}`}>
+                            {r === Role.ADMIN ? <Shield className="h-3 w-3" /> : ''}
+                            {r === Role.STUDENT ? <Wallet className="h-3 w-3" /> : ''}
+                            {roleConfig?.label || r}
+                        </span>
+                       );
+                    })}
                     {t.mustChangePassword && (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700" title="User harus ganti password saat login">
                              Wajib Ganti Password
@@ -202,7 +217,7 @@ const AccountManagement: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto">
           <div className="bg-white p-6 rounded-xl w-full max-w-md m-4 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{isEditMode ? 'Edit Akun Guru' : 'Tambah Akun Baru'}</h2>
+              <h2 className="text-lg font-bold">{isEditMode ? 'Edit Akun' : 'Tambah Akun Baru'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
@@ -210,12 +225,12 @@ const AccountManagement: React.FC = () => {
             
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-sm mb-1 font-medium">Nama Lengkap & Gelar</label>
-                <input required type="text" className="w-full border p-2 rounded-lg" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <label className="block text-sm mb-1 font-medium">Nama Lengkap</label>
+                <input required type="text" className="w-full border p-2 rounded-lg" placeholder="Nama Guru / Siswa" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm mb-1 font-medium">NIP</label>
-                <input required type="text" className="w-full border p-2 rounded-lg" value={formData.nip} onChange={e => setFormData({...formData, nip: e.target.value})} />
+                <label className="block text-sm mb-1 font-medium">NIP / NIS</label>
+                <input required type="text" className="w-full border p-2 rounded-lg" placeholder="Identitas unik" value={formData.nip} onChange={e => setFormData({...formData, nip: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                  <div>
@@ -225,7 +240,7 @@ const AccountManagement: React.FC = () => {
                  <div>
                     <label className="block text-sm mb-1 font-medium">Password</label>
                     <input required type="text" className="w-full border p-2 rounded-lg" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-                    {!isEditMode && <p className="text-[10px] text-slate-500 mt-1">Default "123" disarankan. User wajib ganti saat login.</p>}
+                    {!isEditMode && <p className="text-[10px] text-slate-500 mt-1">Default "123".</p>}
                  </div>
               </div>
               
@@ -254,6 +269,28 @@ const AccountManagement: React.FC = () => {
                   })}
                 </div>
               </div>
+
+              {/* SPECIAL INPUT FOR STUDENT ROLE: CLASS ASSIGNMENT */}
+              {formData.roles?.includes(Role.STUDENT) && (
+                  <div className="bg-pink-50 p-4 rounded-lg border border-pink-200 animate-fade-in">
+                      <label className="block text-sm font-bold text-pink-800 mb-2 flex items-center gap-2">
+                          <School className="h-4 w-4" />
+                          Tugaskan ke Kelas (Wajib)
+                      </label>
+                      <p className="text-xs text-pink-600 mb-2">Akun ini hanya akan bisa mengakses Poe Ibu kelas yang dipilih.</p>
+                      <select 
+                        required
+                        className="w-full border border-pink-300 p-2.5 rounded-lg focus:ring-2 focus:ring-pink-500 outline-none bg-white"
+                        value={formData.assignedClassId}
+                        onChange={e => setFormData({...formData, assignedClassId: e.target.value})}
+                      >
+                          <option value="">-- Pilih Kelas --</option>
+                          {classes.map(c => (
+                              <option key={c.id} value={c.id}>{c.name} (Tingkat {c.level})</option>
+                          ))}
+                      </select>
+                  </div>
+              )}
 
               <div className="flex gap-2 justify-end mt-4 pt-4 border-t">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Batal</button>

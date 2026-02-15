@@ -178,8 +178,8 @@ const PoeIbu: React.FC = () => {
             <Wallet className="h-6 w-6 text-indigo-600" />
             Kas "Poe Ibu" - {className}
           </h1>
-          <p className="text-slate-500">
-            Pencatatan keuangan kelas transparan, fleksibel, dan terpercaya.
+          <p className="text-slate-500 text-sm mt-1">
+             <span className="font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">Panduan:</span> Bendahara Input Transaksi &rarr; Status "Pending" &rarr; Wali Kelas Verifikasi &rarr; Saldo Terupdate.
           </p>
         </div>
         <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right">
