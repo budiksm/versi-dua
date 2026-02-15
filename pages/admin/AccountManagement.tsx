@@ -1,13 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
 import { Teacher, Role, ClassGroup } from '../../types';
-import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet, Clock } from 'lucide-react';
+import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet, Clock, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
+
+type SortKey = 'name' | 'nip' | 'username' | 'roles';
+type SortDirection = 'asc' | 'desc';
 
 const AccountManagement: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<ClassGroup[]>([]); // Load Classes
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   
   // Edit Mode State
   const [isEditMode, setIsEditMode] = useState(false);
@@ -16,6 +20,17 @@ const AccountManagement: React.FC = () => {
   // Form State
   const [formData, setFormData] = useState<Partial<Teacher>>({
     name: '', nip: '', roles: [Role.TEACHER], username: '', password: '', assignedClassId: ''
+  });
+
+  // Import State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState('');
+  const [importSuccess, setImportSuccess] = useState('');
+
+  // Sorting State
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc'
   });
 
   useEffect(() => {
@@ -47,19 +62,16 @@ const AccountManagement: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate roles
     if (!formData.roles || formData.roles.length === 0) {
       alert("Pilih minimal satu role!");
       return;
     }
 
-    // Validate Student Class Assignment
     if (formData.roles.includes(Role.STUDENT) && !formData.assignedClassId) {
         alert("Untuk akun Siswa, Anda wajib memilih Kelas!");
         return;
     }
 
-    // Check if username already exists (exclude current user if editing)
     const isUsernameTaken = teachers.some(t => 
       t.username === formData.username && t.id !== editingId
     );
@@ -75,11 +87,10 @@ const AccountManagement: React.FC = () => {
         roles: formData.roles || [],
         username: formData.username,
         password: formData.password,
-        assignedClassId: formData.roles?.includes(Role.STUDENT) ? formData.assignedClassId : undefined // Only save class ID for students
+        assignedClassId: formData.roles?.includes(Role.STUDENT) ? formData.assignedClassId : undefined 
     };
 
     if (isEditMode && editingId) {
-      // --- UPDATE LOGIC ---
       const updatedTeachers = teachers.map(t => {
         if (t.id === editingId) {
           return { ...t, ...userDataToSave };
@@ -89,7 +100,6 @@ const AccountManagement: React.FC = () => {
       DataService.saveTeachers(updatedTeachers);
       setTeachers(updatedTeachers);
     } else {
-      // --- CREATE LOGIC ---
       const newTeacher: Teacher = {
         id: `t_${Date.now()}`,
         ...userDataToSave,
@@ -121,6 +131,165 @@ const AccountManagement: React.FC = () => {
     }
   };
 
+  // --- SORTING LOGIC ---
+  const handleSort = (key: SortKey) => {
+    let direction: SortDirection = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedTeachers = [...teachers].sort((a, b) => {
+    const direction = sortConfig.direction === 'asc' ? 1 : -1;
+    switch (sortConfig.key) {
+      case 'name':
+        return a.name.localeCompare(b.name) * direction;
+      case 'nip':
+        return a.nip.localeCompare(b.nip) * direction;
+      case 'username':
+        return (a.username || '').localeCompare(b.username || '') * direction;
+      case 'roles':
+        const rolesA = a.roles.join(', ');
+        const rolesB = b.roles.join(', ');
+        return rolesA.localeCompare(rolesB) * direction;
+      default:
+        return 0;
+    }
+  });
+
+  const SortHeader = ({ label, sKey, align = 'left' }: { label: string, sKey: SortKey, align?: 'left'|'right' }) => (
+    <th 
+      className={`px-6 py-3 font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none text-${align}`}
+      onClick={() => handleSort(sKey)}
+    >
+      <div className={`flex items-center gap-2 ${align === 'right' ? 'justify-end' : ''}`}>
+        {label}
+        <span className="text-slate-400">
+          {sortConfig.key === sKey ? (
+            sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+          ) : (
+            <ArrowUpDown className="h-4 w-4" />
+          )}
+        </span>
+      </div>
+    </th>
+  );
+
+  // --- IMPORT LOGIC ---
+  const downloadTemplate = () => {
+    const headers = "Nama Lengkap,NIP,Username,Password,Role (Gunakan ; untuk banyak role),ID Kelas (Wajib jika Siswa)";
+    const example1 = "Budi Guru,19800101,pakbudi,123,TEACHER;WALIKELAS,";
+    const example2 = "Siti Bendahara,1001,siti,123,STUDENT,c1";
+    const csvContent = `${headers}\n${example1}\n${example2}`;
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", "template_import_akun.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setImportError('');
+    setImportSuccess('');
+
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const rows = text.split('\n').filter(r => r.trim() !== '');
+        
+        if (rows.length < 2) {
+          setImportError('File kosong atau format salah.');
+          return;
+        }
+
+        const newAccounts: Teacher[] = [];
+        const errors: string[] = [];
+        let successCount = 0;
+
+        for (let i = 1; i < rows.length; i++) {
+          const cols = rows[i].split(/,|;/).map(c => c.trim().replace(/^"|"$/g, ''));
+          
+          if (cols.length < 4) continue;
+
+          const [name, nip, username, password, roleStr, assignedClassId] = cols;
+
+          // Basic Validation
+          if (!username || !roleStr) {
+             errors.push(`Baris ${i+1}: Username dan Role wajib diisi.`);
+             continue;
+          }
+
+          // Duplicate Username Check
+          if (teachers.some(t => t.username === username) || newAccounts.some(t => t.username === username)) {
+             errors.push(`Baris ${i+1}: Username "${username}" sudah digunakan.`);
+             continue;
+          }
+
+          // Parse Roles
+          const roles = roleStr.split(';').map(r => r.trim().toUpperCase()) as Role[];
+          
+          // Role Validation
+          const validRoles = Object.values(Role);
+          if (roles.some(r => !validRoles.includes(r))) {
+             errors.push(`Baris ${i+1}: Role tidak valid. Gunakan format kapital (contoh: TEACHER;ADMIN).`);
+             continue;
+          }
+
+          // Class Validation for Students
+          if (roles.includes(Role.STUDENT) && !assignedClassId) {
+             errors.push(`Baris ${i+1}: Akun STUDENT wajib menyertakan ID Kelas.`);
+             continue;
+          }
+
+          newAccounts.push({
+            id: `t_imp_${Date.now()}_${i}`,
+            name,
+            nip,
+            username,
+            password: password || '123',
+            roles,
+            assignedClassId: assignedClassId || undefined,
+            mustChangePassword: true
+          });
+          successCount++;
+        }
+
+        if (errors.length > 0) {
+           setImportError(errors.slice(0, 5).join('\n') + (errors.length > 5 ? `\n...dan ${errors.length - 5} error lainnya.` : ''));
+        }
+
+        if (successCount > 0) {
+           const updated = [...teachers, ...newAccounts];
+           DataService.saveTeachers(updated);
+           setTeachers(updated);
+           setImportSuccess(`Berhasil mengimpor ${successCount} akun baru.`);
+           
+           if (fileInputRef.current) fileInputRef.current.value = '';
+           
+           setTimeout(() => {
+              if(errors.length === 0) setIsImportModalOpen(false);
+              setImportSuccess('');
+           }, 2000);
+        }
+
+      } catch (err) {
+        setImportError('Gagal memproses file. Pastikan format CSV valid.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const availableRoles = [
     { id: Role.TEACHER, label: 'Guru Mata Pelajaran', color: 'bg-slate-100 text-slate-700' },
     { id: Role.WALIKELAS, label: 'Wali Kelas', color: 'bg-green-100 text-green-700' },
@@ -138,28 +307,36 @@ const AccountManagement: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">Manajemen Akun</h1>
           <p className="text-slate-500">Kelola akun Guru, Staf, Siswa, dan OSIS.</p>
         </div>
-        <button 
-          onClick={openAddModal}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700"
-        >
-          <Plus className="h-4 w-4" /> Tambah Akun
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsImportModalOpen(true)}
+            className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50"
+          >
+            <Upload className="h-4 w-4" /> Import CSV
+          </button>
+          <button 
+            onClick={openAddModal}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700"
+          >
+            <Plus className="h-4 w-4" /> Tambah Akun
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 border-b">
             <tr>
-              <th className="px-6 py-3 font-semibold text-slate-700">Nama Lengkap</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">NIP / NIS</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">Username</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">Role & Akses</th>
+              <SortHeader label="Nama Lengkap" sKey="name" />
+              <SortHeader label="NIP / NIS" sKey="nip" />
+              <SortHeader label="Username" sKey="username" />
+              <SortHeader label="Role & Akses" sKey="roles" />
               <th className="px-6 py-3 font-semibold text-slate-700 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {teachers.map(t => (
-              <tr key={t.id} className="hover:bg-slate-50">
+            {sortedTeachers.map(t => (
+              <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-3 font-medium text-slate-900">
                     {t.name}
                     {t.roles.includes(Role.STUDENT) && t.assignedClassId && (
@@ -215,6 +392,75 @@ const AccountManagement: React.FC = () => {
         </table>
       </div>
 
+      {/* --- IMPORT MODAL --- */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in">
+           <div className="bg-white p-6 rounded-xl w-full max-w-lg shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                     <FileSpreadsheet className="h-5 w-5 text-indigo-600" />
+                     Import Akun Massal
+                  </h2>
+                  <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                    <X className="h-5 w-5" />
+                  </button>
+              </div>
+
+              <div className="space-y-4">
+                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-sm">
+                    <p className="font-bold text-slate-700 mb-2 flex items-center gap-2 text-xs uppercase tracking-wider">
+                       <AlertCircle className="h-4 w-4 text-orange-500" /> Aturan Validasi:
+                    </p>
+                    <ul className="list-disc list-inside text-slate-600 space-y-1 text-xs">
+                      <li>Kolom: <b>Nama, NIP, Username, Password, Role, ID Kelas</b>.</li>
+                      <li>Role bisa lebih dari satu, pisahkan dengan titik koma (;). Contoh: <b>TEACHER;WALIKELAS</b>.</li>
+                      <li>Role valid: TEACHER, WALIKELAS, BK, KESISWAAN, ADMIN, STUDENT, OSIS.</li>
+                      <li>Jika Role = <b>STUDENT</b>, kolom ID Kelas wajib diisi.</li>
+                    </ul>
+                 </div>
+                 
+                 <button 
+                   onClick={downloadTemplate}
+                   className="w-full py-2.5 px-4 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-lg hover:bg-indigo-100 flex items-center justify-center gap-2 font-bold transition-all"
+                 >
+                    <Download className="h-4 w-4" /> Download Template CSV
+                 </button>
+
+                 <div className="pt-2">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Pilih File CSV</label>
+                    <input 
+                      type="file" 
+                      accept=".csv"
+                      ref={fileInputRef}
+                      onChange={handleImportCSV}
+                      className="block w-full text-xs text-slate-500
+                        file:mr-4 file:py-2.5 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-xs file:font-bold
+                        file:bg-indigo-50 file:text-indigo-700
+                        hover:file:bg-indigo-100
+                        transition-all
+                      "
+                    />
+                 </div>
+
+                 {importError && (
+                    <div className="p-3 bg-red-50 text-red-600 text-[10px] rounded-lg whitespace-pre-line max-h-32 overflow-y-auto border border-red-100 font-medium">
+                       {importError}
+                    </div>
+                 )}
+
+                 {importSuccess && (
+                    <div className="p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2 border border-emerald-100 font-bold">
+                       <CheckCircle2 className="h-4 w-4" /> {importSuccess}
+                    </div>
+                 )}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* --- ADD/EDIT MODAL --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto">
           <div className="bg-white p-6 rounded-xl w-full max-w-md m-4 shadow-2xl">
