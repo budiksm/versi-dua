@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { DataService } from '../../services/dataService';
 import { Teacher, Role, ClassGroup } from '../../types';
-import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet } from 'lucide-react';
+import { Plus, Trash2, UserCog, Shield, Key, CheckSquare, Pencil, X, School, Wallet, Clock } from 'lucide-react';
 
 const AccountManagement: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -128,6 +128,7 @@ const AccountManagement: React.FC = () => {
     { id: Role.KESISWAAN, label: 'Staf Kesiswaan', color: 'bg-orange-100 text-orange-700' },
     { id: Role.ADMIN, label: 'Admin / Tata Usaha', color: 'bg-purple-100 text-purple-700' },
     { id: Role.STUDENT, label: 'Siswa', color: 'bg-pink-100 text-pink-700' },
+    { id: Role.OSIS, label: 'OSIS (Petugas Gerbang)', color: 'bg-yellow-100 text-yellow-800' },
   ];
 
   return (
@@ -135,7 +136,7 @@ const AccountManagement: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Manajemen Akun</h1>
-          <p className="text-slate-500">Kelola akun Guru, Staf, dan Bendahara Kelas (Siswa).</p>
+          <p className="text-slate-500">Kelola akun Guru, Staf, Siswa, dan OSIS.</p>
         </div>
         <button 
           onClick={openAddModal}
@@ -178,6 +179,7 @@ const AccountManagement: React.FC = () => {
                         <span key={r} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${roleConfig?.color || 'bg-slate-100'}`}>
                             {r === Role.ADMIN ? <Shield className="h-3 w-3" /> : ''}
                             {r === Role.STUDENT ? <Wallet className="h-3 w-3" /> : ''}
+                            {r === Role.OSIS ? <Clock className="h-3 w-3" /> : ''}
                             {roleConfig?.label || r}
                         </span>
                        );
@@ -226,7 +228,7 @@ const AccountManagement: React.FC = () => {
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className="block text-sm mb-1 font-medium">Nama Lengkap</label>
-                <input required type="text" className="w-full border p-2 rounded-lg" placeholder="Nama Guru / Siswa" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <input required type="text" className="w-full border p-2 rounded-lg" placeholder="Nama Guru / Siswa / Petugas" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
               </div>
               <div>
                 <label className="block text-sm mb-1 font-medium">NIP / NIS</label>

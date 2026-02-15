@@ -33,8 +33,11 @@ const Login: React.FC = () => {
         if (roles.includes(Role.ADMIN)) {
           navigate('/admin/students');
         } else if (roles.includes(Role.STUDENT)) {
-          // FIX: Siswa langsung ke Poe Ibu, tidak boleh ke Dashboard Guru
+          // Siswa langsung ke Poe Ibu
           navigate('/teacher/poe-ibu');
+        } else if (roles.includes(Role.OSIS)) {
+          // OSIS langsung ke Input Keterlambatan
+          navigate('/teacher/osis/input');
         } else {
           // Guru, BK, Walikelas, Kesiswaan ke Dashboard
           navigate('/teacher/dashboard');

@@ -53,6 +53,12 @@ const TeacherDashboard: React.FC = () => {
         navigate('/teacher/poe-ibu');
         return;
     }
+
+    // SECURITY CHECK: If user is OSIS, kick them out to Input Keterlambatan
+    if (user && user.roles.includes(Role.OSIS) && !user.roles.includes(Role.TEACHER)) {
+        navigate('/teacher/osis/input');
+        return;
+    }
     
     const recs = DataService.getRecords();
     const incs = DataService.getIncidentTypes();
@@ -276,7 +282,7 @@ const TeacherDashboard: React.FC = () => {
               <div>
                  <h2 className="font-bold text-slate-800">Persetujuan Laporan Masuk</h2>
                  <p className="text-xs text-slate-500">
-                    Laporan dari guru lain untuk kelas Anda. Otomatis diterima dalam 2x24 jam jika tidak direspon.
+                    Laporan dari guru lain atau OSIS untuk kelas Anda. Otomatis diterima dalam 2x24 jam jika tidak direspon.
                  </p>
               </div>
            </div>

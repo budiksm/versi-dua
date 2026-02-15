@@ -25,7 +25,8 @@ import {
   AlertOctagon,
   RotateCcw,
   ClipboardList,
-  Wallet
+  Wallet,
+  Clock
 } from 'lucide-react';
 import { Role } from '../types';
 
@@ -149,6 +150,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const studentLinks = [
     { path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet },
   ];
+  const osisLinks = [
+    { path: '/teacher/osis/input', label: 'Input Keterlambatan', icon: Clock },
+  ];
 
   const roles = currentUser?.roles || [];
   let finalLinks: any[] = [];
@@ -161,6 +165,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   } else if (roles.includes(Role.STUDENT)) {
     // Student only sees Poe Ibu for now
     finalLinks = [...studentLinks];
+  } else if (roles.includes(Role.OSIS)) {
+    // OSIS only sees input page
+    finalLinks = [...osisLinks];
   } else {
     finalLinks = [...teacherLinks];
   }

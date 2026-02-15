@@ -44,6 +44,8 @@ const INITIAL_TEACHERS: Teacher[] = [
   { id: 't1', name: 'Budi Raharjo, S.Pd', nip: '19800101', roles: [Role.TEACHER, Role.WALIKELAS], username: 'budi', password: '123', mustChangePassword: false },
   // MOCK BENDAHARA (SISWA)
   { id: 's_bendahara', name: 'Siti Aminah (Bendahara)', nip: '1001', roles: [Role.STUDENT], username: 'siti', password: '123', mustChangePassword: false, assignedClassId: 'c1' },
+  // MOCK OSIS (PETUGAS GERBANG)
+  { id: 'osis_gate', name: 'Petugas OSIS (Gerbang)', nip: 'OSIS001', roles: [Role.OSIS], username: 'osis', password: '123', mustChangePassword: false },
 ];
 const INITIAL_CLASSES: ClassGroup[] = [{ id: 'c1', name: 'X IPA 1', level: 10, homeroomTeacherId: 't1' }];
 const INITIAL_STUDENTS: Student[] = [{ id: 's1', name: 'Contoh Siswa', nis: '1001', classId: 'c1', gender: 'L', status: 'ACTIVE' }];
@@ -53,7 +55,8 @@ const INITIAL_CATEGORIES: MasterCategory[] = [
   { id: 'cat6', name: 'Penebusan', targetType: IncidentTypeCategory.REDEMPTION },
 ];
 const INITIAL_INCIDENTS: MasterIncidentType[] = [
-  { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
+  { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 3, severity: 'LOW', isActive: true },
+  { id: 'inc2', name: 'Terlambat Berulang (>3 kali)', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 8, severity: 'MEDIUM', isActive: true },
 ];
 
 // REVISI ATURAN POIN (HIRARKI UPDATE SP3 & DO)

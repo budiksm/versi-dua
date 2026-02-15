@@ -6,6 +6,7 @@ export enum Role {
   KESISWAAN = 'KESISWAAN',
   WALIKELAS = 'WALIKELAS',
   STUDENT = 'STUDENT', // Bendahara Kelas
+  OSIS = 'OSIS', // Petugas Gerbang (Pencatat Keterlambatan)
 }
 
 export enum IncidentTypeCategory {
