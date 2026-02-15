@@ -356,5 +356,29 @@ export const DataService = {
       return r;
     });
     DataService.saveRecords(updatedRecords);
+  },
+
+  // --- MAINTENANCE: CLEANUP ORPHAN DATA ---
+  cleanupOrphanData: () => {
+    const students = DataService.getStudents();
+    const validStudentIds = new Set(students.map(s => s.id));
+
+    const records = DataService.getRecords();
+    const counselings = DataService.getCounselingSessions();
+    const sanctions = DataService.getSanctions();
+
+    const validRecords = records.filter(r => validStudentIds.has(r.studentId));
+    const validCounselings = counselings.filter(c => validStudentIds.has(c.studentId));
+    const validSanctions = sanctions.filter(s => validStudentIds.has(s.studentId));
+
+    if (records.length !== validRecords.length) DataService.saveRecords(validRecords);
+    if (counselings.length !== validCounselings.length) DataService.saveCounselingSessions(validCounselings);
+    if (sanctions.length !== validSanctions.length) DataService.saveSanctions(validSanctions);
+
+    return {
+        deletedRecords: records.length - validRecords.length,
+        deletedCounselings: counselings.length - validCounselings.length,
+        deletedSanctions: sanctions.length - validSanctions.length
+    };
   }
 };

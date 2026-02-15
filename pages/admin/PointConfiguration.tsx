@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
 import { MasterCategory, MasterIncidentType, CoachingRule, IncidentTypeCategory } from '../../types';
-import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, Pencil, Database, RotateCcw } from 'lucide-react';
+import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, Pencil, Database, RotateCcw, Brush } from 'lucide-react';
 
 const PointConfiguration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'CATEGORY' | 'INCIDENT' | 'RULES'>('INCIDENT');
@@ -59,6 +59,15 @@ const PointConfiguration: React.FC = () => {
     setCategories(DataService.getCategories());
     setIncidents(DataService.getIncidentTypes());
     setRules(DataService.getRules());
+  };
+
+  // --- MAINTENANCE HANDLER ---
+  const handleCleanupData = () => {
+    if (confirm("Fitur ini akan menghapus semua data pelanggaran, sanksi, dan riwayat konseling yang ID siswanya sudah tidak ada di database (Siswa Terhapus).\n\nApakah Anda yakin ingin membersihkan data sampah?")) {
+        const result = DataService.cleanupOrphanData();
+        alert(`Pembersihan Selesai!\n\n- ${result.deletedRecords} Record Kejadian Dihapus\n- ${result.deletedCounselings} Sesi Konseling Dihapus\n- ${result.deletedSanctions} Sanksi Dihapus\n\nDatabase kini lebih bersih.`);
+        refreshData();
+    }
   };
 
   // --- CATEGORY HANDLERS ---
@@ -281,17 +290,26 @@ const PointConfiguration: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Konfigurasi Poin & Pelanggaran</h1>
           <p className="text-slate-500">Atur kategori, bobot poin, dan kebijakan pembinaan siswa.</p>
         </div>
-        <button 
-          onClick={() => setShowDbConfigModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 shadow-md"
-        >
-          <Database className="h-4 w-4" /> Koneksi Database
-        </button>
+        <div className="flex gap-2">
+            <button 
+              onClick={handleCleanupData}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-bold hover:bg-orange-700 shadow-md transition-colors"
+              title="Hapus data pelanggaran yang siswanya sudah tidak ada"
+            >
+              <Brush className="h-4 w-4" /> Bersihkan Data Sampah
+            </button>
+            <button 
+              onClick={() => setShowDbConfigModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 shadow-md"
+            >
+              <Database className="h-4 w-4" /> Koneksi Database
+            </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200">
