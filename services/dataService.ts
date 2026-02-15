@@ -57,6 +57,11 @@ const INITIAL_CATEGORIES: MasterCategory[] = [
 const INITIAL_INCIDENTS: MasterIncidentType[] = [
   { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 3, severity: 'LOW', isActive: true },
   { id: 'inc2', name: 'Terlambat Berulang (>3 kali)', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 8, severity: 'MEDIUM', isActive: true },
+  // JENIS PELANGGARAN KHUSUS INPUT SISWA/PERWAKILAN KELAS
+  { id: 'inc_alpha', name: 'Tidak masuk tanpa keterangan', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 10, severity: 'MEDIUM', isActive: true },
+  { id: 'inc_bolos_jam', name: 'Membolos satu jam pelajaran', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
+  { id: 'inc_bolos_hari', name: 'Membolos seharian', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 20, severity: 'HIGH', isActive: true },
+  { id: 'inc_skip_event', name: 'Tidak mengikuti kegiatan wajib sekolah', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
 ];
 
 // REVISI ATURAN POIN (HIRARKI UPDATE SP3 & DO)

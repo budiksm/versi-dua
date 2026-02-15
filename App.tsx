@@ -17,6 +17,7 @@ import ManageStudents from './pages/admin/ManageStudents';
 import AccountManagement from './pages/admin/AccountManagement';
 import PointConfiguration from './pages/admin/PointConfiguration';
 import OsisInput from './pages/osis/OsisInput';
+import StudentInput from './pages/student/StudentInput';
 import { Role } from './types';
 import { DataService } from './services/dataService';
 import { Cloud, Loader2 } from 'lucide-react';
@@ -69,6 +70,9 @@ const App: React.FC = () => {
               
               {/* POE IBU (Wali Kelas & Bendahara) */}
               <Route path="poe-ibu" element={<PoeIbu />} />
+              
+              {/* STUDENT Specific Route (Input Pelanggaran) */}
+              <Route path="student/input" element={<StudentInput />} />
               
               {/* OSIS Specific Route */}
               <Route path="osis/input" element={<OsisInput />} />
