@@ -23,7 +23,8 @@ import {
   Cloud,
   RefreshCw,
   AlertOctagon,
-  RotateCcw
+  RotateCcw,
+  ClipboardList
 } from 'lucide-react';
 import { Role } from '../types';
 
@@ -136,6 +137,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const kesiswaanLinks = [
     { path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },
     { path: '/teacher/kesiswaan/action', label: 'Pembinaan & SP', icon: Gavel },
+    { path: '/teacher/kesiswaan/logs', label: 'Log Input Guru', icon: ClipboardList },
   ];
   const adminLinks = [
     { path: '/admin/students', label: 'Manajemen Siswa', icon: Users },

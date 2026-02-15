@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -9,6 +10,7 @@ import StudentProfile from './pages/teacher/StudentProfile';
 import ActiveCoaching from './pages/teacher/bk/ActiveCoaching';
 import KesiswaanMonitoring from './pages/teacher/KesiswaanMonitoring';
 import KesiswaanAction from './pages/teacher/KesiswaanAction';
+import TeacherInputLog from './pages/teacher/TeacherInputLog';
 import ManageStudents from './pages/admin/ManageStudents';
 import AccountManagement from './pages/admin/AccountManagement';
 import PointConfiguration from './pages/admin/PointConfiguration';
@@ -67,6 +69,7 @@ const App: React.FC = () => {
               {/* Kesiswaan Specific Routes */}
               <Route path="kesiswaan/monitoring" element={<KesiswaanMonitoring />} />
               <Route path="kesiswaan/action" element={<KesiswaanAction />} />
+              <Route path="kesiswaan/logs" element={<TeacherInputLog />} />
               
               <Route path="*" element={<Navigate to="dashboard" />} />
             </Routes>
