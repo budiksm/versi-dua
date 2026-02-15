@@ -2,7 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
 import { MasterCategory, MasterIncidentType, CoachingRule, IncidentTypeCategory } from '../../types';
-import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, Pencil, Database, RotateCcw, Brush } from 'lucide-react';
+import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2, Pencil, Database, RotateCcw, Brush, ChevronUp, ChevronDown, ArrowUpDown, Square, CheckSquare } from 'lucide-react';
+
+type SortKey = 'name' | 'type' | 'category' | 'points' | 'severity';
+type SortDirection = 'asc' | 'desc';
 
 const PointConfiguration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'CATEGORY' | 'INCIDENT' | 'RULES'>('INCIDENT');
@@ -40,6 +43,13 @@ const PointConfiguration: React.FC = () => {
   // DB Config State
   const [dbConfigJson, setDbConfigJson] = useState('');
 
+  // --- NEW STATES FOR SORTING & SELECTION ---
+  const [selectedIncidentIds, setSelectedIncidentIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc'
+  });
+
   useEffect(() => {
     refreshData();
     
@@ -59,6 +69,72 @@ const PointConfiguration: React.FC = () => {
     setCategories(DataService.getCategories());
     setIncidents(DataService.getIncidentTypes());
     setRules(DataService.getRules());
+    // Reset selection on refresh
+    setSelectedIncidentIds([]);
+  };
+
+  // --- SORTING LOGIC ---
+  const handleSort = (key: SortKey) => {
+    let direction: SortDirection = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortedIncidents = () => {
+    const sorted = [...incidents];
+    sorted.sort((a, b) => {
+      const direction = sortConfig.direction === 'asc' ? 1 : -1;
+      
+      switch (sortConfig.key) {
+        case 'name':
+          return a.name.localeCompare(b.name) * direction;
+        case 'type':
+          return a.type.localeCompare(b.type) * direction;
+        case 'points':
+          return (a.points - b.points) * direction;
+        case 'severity':
+          // Custom severity weight
+          const severityWeight = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+          return (severityWeight[a.severity] - severityWeight[b.severity]) * direction;
+        case 'category':
+          const catA = categories.find(c => c.id === a.categoryId)?.name || '';
+          const catB = categories.find(c => c.id === b.categoryId)?.name || '';
+          return catA.localeCompare(catB) * direction;
+        default:
+          return 0;
+      }
+    });
+    return sorted;
+  };
+
+  // --- BATCH SELECTION LOGIC ---
+  const handleSelectAll = () => {
+    if (selectedIncidentIds.length === incidents.length) {
+      setSelectedIncidentIds([]);
+    } else {
+      setSelectedIncidentIds(incidents.map(i => i.id));
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    if (selectedIncidentIds.includes(id)) {
+      setSelectedIncidentIds(prev => prev.filter(item => item !== id));
+    } else {
+      setSelectedIncidentIds(prev => [...prev, id]);
+    }
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedIncidentIds.length === 0) return;
+    
+    if (confirm(`Yakin ingin menghapus ${selectedIncidentIds.length} data kejadian terpilih? Tindakan ini tidak dapat dibatalkan.`)) {
+      const updatedIncidents = incidents.filter(i => !selectedIncidentIds.includes(i.id));
+      DataService.saveIncidentTypes(updatedIncidents);
+      setIncidents(updatedIncidents);
+      setSelectedIncidentIds([]);
+    }
   };
 
   // --- MAINTENANCE HANDLER ---
@@ -152,6 +228,10 @@ const PointConfiguration: React.FC = () => {
       const updated = incidents.filter(i => i.id !== id);
       DataService.saveIncidentTypes(updated);
       setIncidents(updated);
+      // Remove from selection if exists
+      if (selectedIncidentIds.includes(id)) {
+        setSelectedIncidentIds(prev => prev.filter(item => item !== id));
+      }
     }
   };
 
@@ -277,6 +357,27 @@ const PointConfiguration: React.FC = () => {
   // Filter categories for the Incident Modal based on selected Type
   const filteredCategoriesForModal = categories.filter(c => c.targetType === newIncType);
 
+  const sortedIncidents = getSortedIncidents();
+
+  // Reusable Sort Header
+  const SortHeader = ({ label, sKey, className = "" }: { label: string, sKey: SortKey, className?: string }) => (
+    <th 
+      className={`p-3 cursor-pointer hover:bg-slate-100 transition-colors select-none ${className}`}
+      onClick={() => handleSort(sKey)}
+    >
+      <div className={`flex items-center gap-2`}>
+        {label}
+        <span className="text-slate-400">
+          {sortConfig.key === sKey ? (
+            sortConfig.direction === 'asc' ? <ChevronUp className="h-4 w-4 text-indigo-600" /> : <ChevronDown className="h-4 w-4 text-indigo-600" />
+          ) : (
+            <ArrowUpDown className="h-4 w-4" />
+          )}
+        </span>
+      </div>
+    </th>
+  );
+
   const TabButton = ({ id, label, icon: Icon }: any) => (
     <button
       onClick={() => setActiveTab(id)}
@@ -387,8 +488,18 @@ const PointConfiguration: React.FC = () => {
           {/* --- TAB INCIDENT --- */}
           {activeTab === 'INCIDENT' && (
             <div className="space-y-4">
-               <div className="flex justify-between items-center">
-                  <h3 className="font-semibold text-lg">Master Data Jenis Kejadian</h3>
+               <div className="flex justify-between items-center flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                     <h3 className="font-semibold text-lg">Master Data Jenis Kejadian</h3>
+                     {selectedIncidentIds.length > 0 && (
+                       <button 
+                         onClick={handleBatchDelete}
+                         className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm animate-fade-in hover:bg-red-700"
+                       >
+                         <Trash2 className="h-4 w-4" /> Hapus {selectedIncidentIds.length} Terpilih
+                       </button>
+                     )}
+                  </div>
                   <div className="flex gap-2">
                     <button 
                       onClick={() => setShowImportModal(true)}
@@ -409,17 +520,35 @@ const PointConfiguration: React.FC = () => {
                 <table className="w-full text-sm text-left">
                    <thead className="bg-slate-50 border-b">
                      <tr>
-                       <th className="p-3">Nama Kejadian</th>
-                       <th className="p-3">Tipe</th>
-                       <th className="p-3">Kategori</th>
-                       <th className="p-3">Bobot Poin</th>
-                       <th className="p-3">Tingkat</th>
+                       <th className="p-3 w-10 text-center">
+                          <button onClick={handleSelectAll} className="flex items-center justify-center text-slate-500 hover:text-indigo-600">
+                             {selectedIncidentIds.length > 0 && selectedIncidentIds.length === incidents.length ? (
+                               <CheckSquare className="h-5 w-5 text-indigo-600" />
+                             ) : (
+                               <Square className="h-5 w-5" />
+                             )}
+                          </button>
+                       </th>
+                       <SortHeader label="Nama Kejadian" sKey="name" />
+                       <SortHeader label="Tipe" sKey="type" />
+                       <SortHeader label="Kategori" sKey="category" />
+                       <SortHeader label="Bobot Poin" sKey="points" />
+                       <SortHeader label="Tingkat" sKey="severity" />
                        <th className="p-3 text-right">Aksi</th>
                      </tr>
                    </thead>
                    <tbody>
-                      {incidents.map(inc => (
-                        <tr key={inc.id} className="border-b last:border-0 hover:bg-slate-50 transition-colors">
+                      {sortedIncidents.map(inc => (
+                        <tr key={inc.id} className={`border-b last:border-0 hover:bg-slate-50 transition-colors ${selectedIncidentIds.includes(inc.id) ? 'bg-indigo-50' : ''}`}>
+                          <td className="p-3 text-center">
+                             <button onClick={() => handleSelectRow(inc.id)} className="flex items-center justify-center">
+                                {selectedIncidentIds.includes(inc.id) ? (
+                                  <CheckSquare className="h-5 w-5 text-indigo-600" />
+                                ) : (
+                                  <Square className="h-5 w-5 text-slate-300 hover:text-slate-500" />
+                                )}
+                             </button>
+                          </td>
                           <td className="p-3 font-medium text-slate-900">{inc.name}</td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded text-xs font-bold ${inc.type === IncidentTypeCategory.VIOLATION ? 'bg-red-100 text-red-600' : inc.type === IncidentTypeCategory.ACHIEVEMENT ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
@@ -430,7 +559,11 @@ const PointConfiguration: React.FC = () => {
                           <td className="p-3 font-bold">{inc.points}</td>
                           <td className="p-3 text-xs uppercase text-slate-500 font-semibold">{inc.severity}</td>
                           <td className="p-3 text-right">
-                             <button onClick={() => handleDeleteIncident(inc.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors">
+                             <button 
+                               onClick={() => handleDeleteIncident(inc.id)} 
+                               className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
+                               title="Hapus Kejadian Ini"
+                             >
                                <Trash2 className="h-4 w-4" />
                              </button>
                           </td>
@@ -438,7 +571,7 @@ const PointConfiguration: React.FC = () => {
                       ))}
                       {incidents.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="p-8 text-center text-slate-500 italic">Belum ada jenis kejadian yang dikonfigurasi.</td>
+                          <td colSpan={7} className="p-8 text-center text-slate-500 italic">Belum ada jenis kejadian yang dikonfigurasi.</td>
                         </tr>
                       )}
                    </tbody>
