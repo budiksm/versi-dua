@@ -45,7 +45,8 @@ import {
   Play,
   Shield,
   LifeBuoy,
-  MessageCircle
+  MessageCircle,
+  Users
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -66,6 +67,9 @@ const StudentProfile: React.FC = () => {
   
   // BK Sub-mode State
   const [bkMode, setBkMode] = useState<'CASE' | 'PREVENTIVE'>('CASE');
+  
+  // Homeroom Sub-mode State (NEW)
+  const [homeroomMode, setHomeroomMode] = useState<'CASE' | 'PREVENTIVE'>('CASE');
 
   // Form State (Incident)
   const [formType, setFormType] = useState<IncidentTypeCategory>(IncidentTypeCategory.VIOLATION);
@@ -272,9 +276,14 @@ const StudentProfile: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    const finalRelatedRecords = (type === 'BK' && bkMode === 'CASE') 
-        ? selectedCounselingRecords 
-        : [];
+    // Filter related records based on current mode
+    let finalRelatedRecords: string[] = [];
+    
+    if (type === 'BK') {
+        finalRelatedRecords = (bkMode === 'CASE') ? selectedCounselingRecords : [];
+    } else if (type === 'HOMEROOM') {
+        finalRelatedRecords = (homeroomMode === 'CASE') ? selectedCounselingRecords : [];
+    }
 
     const newSession: CounselingSession = {
       id: `coun_${Date.now()}`,
@@ -428,9 +437,12 @@ const StudentProfile: React.FC = () => {
 
   // Filter for BK Form: ONLY Show ACTIVE (REQUIRED) Violations
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');
+  
+  // Filter for Homeroom Form: Show APPROVED violations that are NOT COMPLETED by BK
+  // This allows Homeroom teacher to address violations first.
+  const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED');
 
   // Logic to find active referrals from Homeroom
-  // Rujukan dianggap aktif jika tipe 'TO_BK' DAN belum ada sesi BK yang lebih baru
   const activeHomeroomReferrals = counselingSessions.filter(s => {
       if (s.sessionType !== 'HOMEROOM' || s.recommendation !== 'TO_BK') return false;
       const hasNewerBK = counselingSessions.some(bk => 
@@ -560,7 +572,7 @@ const StudentProfile: React.FC = () => {
             </button>
             {isReporterHomeroom && (
               <button
-                 onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); }}
+                 onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); setHomeroomMode('CASE'); setSelectedCounselingRecords([]); }}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'HOMEROOM' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
               >
                  <span className="flex items-center gap-2">
@@ -570,7 +582,7 @@ const StudentProfile: React.FC = () => {
             )}
             {canAccessBK && (
               <button
-                 onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); }}
+                 onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); setBkMode('CASE'); setSelectedCounselingRecords([]); }}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
               >
                  <span className="flex items-center gap-2">
@@ -797,11 +809,77 @@ const StudentProfile: React.FC = () => {
                      </h2>
                    </div>
                    
-                   <form onSubmit={(e) => handleSubmitCounseling(e, 'HOMEROOM')} className="p-6 space-y-6">
-                      <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100">
-                         Form ini khusus untuk pencatatan pembinaan oleh Wali Kelas.
+                   {/* MODE SWITCHER - HOMEROOM */}
+                   <div className="px-6 pt-6">
+                      <div className="flex p-1 bg-slate-100 rounded-lg">
+                         <button 
+                           onClick={() => setHomeroomMode('CASE')}
+                           className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${homeroomMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}
+                         >
+                            <Shield className="h-4 w-4" /> Pembinaan Kasus (Disiplin)
+                         </button>
+                         <button 
+                           onClick={() => setHomeroomMode('PREVENTIVE')}
+                           className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${homeroomMode === 'PREVENTIVE' ? 'bg-white text-yellow-600 shadow-sm ring-1 ring-yellow-200' : 'text-slate-500 hover:text-slate-700'}`}
+                         >
+                            <Users className="h-4 w-4" /> Pembinaan Preventif (Personal)
+                         </button>
                       </div>
+                   </div>
+
+                   <form onSubmit={(e) => handleSubmitCounseling(e, 'HOMEROOM')} className="p-6 space-y-6">
                       
+                      {homeroomMode === 'CASE' ? (
+                          <>
+                            <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100">
+                                <p className="font-bold mb-1 flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Mode Pembinaan Kasus</p>
+                                <p>Pilih pelanggaran di bawah ini untuk ditindaklanjuti. Pembinaan ini tercatat dalam alur disiplin siswa.</p>
+                            </div>
+
+                            {/* RECORD SELECTOR FOR HOMEROOM */}
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                                    Pilih Pelanggaran Terkait
+                                </label>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                                    {homeroomViolationRecords.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif yang belum tuntas.</p>
+                                    ) : (
+                                        homeroomViolationRecords.map(record => {
+                                            const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
+                                            const isSelected = selectedCounselingRecords.includes(record.id);
+                                            return (
+                                                <div 
+                                                    key={record.id} 
+                                                    onClick={() => toggleCounselingRecord(record.id)}
+                                                    className={`p-3 rounded-lg border cursor-pointer text-xs flex items-center gap-3 transition-all ${isSelected ? 'bg-orange-50 border-orange-300 text-orange-900' : 'bg-white border-slate-200 hover:bg-slate-100'}`}
+                                                >
+                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-white border-slate-300'}`}>
+                                                        {isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="flex justify-between">
+                                                            <span className="font-bold text-sm">{incidentName}</span>
+                                                            <span className="font-bold text-red-600">+{record.pointSnapshot} Poin</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-slate-500">{new Date(record.date).toLocaleDateString()}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                          </>
+                      ) : (
+                          <div className="p-4 rounded-lg text-sm border mb-4 bg-yellow-50 text-yellow-800 border-yellow-100">
+                                <p className="font-bold mb-1 flex items-center gap-2"><LifeBuoy className="h-4 w-4" /> Mode Pembinaan Preventif</p>
+                                <p>Gunakan untuk sesi curhat, masalah keluarga, atau motivasi belajar. Tidak terkait poin pelanggaran.</p>
+                          </div>
+                      )}
+
                       <div>
                          <label className="block text-sm font-medium text-slate-700 mb-2">Catatan Pembinaan / Solusi</label>
                          <textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900" placeholder="Jelaskan permasalahan siswa..." />
@@ -810,9 +888,13 @@ const StudentProfile: React.FC = () => {
                       <div>
                          <label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label>
                          <select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900">
-                            <option value="NONE">Cukup Pembinaan (Selesai)</option>
+                            <option value="NONE">Selesai (Cukup Pembinaan)</option>
                             <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
-                            <option value="TO_BK">Rujuk ke BK (Eskalasi Masalah)</option>
+                            {homeroomMode === 'CASE' ? (
+                                <option value="TO_BK">Rujuk ke BK (Eskalasi Kasus Disiplin)</option>
+                            ) : (
+                                <option value="TO_BK">Rekomendasi Konseling BK (Preventif)</option>
+                            )}
                          </select>
                       </div>
 
@@ -827,17 +909,33 @@ const StudentProfile: React.FC = () => {
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><BookOpen className="h-5 w-5" /> Riwayat Pembinaan</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
                   {homeroomSessions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada data.</div> : 
-                    homeroomSessions.map(session => (
-                      <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                         <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-500" />
-                         <div className="flex justify-between items-start mb-2">
-                           <div className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</div>
-                           {session.recommendation !== 'NONE' && <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>}
-                         </div>
-                         <p className="text-sm text-slate-700 whitespace-pre-wrap">{session.notes}</p>
-                         <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1"><span className="font-semibold text-slate-500">Wali Kelas:</span> {session.counselorName}</div>
-                      </div>
-                    ))
+                    homeroomSessions.map(session => {
+                      const isCaseSession = session.relatedRecordIds && session.relatedRecordIds.length > 0;
+                      return (
+                        <div key={session.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md">
+                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseSession ? 'bg-orange-600' : 'bg-yellow-400'}`} />
+                           <div className="flex justify-between items-start mb-2 pl-2">
+                             <div className="flex flex-col">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseSession ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                    {isCaseSession ? 'Pembinaan Kasus' : 'Pembinaan Preventif'}
+                                </span>
+                                <div className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</div>
+                             </div>
+                             {session.recommendation !== 'NONE' && <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>}
+                           </div>
+                           <p className="text-sm text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-100 ml-1">{session.notes}</p>
+                           
+                           {isCaseSession && (
+                              <div className="mt-3 ml-2 text-[10px] bg-slate-100 text-slate-600 p-2 rounded border border-slate-200 flex items-center gap-2">
+                                  <CheckCircle2 className="h-3 w-3 text-orange-500" />
+                                  <span>Menindaklanjuti {session.relatedRecordIds!.length} pelanggaran.</span>
+                              </div>
+                           )}
+
+                           <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1 pl-2"><span className="font-semibold text-slate-500">Wali Kelas:</span> {session.counselorName}</div>
+                        </div>
+                      )
+                    })
                   }
                 </div>
              </div>
