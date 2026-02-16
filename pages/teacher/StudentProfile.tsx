@@ -41,7 +41,8 @@ import {
   PenSquare,
   FileText,
   Calendar,
-  Check
+  Check,
+  Play
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -136,7 +137,16 @@ const StudentProfile: React.FC = () => {
 
   const canViewEvidence = currentUser && !roles.includes(Role.STUDENT) && !roles.includes(Role.OSIS);
   const canAccessBK = isBK && (stats.effectiveViolationScore >= 40 || hasReferralToBK || records.some(r => r.bkStatus === 'REQUIRED'));
-  const canAccessKesiswaan = isKesiswaan; 
+  
+  // LOGIKA BARU: VISIBILITAS PANEL KESISWAAN
+  // Muncul jika: Poin >= 80 (SP1) ATAU Ada Sanksi Aktif ATAU Ada Rujukan BK ke Kesiswaan
+  const hasReferralToKesiswaan = counselingSessions.some(s => 
+      s.sessionType === 'BK' && 
+      (s.recommendation === 'TO_KESISWAAN' || s.recommendation === 'SUSPENSION_REVIEW')
+  );
+  const hasHighPoints = stats.effectiveViolationScore >= 80;
+  const shouldShowSanctionPanel = isKesiswaan && (hasHighPoints || activeSanction !== undefined || hasReferralToKesiswaan);
+
   const canRecord = isEducator; 
 
   const filteredCategories = categories.filter(c => c.targetType === formType);
@@ -375,7 +385,11 @@ const StudentProfile: React.FC = () => {
     DataService.saveSanctions(updatedSanctions);
     setRefreshKey(prev => prev + 1);
     
-    setSuccessMsg(status === RedemptionStatus.COMPLETED ? 'Sanksi diselesaikan!' : 'Status diperbarui.');
+    if (status === RedemptionStatus.IN_PROGRESS) {
+        setSuccessMsg('Penebusan dimulai!');
+    } else if (status === RedemptionStatus.COMPLETED) {
+        setSuccessMsg('Sanksi diselesaikan!');
+    }
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -545,7 +559,7 @@ const StudentProfile: React.FC = () => {
                  </span>
               </button>
             )}
-            {canAccessKesiswaan && (
+            {shouldShowSanctionPanel && (
               <button
                  onClick={() => setActiveTab('SANCTIONS')}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
@@ -912,7 +926,6 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (Existing Tabs for Sanctions & Locked States remain same) ... */}
         {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
             <div className="lg:col-span-3">
                <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
@@ -923,8 +936,8 @@ const StudentProfile: React.FC = () => {
             </div>
         )}
         
-        {/* TAB SANCTIONS (Same as previous implementation) */}
-        {activeTab === 'SANCTIONS' && canAccessKesiswaan && (
+        {/* TAB SANCTIONS */}
+        {activeTab === 'SANCTIONS' && shouldShowSanctionPanel && (
            <>
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -966,7 +979,13 @@ const StudentProfile: React.FC = () => {
                       <div key={item.id} className={`bg-white p-5 rounded-xl border shadow-sm relative overflow-hidden transition-all ${editingSanctionId === item.id ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`}>
                          <div className="flex justify-between items-start mb-2">
                            <div className="text-xs font-semibold text-slate-500">{new Date(item.assignedDate).toLocaleDateString()}</div>
-                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${item.redemptionStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{item.redemptionStatus === 'COMPLETED' ? 'Selesai' : 'Belum Selesai'}</span>
+                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
+                               item.redemptionStatus === RedemptionStatus.COMPLETED ? 'bg-green-100 text-green-700 border-green-200' : 
+                               item.redemptionStatus === RedemptionStatus.IN_PROGRESS ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                               'bg-red-100 text-red-700 border-red-200'
+                           }`}>
+                               {item.redemptionStatus === RedemptionStatus.COMPLETED ? 'Selesai' : item.redemptionStatus === RedemptionStatus.IN_PROGRESS ? 'Sedang Jalan' : 'Belum Dikerjakan'}
+                           </span>
                          </div>
                          <div className="flex items-center justify-between mb-2">
                             <span className="text-lg font-bold text-red-600">{item.level}</span>
@@ -974,11 +993,21 @@ const StudentProfile: React.FC = () => {
                          </div>
                          <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">"{item.notes}"</p>
                          {item.redemptionTask && <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3"><b>Tugas:</b> {item.redemptionTask}</div>}
-                         {item.redemptionStatus !== 'COMPLETED' && item.redemptionTask && (
-                            <div className="flex gap-2 justify-end mt-2">
-                               <button onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED)} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm">Selesai</button>
-                            </div>
-                         )}
+                         
+                         {/* Action Buttons based on Status */}
+                         <div className="flex gap-2 justify-end mt-2">
+                            {item.redemptionStatus === RedemptionStatus.ASSIGNED && item.redemptionTask && (
+                               <button onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.IN_PROGRESS)} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm flex items-center gap-1">
+                                  <Play className="h-3 w-3" /> Mulai Penebusan
+                               </button>
+                            )}
+                            {item.redemptionStatus === RedemptionStatus.IN_PROGRESS && (
+                               <button onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED)} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 shadow-sm flex items-center gap-1">
+                                  <Check className="h-3 w-3" /> Selesai
+                               </button>
+                            )}
+                         </div>
+
                          <div className="mt-2 text-[10px] text-slate-400 text-right">Oleh: {item.assignedBy}</div>
                       </div>
                     ))
