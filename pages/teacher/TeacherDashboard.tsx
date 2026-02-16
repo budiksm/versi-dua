@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -28,12 +28,17 @@ const TeacherDashboard: React.FC = () => {
   const [counselingCount, setCounselingCount] = useState(0);
 
   // Kesiswaan Specific State
+  const [allSanctions, setAllSanctions] = useState<StudentSanction[]>([]); // New State to store all sanctions
   const [sp1Count, setSp1Count] = useState<number>(0);
   const [sp2Count, setSp2Count] = useState<number>(0);
   const [sp3Count, setSp3Count] = useState<number>(0);
   const [doCount, setDoCount] = useState<number>(0); 
   const [activeRedemptions, setActiveRedemptions] = useState<number>(0);
-  const [pendingTaskSanctions, setPendingTaskSanctions] = useState<any[]>([]); // Sanksi yg butuh tugas
+  const [pendingTaskSanctions, setPendingTaskSanctions] = useState<any[]>([]); 
+  
+  // STATS DETAIL MODAL STATE
+  const [showStatModal, setShowStatModal] = useState(false);
+  const [selectedStatType, setSelectedStatType] = useState<string | null>(null); // 'SP1', 'SP2', 'SP3', 'DO', 'REDEMPTION'
   
   // NEW: BK Referrals for Kesiswaan
   const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession}[]>([]);
@@ -123,6 +128,9 @@ const TeacherDashboard: React.FC = () => {
 
       // --- LOGIKA KESISWAAN REVISI ---
       if (user.roles.includes(Role.KESISWAAN)) {
+        // Store all sanctions for detailed view
+        setAllSanctions(sanctions);
+
         // Hitung Statistik berdasarkan Sanksi Aktif (Bukan kandidat lagi)
         const sp1 = sanctions.filter(s => s.level === SanctionLevel.SP1 && !s.isRedeemed).length;
         const sp2 = sanctions.filter(s => s.level === SanctionLevel.SP2 && !s.isRedeemed).length;
@@ -171,6 +179,41 @@ const TeacherDashboard: React.FC = () => {
       }
     }
   }
+
+  // --- STATS MODAL HANDLERS ---
+  const handleOpenStatModal = (type: string) => {
+      setSelectedStatType(type);
+      setShowStatModal(true);
+  };
+
+  const getStudentsForStatModal = () => {
+      if (!selectedStatType) return [];
+      
+      const allClasses = DataService.getClasses(); // Helper to get class name
+
+      let filteredSanctions: StudentSanction[] = [];
+
+      if (selectedStatType === 'REDEMPTION') {
+          filteredSanctions = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS);
+      } else {
+          // SP1, SP2, SP3, DROP_OUT
+          filteredSanctions = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed);
+      }
+
+      return filteredSanctions.map(s => {
+          const st = students.find(student => student.id === s.studentId);
+          const cl = allClasses.find(c => c.id === st?.classId);
+          return {
+              id: s.id,
+              studentId: s.studentId,
+              studentName: st?.name || 'Unknown',
+              studentNis: st?.nis || '-',
+              className: cl?.name || '-',
+              date: s.assignedDate,
+              notes: s.notes
+          };
+      });
+  };
 
   // --- TASK MODAL HANDLERS ---
   const handleOpenTaskModal = (sanctionItem: any) => {
@@ -337,26 +380,49 @@ const TeacherDashboard: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
-                      <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider">Aktif SP 1</p>
+                   <div 
+                     onClick={() => handleOpenStatModal(SanctionLevel.SP1)}
+                     className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"
+                   >
+                      <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                         Aktif SP 1 <ExternalLink className="h-3 w-3" />
+                      </p>
                       <p className="text-3xl font-bold mt-1">{sp1Count}</p>
                    </div>
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
-                      <p className="text-orange-400 text-[10px] font-bold uppercase tracking-wider">Aktif SP 2</p>
+                   <div 
+                     onClick={() => handleOpenStatModal(SanctionLevel.SP2)}
+                     className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"
+                   >
+                      <p className="text-orange-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                         Aktif SP 2 <ExternalLink className="h-3 w-3" />
+                      </p>
                       <p className="text-3xl font-bold mt-1">{sp2Count}</p>
                    </div>
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
-                      <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider">Aktif SP 3</p>
+                   <div 
+                     onClick={() => handleOpenStatModal(SanctionLevel.SP3)}
+                     className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"
+                   >
+                      <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                         Aktif SP 3 <ExternalLink className="h-3 w-3" />
+                      </p>
                       <p className="text-3xl font-bold mt-1">{sp3Count}</p>
                    </div>
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30">
+                   <div 
+                     onClick={() => handleOpenStatModal(SanctionLevel.DROP_OUT)}
+                     className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30 cursor-pointer hover:bg-red-900/50 transition-all hover:scale-105"
+                   >
                       <p className="text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
-                         <Skull className="h-3 w-3" /> Drop Out
+                         <Skull className="h-3 w-3" /> Drop Out <ExternalLink className="h-3 w-3" />
                       </p>
                       <p className="text-3xl font-bold mt-1">{doCount}</p>
                    </div>
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10">
-                      <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider">Penebusan Jalan</p>
+                   <div 
+                     onClick={() => handleOpenStatModal('REDEMPTION')}
+                     className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"
+                   >
+                      <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                         Penebusan Jalan <ExternalLink className="h-3 w-3" />
+                      </p>
                       <p className="text-3xl font-bold mt-1">{activeRedemptions}</p>
                    </div>
                 </div>
@@ -521,6 +587,69 @@ const TeacherDashboard: React.FC = () => {
                </div>
             </div>
          </div>
+      )}
+
+      {/* STATS DETAIL MODAL (NEW) */}
+      {showStatModal && selectedStatType && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="bg-slate-800 text-white p-4 flex justify-between items-center shrink-0">
+                      <h3 className="font-bold flex items-center gap-2">
+                          <Users className="h-5 w-5" /> 
+                          Daftar Siswa - {selectedStatType === 'REDEMPTION' ? 'Sedang Penebusan' : selectedStatType}
+                      </h3>
+                      <button onClick={() => setShowStatModal(false)} className="text-slate-400 hover:text-white">
+                          <X className="h-5 w-5" />
+                      </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-0">
+                      <table className="w-full text-sm text-left">
+                          <thead className="bg-slate-50 border-b border-slate-100 text-slate-600">
+                              <tr>
+                                  <th className="px-4 py-3 font-semibold">Nama Siswa</th>
+                                  <th className="px-4 py-3 font-semibold">Kelas</th>
+                                  <th className="px-4 py-3 font-semibold">Tgl Penetapan</th>
+                                  <th className="px-4 py-3 text-right">Aksi</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                              {getStudentsForStatModal().length === 0 ? (
+                                  <tr>
+                                      <td colSpan={4} className="px-4 py-8 text-center text-slate-500 italic">
+                                          Tidak ada data siswa untuk kategori ini.
+                                      </td>
+                                  </tr>
+                              ) : (
+                                  getStudentsForStatModal().map((s) => (
+                                      <tr key={s.id} className="hover:bg-slate-50">
+                                          <td className="px-4 py-3">
+                                              <div className="font-bold text-slate-800">{s.studentName}</div>
+                                              <div className="text-xs text-slate-500">{s.studentNis}</div>
+                                          </td>
+                                          <td className="px-4 py-3 text-slate-600">{s.className}</td>
+                                          <td className="px-4 py-3 text-slate-500">{new Date(s.date).toLocaleDateString()}</td>
+                                          <td className="px-4 py-3 text-right">
+                                              <Link 
+                                                  to={`/teacher/student/${s.studentId}`}
+                                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-600 hover:text-white transition-colors"
+                                              >
+                                                  Lihat Profil <ArrowRight className="h-3 w-3" />
+                                              </Link>
+                                          </td>
+                                      </tr>
+                                  ))
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+                  <div className="p-4 bg-slate-50 border-t border-slate-200 text-right">
+                      <button onClick={() => setShowStatModal(false)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold">
+                          Tutup
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* BK Section */}
