@@ -22,7 +22,9 @@ import {
 import { db, connectToFirebase } from '../firebaseConfig';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// --- IN-MEMORY CACHE (Single Source of Truth saat Runtime) ---
+// --- IN-MEMORY STATE (Runtime Only) ---
+// Data ini akan hilang saat refresh, dan DIPAKSA ambil ulang dari Cloud.
+// Ini menjamin user selalu melihat data terbaru.
 let _teachers: Teacher[] = [];
 let _students: Student[] = [];
 let _classes: ClassGroup[] = [];
@@ -57,7 +59,7 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- DATA SEEDING (Hanya jika Cloud Kosong Melompong) ---
+// --- DATA SEEDING (Hanya Manual Trigger via Admin, TIDAK OTOMATIS) ---
 const SEED_DATA = {
     categories: [
         { id: 'cat1', name: 'Kedisiplinan', targetType: IncidentTypeCategory.VIOLATION },
@@ -74,24 +76,6 @@ const SEED_DATA = {
         { id: 'r7', minPoints: 201, maxPoints: 9999, statusLabel: 'DO (Dikembalikan ke Ortu)', color: 'bg-slate-900 text-white border-2 border-red-500' },
     ],
     admin: { id: 'admin1', name: 'Administrator', nip: '000000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false }
-};
-
-// --- STORAGE HELPER (Hanya untuk Backup/Cache) ---
-const saveToStorage = (key: string, data: any) => {
-  try {
-      localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-      // Ignore quota errors
-  }
-};
-
-const loadFromStorage = (key: string) => {
-    try {
-        const item = localStorage.getItem(key);
-        return item ? JSON.parse(item) : [];
-    } catch(e) {
-        return [];
-    }
 };
 
 // --- FIRESTORE SYNC HELPER ---
@@ -121,9 +105,9 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  // --- STRICT CLOUD INITIALIZATION ---
+  // --- INITIALIZATION (STRICT CLOUD FETCH) ---
   initializeData: async (): Promise<boolean> => {
-    console.log("🚀 [Init] Memulai inisialisasi CLOUD FIRST STRICT...");
+    console.log("☁️ [Init] Menghubungkan ke Infrastruktur Cloud...");
     
     if (!db) {
         console.warn("⚠️ Database belum dikonfigurasi.");
@@ -153,22 +137,13 @@ export const DataService = {
             let data: any[] = [];
 
             if (snap.exists()) {
-                // DATA CLOUD DITEMUKAN - GUNAKAN INI
                 data = snap.data().data || [];
                 console.log(`✅ [Cloud] Loaded ${colName}: ${data.length} items`);
             } else {
-                // DATA CLOUD TIDAK ADA (Baru pertama kali run atau terhapus)
-                console.warn(`⚠️ [Cloud] Kosong untuk ${colName}. Mencoba cache lokal...`);
-                // Coba ambil dari cache lokal HANYA jika cloud kosong
-                const local = loadFromStorage(colName);
-                if (local && local.length > 0) {
-                    data = local;
-                    console.log(`♻️ [Cache] Restore ${colName} dari lokal dan upload ke cloud.`);
-                    syncToCloud(colName, data); // Self-healing
-                }
+                console.log(`ℹ️ [Cloud] ${colName} kosong atau belum dibuat.`);
             }
 
-            // Assign to memory
+            // Assign to memory ONLY (No localStorage backup)
             switch(colName) {
                 case 'teachers': _teachers = data; break;
                 case 'students': _students = data; break;
@@ -182,34 +157,34 @@ export const DataService = {
                 case 'cashflow': _cashflow = data; break;
                 case 'activity_logs': _activityLogs = data; break;
             }
-            
-            // Selalu update cache lokal agar sinkron
-            saveToStorage(colName, data);
         });
 
-        // 4. Safe Seeding (Hanya jika benar-benar kosong di semua level)
-        if (_categories.length === 0) {
-            _categories = SEED_DATA.categories;
-            syncToCloud('categories', _categories);
-        }
-        if (_rules.length === 0) {
-            _rules = SEED_DATA.rules;
-            syncToCloud('rules', _rules);
-        }
+        // 4. Safe Seeding (ONLY IF REALLY EMPTY & NO ADMIN)
+        // Kita hanya seed Admin jika tabel guru benar-benar kosong di Cloud.
         if (_teachers.length === 0) {
+            console.log("✨ [Init] Database kosong. Membuat Admin Default di Cloud...");
             _teachers = [SEED_DATA.admin];
-            syncToCloud('teachers', _teachers);
-            console.log("✨ [Init] Admin default dibuat.");
+            await syncToCloud('teachers', _teachers);
+            
+            // Seed basic rules & categories if empty
+            if (_categories.length === 0) {
+               _categories = SEED_DATA.categories;
+               await syncToCloud('categories', _categories);
+            }
+            if (_rules.length === 0) {
+               _rules = SEED_DATA.rules;
+               await syncToCloud('rules', _rules);
+            }
         }
 
-        // 5. Start Realtime Listeners (Agar update dari device lain masuk)
+        // 5. Start Realtime Listeners
         DataService.startRealtimeListeners();
         
         return true;
 
     } catch (e) {
-        console.error("❌ [Init] Fatal Error:", e);
-        notifyListeners('ERROR', "Koneksi Gagal. Cek internet Anda.");
+        console.error("❌ [Init] Fatal Cloud Error:", e);
+        notifyListeners('ERROR', "Koneksi Cloud Gagal.");
         return false;
     }
   },
@@ -226,27 +201,27 @@ export const DataService = {
         onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
             if (docSnapshot.exists()) {
                 const cloudData = docSnapshot.data().data;
-                const localDataStr = localStorage.getItem(colName);
                 
-                // Hanya update jika berbeda, mencegah loop render
-                if (JSON.stringify(cloudData) !== localDataStr) {
-                    console.log(`🔄 [Realtime] Update masuk: ${colName}`);
-                    
-                    switch(colName) {
-                        case 'teachers': _teachers = cloudData; break;
-                        case 'students': _students = cloudData; break;
-                        case 'classes': _classes = cloudData; break;
-                        case 'records': _records = cloudData; break;
-                        case 'categories': _categories = cloudData; break;
-                        case 'incidentTypes': _incidents = cloudData; break;
-                        case 'rules': _rules = cloudData; break;
-                        case 'counseling': _counseling = cloudData; break;
-                        case 'sanctions': _sanctions = cloudData; break;
-                        case 'cashflow': _cashflow = cloudData; break;
-                        case 'activity_logs': _activityLogs = cloudData; break;
-                    }
+                // Compare with current memory to detect external changes
+                // Note: We skip complex diffing for performance, just update memory & notify UI
+                let shouldUpdate = false;
+                
+                switch(colName) {
+                    case 'teachers': if(JSON.stringify(_teachers) !== JSON.stringify(cloudData)) { _teachers = cloudData; shouldUpdate = true; } break;
+                    case 'students': if(JSON.stringify(_students) !== JSON.stringify(cloudData)) { _students = cloudData; shouldUpdate = true; } break;
+                    case 'classes': if(JSON.stringify(_classes) !== JSON.stringify(cloudData)) { _classes = cloudData; shouldUpdate = true; } break;
+                    case 'records': if(JSON.stringify(_records) !== JSON.stringify(cloudData)) { _records = cloudData; shouldUpdate = true; } break;
+                    case 'categories': if(JSON.stringify(_categories) !== JSON.stringify(cloudData)) { _categories = cloudData; shouldUpdate = true; } break;
+                    case 'incidentTypes': if(JSON.stringify(_incidents) !== JSON.stringify(cloudData)) { _incidents = cloudData; shouldUpdate = true; } break;
+                    case 'rules': if(JSON.stringify(_rules) !== JSON.stringify(cloudData)) { _rules = cloudData; shouldUpdate = true; } break;
+                    case 'counseling': if(JSON.stringify(_counseling) !== JSON.stringify(cloudData)) { _counseling = cloudData; shouldUpdate = true; } break;
+                    case 'sanctions': if(JSON.stringify(_sanctions) !== JSON.stringify(cloudData)) { _sanctions = cloudData; shouldUpdate = true; } break;
+                    case 'cashflow': if(JSON.stringify(_cashflow) !== JSON.stringify(cloudData)) { _cashflow = cloudData; shouldUpdate = true; } break;
+                    case 'activity_logs': if(JSON.stringify(_activityLogs) !== JSON.stringify(cloudData)) { _activityLogs = cloudData; shouldUpdate = true; } break;
+                }
 
-                    saveToStorage(colName, cloudData);
+                if (shouldUpdate) {
+                    console.log(`🔄 [Realtime] Update diterima dari Cloud: ${colName}`);
                     notifyDataChange();
                 }
             }
@@ -254,7 +229,7 @@ export const DataService = {
     });
   },
 
-  // --- GETTERS (Memory Access - Cepat) ---
+  // --- GETTERS (Memory Access - Fast UI) ---
   getClasses: () => _classes || [],
   getStudents: () => _students || [],
   getCategories: () => _categories || [],
@@ -267,21 +242,23 @@ export const DataService = {
   getActivityLogs: () => _activityLogs || [],
   getTeachers: () => _teachers || [],
 
-  // --- SETTERS (Update Memory -> Local -> Cloud) ---
-  saveClasses: (data: ClassGroup[]) => { _classes = data; saveToStorage('classes', data); syncToCloud('classes', data); notifyDataChange(); },
-  saveStudents: (data: Student[]) => { _students = data; saveToStorage('students', data); syncToCloud('students', data); notifyDataChange(); },
-  saveCategories: (data: MasterCategory[]) => { _categories = data; saveToStorage('categories', data); syncToCloud('categories', data); notifyDataChange(); },
-  saveIncidentTypes: (data: MasterIncidentType[]) => { _incidents = data; saveToStorage('incidentTypes', data); syncToCloud('incidentTypes', data); notifyDataChange(); },
-  saveRules: (data: CoachingRule[]) => { _rules = data; saveToStorage('rules', data); syncToCloud('rules', data); notifyDataChange(); },
-  saveRecords: (data: IncidentRecord[]) => { _records = data; saveToStorage('records', data); syncToCloud('records', data); notifyDataChange(); },
-  saveTeachers: (data: Teacher[]) => { _teachers = data; saveToStorage('teachers', data); syncToCloud('teachers', data); notifyDataChange(); },
-  saveSanctions: (data: StudentSanction[]) => { _sanctions = data; saveToStorage('sanctions', data); syncToCloud('sanctions', data); notifyDataChange(); },
-  saveCashflows: (data: CashflowRecord[]) => { _cashflow = data; saveToStorage('cashflow', data); syncToCloud('cashflow', data); notifyDataChange(); },
-  saveActivityLogs: (data: ActivityLog[]) => { _activityLogs = data; saveToStorage('activity_logs', data); syncToCloud('activity_logs', data); notifyDataChange(); },
+  // --- SETTERS (Update Memory -> Push to Cloud) ---
+  // Kita menghapus 'saveToStorage' (LocalStorage) dari semua setter.
+  // Data hanya disimpan di Memory (untuk UI instan) dan Cloud (untuk persistensi).
+  
+  saveClasses: (data: ClassGroup[]) => { _classes = data; syncToCloud('classes', data); notifyDataChange(); },
+  saveStudents: (data: Student[]) => { _students = data; syncToCloud('students', data); notifyDataChange(); },
+  saveCategories: (data: MasterCategory[]) => { _categories = data; syncToCloud('categories', data); notifyDataChange(); },
+  saveIncidentTypes: (data: MasterIncidentType[]) => { _incidents = data; syncToCloud('incidentTypes', data); notifyDataChange(); },
+  saveRules: (data: CoachingRule[]) => { _rules = data; syncToCloud('rules', data); notifyDataChange(); },
+  saveRecords: (data: IncidentRecord[]) => { _records = data; syncToCloud('records', data); notifyDataChange(); },
+  saveTeachers: (data: Teacher[]) => { _teachers = data; syncToCloud('teachers', data); notifyDataChange(); },
+  saveSanctions: (data: StudentSanction[]) => { _sanctions = data; syncToCloud('sanctions', data); notifyDataChange(); },
+  saveCashflows: (data: CashflowRecord[]) => { _cashflow = data; syncToCloud('cashflow', data); notifyDataChange(); },
+  saveActivityLogs: (data: ActivityLog[]) => { _activityLogs = data; syncToCloud('activity_logs', data); notifyDataChange(); },
 
   saveCounselingSessions: (data: CounselingSession[]) => { 
       _counseling = data;
-      saveToStorage('counseling', data); 
       syncToCloud('counseling', data); 
       
       // SIDE EFFECT: Update status record jika diperlukan
@@ -319,14 +296,16 @@ export const DataService = {
               });
               
               if (recordsChanged) {
-                  DataService.saveRecords(updatedRecords);
+                  // Panggil setter internal untuk trigger sync records juga
+                  _records = updatedRecords;
+                  syncToCloud('records', updatedRecords);
               }
           }
       }
       notifyDataChange();
   },
 
-  // ... (Sisa fungsi logika seperti logActivity, login, calculateStudentPoints, dll SAMA PERSIS dengan sebelumnya)
+  // --- LOGIC LAINNYA ---
   
   logActivity: (user: Teacher, action: 'LOGIN' | 'LOGOUT' | 'SYNC') => {
     const logs = _activityLogs;
@@ -339,7 +318,7 @@ export const DataService = {
       timestamp: new Date().toISOString(),
       deviceInfo: navigator.userAgent
     };
-    const updatedLogs = [newLog, ...logs].slice(0, 500);
+    const updatedLogs = [newLog, ...logs].slice(0, 500); // Keep last 500 logs
     DataService.saveActivityLogs(updatedLogs);
   },
 
@@ -351,6 +330,7 @@ export const DataService = {
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
         const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
+        // Update only if > 1 min has passed to save bandwidth
         if (new Date().getTime() - last > 60000) {
            changed = true;
            return { ...t, lastActiveAt: now };
@@ -412,10 +392,17 @@ export const DataService = {
     DataService.saveCashflows(updatedFlows);
   },
 
+  // --- AUTHENTICATION ---
+  // Session tetap menggunakan localStorage agar user tidak perlu login ulang tiap refresh.
+  // Tapi data User-nya (Role, Nama, dll) akan divalidasi ulang dengan data terbaru dari Cloud (_teachers).
+
   login: (username: string, password: string): Teacher | null => {
+    // Cek kredensial dari data memory (yang sudah di-fetch dari Cloud)
     const teachers = _teachers; 
     let user = teachers.find(t => t.username === username && t.password === password);
+    
     if (user) {
+      // Simpan session token sederhana
       localStorage.setItem('currentUser', JSON.stringify(user));
       DataService.logActivity(user, 'LOGIN');
       DataService.updateHeartbeat(user.id);
@@ -433,7 +420,19 @@ export const DataService = {
   getCurrentUser: (): Teacher | null => {
     try {
         const stored = localStorage.getItem('currentUser');
-        return stored ? JSON.parse(stored) : null;
+        if (!stored) return null;
+        
+        const sessionUser = JSON.parse(stored);
+        
+        // RE-VALIDATE WITH LATEST CLOUD DATA
+        // Jika data guru berubah di cloud (misal role diganti admin), session harus ikut berubah.
+        const freshUser = _teachers.find(t => t.id === sessionUser.id);
+        
+        if (freshUser) {
+            return freshUser; // Return yang paling update
+        } else {
+            return sessionUser; // Fallback jika belum sync
+        }
     } catch(e) { return null; }
   },
 
@@ -453,6 +452,7 @@ export const DataService = {
     DataService.saveTeachers(updatedTeachers);
   },
 
+  // --- CALCULATION HELPERS (PURE FUNCTIONS) ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const validRecords = Array.isArray(records) ? records : [];
     const studentRecords = validRecords.filter(r => r.studentId === studentId);
