@@ -138,10 +138,18 @@ const StudentProfile: React.FC = () => {
     setClasses(DataService.getClasses());
     
     const allSessions = DataService.getCounselingSessions();
-    setCounselingSessions(allSessions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    setCounselingSessions(allSessions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        return dateB - dateA;
+    }));
 
     const allSanctions = DataService.getSanctions();
-    setSanctions(allSanctions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.assignedDate).getTime() - new Date(a.assignedDate).getTime()));
+    setSanctions(allSanctions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => {
+        const dateA = a.assignedDate ? new Date(a.assignedDate).getTime() : 0;
+        const dateB = b.assignedDate ? new Date(b.assignedDate).getTime() : 0;
+        return dateB - dateA;
+    }));
   };
 
   // --- BUILD UNIFIED STORY LINE ---
@@ -246,7 +254,11 @@ const StudentProfile: React.FC = () => {
       }
 
       // Sort chronological
-      story.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      story.sort((a,b) => {
+          const dateA = a.date ? new Date(a.date).getTime() : 0;
+          const dateB = b.date ? new Date(b.date).getTime() : 0;
+          return dateA - dateB;
+      });
       
       // If empty (e.g. Preventive Session with no history), add itself
       if (story.length === 0 && 'sessionType' in item) {
@@ -271,14 +283,22 @@ const StudentProfile: React.FC = () => {
 
   const stats = DataService.calculateStudentPoints(student.id, records, incidents);
   const recommendedStatus = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
-  const history = [...records].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const history = [...records].sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+  });
   
   const activeSanction = sanctions.find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
   const studentClass = classes.find(c => c.id === student.classId);
   const className = studentClass ? `Kelas ${studentClass.name}` : 'Kelas Tidak Diketahui';
   const isReporterHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
 
-  const latestHomeroomSession = counselingSessions.filter(s => s.sessionType === 'HOMEROOM').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const latestHomeroomSession = counselingSessions.filter(s => s.sessionType === 'HOMEROOM').sort((a,b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+  })[0];
   const hasReferralToBK = latestHomeroomSession?.recommendation === 'TO_BK';
 
   const roles = currentUser?.roles || [];
@@ -595,7 +615,11 @@ const StudentProfile: React.FC = () => {
 
   const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
-  const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 15);
+  const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+  }).slice(0, 15);
 
   // Filter for BK Form: ONLY Show ACTIVE (REQUIRED) Violations
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');

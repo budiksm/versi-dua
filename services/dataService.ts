@@ -218,20 +218,25 @@ export const DataService = {
   getActivityLogs: () => loadFromStorage<ActivityLog[]>('activity_logs', []),
 
   getTeachers: (): Teacher[] => {
-    let teachers = loadFromStorage<Teacher[]>('teachers', INITIAL_TEACHERS);
-    let needsUpdate = false;
-    const migrated = teachers.map((t: any) => {
-      let updated = false;
-      if (!t.roles && t.role) { t.roles = [t.role]; updated = true; }
-      if (t.mustChangePassword === undefined) { t.mustChangePassword = false; updated = true; }
-      if (updated) needsUpdate = true;
+    // FIX: Removed dangerous side-effect saveToStorage inside getter which caused account resets.
+    // Also changed fallback to empty array if storage is empty but initialized, to prevent overwriting cloud data.
+    const stored = localStorage.getItem('teachers');
+    let teachers: Teacher[] = [];
+    
+    if (stored) {
+        teachers = JSON.parse(stored);
+    } else {
+        // Only use INITIAL_TEACHERS if we haven't initialized from cloud yet (Offline First Run)
+        // If we have initialized and it's empty, it means all teachers were deleted (valid state).
+        teachers = isInitializedFromCloud ? [] : INITIAL_TEACHERS;
+    }
+
+    // Apply migration in-memory only
+    return teachers.map((t: any) => {
+      if (!t.roles && t.role) { t.roles = [t.role]; }
+      if (t.mustChangePassword === undefined) { t.mustChangePassword = false; }
       return t;
     });
-    
-    if (needsUpdate) {
-      saveToStorage('teachers', migrated);
-    }
-    return migrated;
   },
 
   // --- SETTERS ---
@@ -396,10 +401,17 @@ export const DataService = {
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {
             const existingAdminIndex = teachers.findIndex(t => t.roles.includes(Role.ADMIN));
             if (existingAdminIndex === -1) {
-                const newTeachers = [...teachers, defaultAdmin];
-                saveToStorage('teachers', newTeachers);
+                // We only add the default admin to memory/storage if NO teachers exist at all
+                // This prevents re-creating admin if it was deleted intentionally
+                if (teachers.length === 0) {
+                    const newTeachers = [...teachers, defaultAdmin];
+                    saveToStorage('teachers', newTeachers);
+                    user = defaultAdmin;
+                }
+            } else {
+                // If found in initial but not in loaded teachers (shouldn't happen with getTeachers logic)
+                user = defaultAdmin;
             }
-            user = defaultAdmin;
         }
     }
 
