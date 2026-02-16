@@ -289,8 +289,26 @@ const TeacherDashboard: React.FC = () => {
   const getIncidentName = (id: string) => incidents.find(i => i.id === id)?.name || 'Unknown';
   const getStudentName = (id: string) => students.find(s => s.id === id)?.name || 'Unknown';
 
+  const isBK = currentUser?.roles.includes(Role.BK);
+  const isKesiswaan = currentUser?.roles.includes(Role.KESISWAAN);
+  const isAdmin = currentUser?.roles.includes(Role.ADMIN);
+
+  // --- LOGIC: FILTER ACTIVITIES FOR WALIKELAS ---
+  // If user is Wali Kelas AND NOT (Admin, Kesiswaan, or BK), filter to show only their class.
+  const shouldFilterMyClass = myClasses.length > 0 && !isKesiswaan && !isAdmin && !isBK;
+
+  const myStudentIds = students
+      .filter(s => myClasses.some(c => c.id === s.classId))
+      .map(s => s.id);
+
   const allRecentRecords = [...records]
-    .filter(r => r.status !== 'REJECTED')
+    .filter(r => {
+        if (r.status === 'REJECTED') return false;
+        if (shouldFilterMyClass) {
+            return myStudentIds.includes(r.studentId);
+        }
+        return true;
+    })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   const totalPages = Math.ceil(allRecentRecords.length / ITEMS_PER_PAGE);
@@ -308,9 +326,6 @@ const TeacherDashboard: React.FC = () => {
     r.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT && r.status !== 'REJECTED' &&
     new Date(r.date).toDateString() === new Date().toDateString()
   ).length;
-
-  const isBK = currentUser?.roles.includes(Role.BK);
-  const isKesiswaan = currentUser?.roles.includes(Role.KESISWAAN);
 
   return (
     <div className="space-y-8">
@@ -744,7 +759,11 @@ const TeacherDashboard: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-          <div className="flex items-center gap-2"><Clock className="h-5 w-5 text-slate-400" /><h2 className="font-semibold text-slate-800">Aktivitas Terkini</h2></div>
+          <div className="flex items-center gap-2"><Clock className="h-5 w-5 text-slate-400" />
+            <h2 className="font-semibold text-slate-800">
+                Aktivitas Terkini {shouldFilterMyClass ? '(Kelas Perwalian)' : ''}
+            </h2>
+          </div>
           {allRecentRecords.length > ITEMS_PER_PAGE && (
             <div className="flex items-center gap-2">
                <button onClick={handlePrevPage} disabled={recentPage === 0} className="p-1 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronLeft className="h-5 w-5 text-slate-600" /></button>
@@ -755,7 +774,9 @@ const TeacherDashboard: React.FC = () => {
         </div>
         <div className="divide-y divide-slate-100 min-h-[300px]">
           {currentRecords.length === 0 ? (
-            <div className="p-6 text-center text-slate-500 flex flex-col items-center justify-center h-full pt-16"><Clock className="h-8 w-8 text-slate-300 mb-2" />Belum ada data kejadian.</div>
+            <div className="p-6 text-center text-slate-500 flex flex-col items-center justify-center h-full pt-16"><Clock className="h-8 w-8 text-slate-300 mb-2" />
+               {shouldFilterMyClass ? "Belum ada aktivitas di kelas perwalian Anda." : "Belum ada data kejadian."}
+            </div>
           ) : (
             currentRecords.map(record => (
               <div key={record.id} className="p-4 flex items-start gap-4 hover:bg-slate-50 transition-colors animate-fade-in">
