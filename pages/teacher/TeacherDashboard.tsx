@@ -148,9 +148,27 @@ const TeacherDashboard: React.FC = () => {
                 activeCount++;
             }
 
-            // Mandatory Case (> 40 Points OR Specific Required Record)
+            // --- LOGIKA "MANDATORY" / WAJIB KONSELING YANG DIPERBAIKI ---
+            // 1. Apakah ada pelanggaran yang secara eksplisit butuh BK (REQUIRED)?
             const hasRequiredRecord = recs.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
-            if (hasRequiredRecord || (stats.effectiveViolationScore >= 40 && (!latestSession || latestSession.status === 'CLOSED'))) {
+            
+            // 2. Logic Poin > 40: Hanya wajib jika pelanggaran terakhir TERJADI SETELAH sesi BK terakhir.
+            // Jika sesi BK terakhir lebih baru daripada pelanggaran terakhir, berarti sudah ditangani.
+            const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+            const latestViolation = recs.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+            
+            let unhandledHighScore = false;
+            if (stats.effectiveViolationScore >= 40) {
+               if (!latestBKSession) {
+                  // Poin tinggi tapi belum pernah BK sama sekali -> Wajib
+                  unhandledHighScore = true;
+               } else if (latestViolation && new Date(latestViolation.date).getTime() > new Date(latestBKSession.date).getTime()) {
+                  // Ada pelanggaran baru SETELAH sesi BK terakhir -> Wajib
+                  unhandledHighScore = true;
+               }
+            }
+
+            if (hasRequiredRecord || unhandledHighScore) {
                 mandatoryCount++;
                 // Add to list for "Antrian"
                 const activeViolations = recs.filter(r => r.studentId === s.id && (r.bkStatus === 'REQUIRED' || (r.pointSnapshot >= 10 && r.typeSnapshot === IncidentTypeCategory.VIOLATION))).sort((a,b) => b.pointSnapshot - a.pointSnapshot);
@@ -163,6 +181,15 @@ const TeacherDashboard: React.FC = () => {
                         className: classes.find(c => c.id === s.classId)?.name || '-',
                         topIncident: incs.find(i => i.id === topViolation.incidentTypeId)?.name || 'Akumulasi Poin',
                         incidentDate: topViolation.date
+                    });
+                } else if (stats.effectiveViolationScore >= 40) {
+                    // Fallback jika tidak ada topViolation spesifik tapi poin tinggi
+                    mandatoryListTemp.push({
+                        student: s,
+                        score: stats.effectiveViolationScore,
+                        className: classes.find(c => c.id === s.classId)?.name || '-',
+                        topIncident: 'Akumulasi Poin Tinggi',
+                        incidentDate: new Date().toISOString()
                     });
                 }
             }
@@ -298,7 +325,17 @@ const TeacherDashboard: React.FC = () => {
                   note = 'Sesi Aktif';
               } else if (selectedStatType === 'BK_MANDATORY') {
                   const hasRequiredRecord = records.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
-                  if (hasRequiredRecord || (stats.effectiveViolationScore >= 40 && (!latestSession || latestSession.status === 'CLOSED'))) {
+                  
+                  // Same logic as Dashboard Counter
+                  const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+                  const latestViolation = records.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+                  let unhandledHighScore = false;
+                  if (stats.effectiveViolationScore >= 40) {
+                     if (!latestBKSession) unhandledHighScore = true;
+                     else if (latestViolation && new Date(latestViolation.date).getTime() > new Date(latestBKSession.date).getTime()) unhandledHighScore = true;
+                  }
+
+                  if (hasRequiredRecord || unhandledHighScore) {
                       include = true;
                       note = `Poin: ${stats.effectiveViolationScore}`;
                   }
@@ -783,6 +820,7 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
       
+      {/* ... (Rest of existing render code for Homeroom, etc.) ... */}
       {/* --- HOMEROOM / TEACHER DASHBOARD (INTERACTIVE) --- */}
       {myClasses.length > 0 && (
         <div className="space-y-6">
@@ -793,13 +831,6 @@ const TeacherDashboard: React.FC = () => {
             const femaleCount = classStudents.filter(s => s.gender === 'P').length;
 
             let totalClassPoints = 0;
-            
-            // --- UPDATED BUCKET LOGIC ---
-            // 20-39: Coaching Wali Kelas
-            // 40-79: Konseling BK
-            // 80-119: SP 1
-            // 120-159: SP 2
-            // >= 160: SP 3
             
             const listStudentsInCoaching: any[] = [];
             const listCleanStudents: any[] = [];

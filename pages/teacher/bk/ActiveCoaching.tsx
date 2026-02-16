@@ -307,13 +307,15 @@ const ActiveCoaching: React.FC = () => {
 
                 {/* Actions */}
                 <div className="flex flex-col gap-2 justify-center min-w-[160px]">
-                   <button 
-                     onClick={() => handleOpenModal(item.student, activeTab === 'MANDATORY' ? item.violations.map((v:any) => v.id) : [])}
-                     className={`w-full py-2 px-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 shadow-sm ${activeTab === 'MANDATORY' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                   >
-                     <HeartHandshake className="h-4 w-4" />
-                     {activeTab === 'MANDATORY' ? 'Tangani Kasus' : (item.hasOpenSession ? 'Lanjutkan Sesi' : 'Mulai Sesi')}
-                   </button>
+                   {activeTab !== 'HISTORY' && (
+                       <button 
+                         onClick={() => handleOpenModal(item.student, activeTab === 'MANDATORY' ? item.violations.map((v:any) => v.id) : [])}
+                         className={`w-full py-2 px-4 text-white rounded-lg font-medium flex items-center justify-center gap-2 shadow-sm ${activeTab === 'MANDATORY' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                       >
+                         <HeartHandshake className="h-4 w-4" />
+                         {activeTab === 'MANDATORY' ? 'Tangani Kasus' : (item.hasOpenSession ? 'Lanjutkan Sesi' : 'Mulai Sesi')}
+                       </button>
+                   )}
                    <Link 
                      to={`/teacher/student/${item.student.id}`}
                      className="w-full py-2 px-4 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 flex items-center justify-center gap-2"
