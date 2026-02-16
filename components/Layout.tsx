@@ -42,6 +42,16 @@ interface LayoutProps {
   role: Role; 
 }
 
+// Tipe data untuk item menu yang lebih fleksibel
+type MenuItemType = 'link' | 'header' | 'separator';
+
+interface MenuItem {
+  type: MenuItemType;
+  label?: string;
+  path?: string;
+  icon?: any;
+}
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
@@ -100,20 +110,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     navigate('/');
   };
   
-  // FUNGSI BARU: Membersihkan Cache Browser secara paksa
   const handleResetConnection = async () => {
     if(confirm("Tindakan ini akan membersihkan cache database di browser untuk memperbaiki error koneksi. Data di server aman. Lanjutkan?")) {
         try {
-            // Hapus IndexedDB database firebase
             const dbs = await window.indexedDB.databases();
             dbs.forEach(db => { 
                 if(db.name && db.name.includes('firebase')) {
                     window.indexedDB.deleteDatabase(db.name);
                 }
             });
-            // Hapus LocalStorage
             localStorage.clear();
-            // Reload Halaman
             window.location.reload();
         } catch (e) {
             alert("Gagal reset otomatis. Silakan hapus history browser Anda secara manual.");
@@ -134,7 +140,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       setPasswordError('Dilarang menggunakan password default "123".');
       return;
     }
-    // VALIDASI BARU: Min 6 huruf & Kombinasi Angka+Huruf
     if (newPassword.length < 6) {
       setPasswordError('Password minimal 6 karakter.');
       return;
@@ -162,66 +167,111 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   };
 
-  // --- MENU CONFIG ---
-  const teacherLinks = [
-    { path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/teacher/classes', label: 'Daftar Kelas', icon: Users },
-  ];
-  const bkLinks = [
-    { path: '/teacher/bk/active', label: 'Pembinaan Aktif', icon: HeartHandshake },
-    { path: '/teacher/bk/monitoring', label: 'Monitoring Siswa', icon: Search }, // NEW LINK FOR BK
-  ];
-  const kesiswaanLinks = [
-    { path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },
-    { path: '/teacher/kesiswaan/action', label: 'Pembinaan & SP', icon: Gavel },
-    { path: '/teacher/kesiswaan/logs', label: 'Log Input Guru', icon: ClipboardList },
-    { path: '/teacher/kesiswaan/poe-monitoring', label: 'Monitoring Poe Ibu', icon: Wallet },
-  ];
-  const adminLinks = [
-    { path: '/admin/students', label: 'Manajemen Siswa', icon: Users },
-    { path: '/admin/accounts', label: 'Manajemen Akun', icon: UserCog },
-    { path: '/admin/config', label: 'Konfigurasi Poin', icon: ShieldCheck },
-  ];
-  const studentLinks = [
-    { path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet },
-    { path: '/teacher/student/input', label: 'Lapor Pelanggaran', icon: ShieldAlert },
-  ];
-  const osisLinks = [
-    { path: '/teacher/osis/input', label: 'Input Keterlambatan', icon: Clock },
-  ];
+  // --- MENU CONFIGURATION LOGIC ---
+  const getMenuItems = (): MenuItem[] => {
+    if (!currentUser) return [];
+    const roles = currentUser.roles || [];
+    const isWalikelas = roles.includes(Role.WALIKELAS);
 
-  const roles = currentUser?.roles || [];
-  let finalLinks: any[] = [];
-  
-  if (roles.includes(Role.ADMIN)) {
-    finalLinks = [...adminLinks];
-    if (roles.some(r => [Role.TEACHER, Role.WALIKELAS, Role.BK, Role.KESISWAAN].includes(r))) {
-       finalLinks = [...finalLinks, ...teacherLinks];
+    // 1. ADMIN
+    if (roles.includes(Role.ADMIN)) {
+        return [
+            { type: 'header', label: 'Administrator' },
+            { type: 'link', path: '/admin/students', label: 'Manajemen Siswa', icon: Users },
+            { type: 'link', path: '/admin/accounts', label: 'Manajemen Akun', icon: UserCog },
+            { type: 'link', path: '/admin/config', label: 'Konfigurasi Poin', icon: ShieldCheck },
+            { type: 'separator' },
+            { type: 'header', label: 'Menu Guru' },
+            { type: 'link', path: '/teacher/dashboard', label: 'Dashboard Guru', icon: LayoutDashboard },
+            { type: 'link', path: '/teacher/classes', label: 'Data Kelas', icon: Users },
+        ];
     }
-  } else if (roles.includes(Role.STUDENT)) {
-    // Student sees Poe Ibu and Violation Input
-    finalLinks = [...studentLinks];
-  } else if (roles.includes(Role.OSIS)) {
-    // OSIS only sees input page
-    finalLinks = [...osisLinks];
-  } else {
-    finalLinks = [...teacherLinks];
-  }
 
-  // Add Wali Kelas Specific Link (Poe Ibu)
-  if (roles.includes(Role.WALIKELAS) || roles.includes(Role.STUDENT)) {
-      if (!finalLinks.find(l => l.path === '/teacher/poe-ibu')) {
-          finalLinks.push({ path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
-      }
-  }
+    // 2. KESISWAAN (Layout Khusus dengan Separator)
+    if (roles.includes(Role.KESISWAAN)) {
+        const items: MenuItem[] = [
+            { type: 'link', path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            
+            { type: 'separator' },
+            
+            { type: 'link', path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },
+            { type: 'link', path: '/teacher/kesiswaan/poe-monitoring', label: 'Monitoring Poe Ibu', icon: Wallet },
+            
+            { type: 'separator' },
+            
+            { type: 'link', path: '/teacher/kesiswaan/action', label: 'Pembinaan & SP', icon: Gavel },
+            { type: 'link', path: '/teacher/kesiswaan/logs', label: 'Log Input Guru', icon: ClipboardList },
+        ];
 
-  if (roles.includes(Role.BK)) finalLinks = [...finalLinks, ...bkLinks];
-  if (roles.includes(Role.KESISWAAN)) finalLinks = [...finalLinks, ...kesiswaanLinks];
-  
-  // Deduplicate links
-  finalLinks = finalLinks.filter((link, index, self) =>
-    index === self.findIndex((t) => t.path === link.path)
-  );
+        // Jika Kesiswaan juga Wali Kelas, tambahkan akses Kas Poe Ibu
+        if (isWalikelas) {
+            items.push({ type: 'separator' });
+            items.push({ type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
+        }
+
+        // Tambahkan akses Data Kelas standard untuk melihat profil detail
+        items.push({ type: 'separator' });
+        items.push({ type: 'link', path: '/teacher/classes', label: 'Data Kelas', icon: Users });
+
+        return items;
+    }
+
+    // 3. GURU BK (Layout Khusus dengan Sub-Header)
+    if (roles.includes(Role.BK)) {
+        const items: MenuItem[] = [
+            // Section 1: Monitoring
+            { type: 'header', label: 'Monitoring' },
+            { type: 'link', path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { type: 'link', path: '/teacher/bk/monitoring', label: 'Monitoring Siswa', icon: Search },
+            
+            // Section 2: Pembinaan
+            { type: 'header', label: 'Pembinaan' },
+            { type: 'link', path: '/teacher/bk/active', label: 'Pembinaan Aktif', icon: HeartHandshake },
+        ];
+
+        // Section 3: Keuangan (Jika Wali Kelas)
+        if (isWalikelas) {
+            items.push({ type: 'header', label: 'Keuangan' });
+            items.push({ type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
+        }
+
+        // Tambahkan akses Data Kelas standard
+        items.push({ type: 'separator' });
+        items.push({ type: 'link', path: '/teacher/classes', label: 'Data Kelas', icon: Users });
+
+        return items;
+    }
+
+    // 4. SISWA (BENDAHARA)
+    if (roles.includes(Role.STUDENT)) {
+        return [
+            { type: 'header', label: 'Menu Siswa' },
+            { type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet },
+            { type: 'link', path: '/teacher/student/input', label: 'Lapor Pelanggaran', icon: ShieldAlert },
+        ];
+    }
+
+    // 5. OSIS
+    if (roles.includes(Role.OSIS)) {
+        return [
+            { type: 'link', path: '/teacher/osis/input', label: 'Input Keterlambatan', icon: Clock },
+        ];
+    }
+
+    // 6. GURU / WALI KELAS (Default)
+    const teacherItems: MenuItem[] = [
+        { type: 'link', path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { type: 'link', path: '/teacher/classes', label: 'Daftar Kelas', icon: Users },
+    ];
+
+    if (isWalikelas) {
+        teacherItems.push({ type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
+    }
+
+    return teacherItems;
+  };
+
+  const menuItems = getMenuItems();
 
   return (
     <div className="flex h-screen bg-slate-50">
@@ -288,25 +338,38 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
            </div>
            <div className="overflow-hidden">
              <p className="text-sm font-bold text-slate-800 truncate">{currentUser?.name || 'User'}</p>
-             <p className="text-[10px] text-slate-500 uppercase leading-tight mt-0.5 truncate">{roles.join(', ')}</p>
+             <p className="text-[10px] text-slate-500 uppercase leading-tight mt-0.5 truncate">{currentUser?.roles?.join(', ') || ''}</p>
            </div>
         </div>
 
         <nav className="p-4 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)]">
-          {finalLinks.map((link) => {
-            const Icon = link.icon;
-            const isActive = location.pathname === link.path;
+          {menuItems.map((item, index) => {
+            if (item.type === 'header') {
+                return (
+                    <div key={index} className="px-4 mt-6 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {item.label}
+                    </div>
+                );
+            }
+            
+            if (item.type === 'separator') {
+                return <hr key={index} className="my-3 border-slate-200" />;
+            }
+
+            const Icon = item.icon;
+            const isActive = location.pathname === item.path;
+            
             return (
               <Link
-                key={link.path}
-                to={link.path}
+                key={index}
+                to={item.path || '#'}
                 onClick={() => setIsSidebarOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
                   isActive ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
-                <Icon className="h-5 w-5" />
-                {link.label}
+                {Icon && <Icon className="h-5 w-5" />}
+                {item.label}
               </Link>
             );
           })}
