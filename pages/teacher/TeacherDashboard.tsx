@@ -26,7 +26,7 @@ const TeacherDashboard: React.FC = () => {
       activeCounseling: 0,
       mandatoryCases: 0,
       referrals: 0,
-      approachingSP: 0,
+      highRiskCount: 0, // Renamed from approachingSP
       monthlySessions: 0
   });
   const [bkMandatoryList, setBkMandatoryList] = useState<any[]>([]);
@@ -129,7 +129,7 @@ const TeacherDashboard: React.FC = () => {
         let activeCount = 0;
         let mandatoryCount = 0;
         let referralCount = 0;
-        let approachingSPCount = 0;
+        let highRiskCount = 0;
         let monthlyCount = 0;
 
         const currentMonth = new Date().getMonth();
@@ -148,33 +148,26 @@ const TeacherDashboard: React.FC = () => {
                 activeCount++;
             }
 
-            // --- LOGIKA "MANDATORY" / WAJIB KONSELING YANG DIPERBAIKI ---
-            // 1. Apakah ada pelanggaran yang secara eksplisit butuh BK (REQUIRED)?
+            // --- LOGIKA "MANDATORY" / WAJIB KONSELING ---
             const hasRequiredRecord = recs.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
-            
-            // 2. Logic Poin > 40: Hanya wajib jika pelanggaran terakhir TERJADI SETELAH sesi BK terakhir.
-            // Jika sesi BK terakhir lebih baru daripada pelanggaran terakhir, berarti sudah ditangani.
             const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
             const latestViolation = recs.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
             
             let unhandledHighScore = false;
             if (stats.effectiveViolationScore >= 40) {
                if (!latestBKSession) {
-                  // Poin tinggi tapi belum pernah BK sama sekali -> Wajib
                   unhandledHighScore = true;
                } else if (latestViolation && new Date(latestViolation.date).getTime() > new Date(latestBKSession.date).getTime()) {
-                  // Ada pelanggaran baru SETELAH sesi BK terakhir -> Wajib
                   unhandledHighScore = true;
                }
             }
 
             if (hasRequiredRecord || unhandledHighScore) {
                 mandatoryCount++;
-                // Add to list for "Antrian"
                 const activeViolations = recs.filter(r => r.studentId === s.id && (r.bkStatus === 'REQUIRED' || (r.pointSnapshot >= 10 && r.typeSnapshot === IncidentTypeCategory.VIOLATION))).sort((a,b) => b.pointSnapshot - a.pointSnapshot);
                 const topViolation = activeViolations[0];
                 
-                if (topViolation) { // Only add if there are violations
+                if (topViolation) { 
                     mandatoryListTemp.push({
                         student: s,
                         score: stats.effectiveViolationScore,
@@ -183,7 +176,6 @@ const TeacherDashboard: React.FC = () => {
                         incidentDate: topViolation.date
                     });
                 } else if (stats.effectiveViolationScore >= 40) {
-                    // Fallback jika tidak ada topViolation spesifik tapi poin tinggi
                     mandatoryListTemp.push({
                         student: s,
                         score: stats.effectiveViolationScore,
@@ -196,7 +188,6 @@ const TeacherDashboard: React.FC = () => {
 
             // Referrals (From Homeroom)
             if (latestHomeroom && latestHomeroom.recommendation === 'TO_BK') {
-                // Check if already addressed by a newer BK session
                 const newerBKSession = sSessions.find(c => c.sessionType === 'BK' && new Date(c.date) > new Date(latestHomeroom.date));
                 if (!newerBKSession) {
                     referralCount++;
@@ -210,9 +201,13 @@ const TeacherDashboard: React.FC = () => {
                 }
             }
 
-            // Approaching SP (50 - 79 Points) -> SP1 starts at 80
-            if (stats.effectiveViolationScore >= 50 && stats.effectiveViolationScore < 80) {
-                approachingSPCount++;
+            // High Risk Students (Mendekati SP1, SP2, atau SP3)
+            // SP1: >80, SP2: >120, SP3: >160
+            // Risk SP1: 50-79
+            // Risk SP2: 80-119
+            // Risk SP3: 120-159
+            if (stats.effectiveViolationScore >= 50 && stats.effectiveViolationScore < 160) {
+                highRiskCount++;
             }
         });
 
@@ -229,7 +224,7 @@ const TeacherDashboard: React.FC = () => {
             activeCounseling: activeCount,
             mandatoryCases: mandatoryCount,
             referrals: referralCount,
-            approachingSP: approachingSPCount,
+            highRiskCount: highRiskCount,
             monthlySessions: monthlyCount
         });
         setBkMandatoryList(mandatoryListTemp.sort((a,b) => b.score - a.score).slice(0, 10)); // Top 10 Priority
@@ -303,7 +298,8 @@ const TeacherDashboard: React.FC = () => {
   const getStudentsForStatModal = () => {
       if (!selectedStatType) return [];
       const allClasses = DataService.getClasses(); 
-      let filteredStudents: any[] = []; // Changed to generic array to hold mixed types if needed
+      const allRules = DataService.getRules();
+      let filteredStudents: any[] = []; 
 
       // --- LOGIKA DATA MODAL UNTUK BK & KESISWAAN ---
       
@@ -319,14 +315,13 @@ const TeacherDashboard: React.FC = () => {
 
               let include = false;
               let note = '';
+              let riskBadge: 'YELLOW' | 'ORANGE' | 'RED' | null = null;
 
               if (selectedStatType === 'BK_ACTIVE' && latestSession?.status === 'OPEN') {
                   include = true;
                   note = 'Sesi Aktif';
               } else if (selectedStatType === 'BK_MANDATORY') {
                   const hasRequiredRecord = records.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
-                  
-                  // Same logic as Dashboard Counter
                   const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
                   const latestViolation = records.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
                   let unhandledHighScore = false;
@@ -347,10 +342,33 @@ const TeacherDashboard: React.FC = () => {
                           note = `Dari: ${latestHomeroom.counselorName}`;
                       }
                   }
-              } else if (selectedStatType === 'BK_APPROACHING') {
-                  if (stats.effectiveViolationScore >= 50 && stats.effectiveViolationScore < 80) {
+              } else if (selectedStatType === 'BK_HIGH_RISK') {
+                  const score = stats.effectiveViolationScore;
+                  if (score >= 50 && score < 160) {
                       include = true;
-                      note = `${stats.effectiveViolationScore} Poin (Waspada)`;
+                      
+                      let nextLabel = '';
+                      let nextThreshold = 0;
+                      
+                      if (score < 80) {
+                          riskBadge = 'YELLOW';
+                          nextLabel = 'SP 1';
+                          nextThreshold = 80;
+                      } else if (score < 120) {
+                          riskBadge = 'ORANGE';
+                          nextLabel = 'SP 2';
+                          nextThreshold = 120;
+                      } else {
+                          riskBadge = 'RED';
+                          nextLabel = 'SP 3';
+                          nextThreshold = 160;
+                      }
+
+                      const coachingStatusRule = DataService.getCoachingStatus(score, allRules);
+                      const coachingStatus = coachingStatusRule?.statusLabel || 'Tidak Diketahui';
+                      
+                      // Format Detail: “70 Poin – Mendekati SP 1 (Ambang 80 Poin). Status: Dalam Pembinaan Wali Kelas. Rekomendasi: Monitoring dan Konseling Preventif.”
+                      note = `${score} Poin – Mendekati ${nextLabel} (Ambang ${nextThreshold} Poin). Status: ${coachingStatus}. Rekomendasi: Monitoring dan Konseling Preventif.`;
                   }
               }
 
@@ -363,7 +381,8 @@ const TeacherDashboard: React.FC = () => {
                       studentNis: s.nis,
                       className: cl?.name || '-',
                       date: new Date().toISOString(), // Dummy date for sort
-                      notes: note
+                      notes: note,
+                      riskBadge: riskBadge
                   });
               }
           });
@@ -676,9 +695,9 @@ const TeacherDashboard: React.FC = () => {
                       <p className="text-orange-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Rujukan Wali Kelas <ExternalLink className="h-3 w-3" /></p>
                       <p className="text-3xl font-bold mt-1">{bkStats.referrals}</p>
                    </div>
-                   <div onClick={() => handleOpenStatModal('BK_APPROACHING')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                      <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Mendekati SP (50-79) <ExternalLink className="h-3 w-3" /></p>
-                      <p className="text-3xl font-bold mt-1">{bkStats.approachingSP}</p>
+                   <div onClick={() => handleOpenStatModal('BK_HIGH_RISK')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                      <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Siswa Risiko Tinggi <ExternalLink className="h-3 w-3" /></p>
+                      <p className="text-3xl font-bold mt-1">{bkStats.highRiskCount}</p>
                    </div>
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
                       <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Sesi Bulan Ini</p>
@@ -1252,12 +1271,22 @@ const TeacherDashboard: React.FC = () => {
                                   getStudentsForStatModal().map((s) => (
                                       <tr key={s.id} className="hover:bg-slate-50">
                                           <td className="px-4 py-3">
-                                              <div className="font-bold text-slate-800">{s.studentName}</div>
-                                              <div className="text-xs text-slate-500">{s.studentNis}</div>
+                                              <div className="flex items-center gap-2">
+                                                  {s.riskBadge && (
+                                                      <div className={`h-3 w-3 rounded-full shrink-0 ${
+                                                          s.riskBadge === 'RED' ? 'bg-red-500' : 
+                                                          s.riskBadge === 'ORANGE' ? 'bg-orange-500' : 'bg-yellow-400'
+                                                      }`} title={`Risiko: ${s.riskBadge}`} />
+                                                  )}
+                                                  <div>
+                                                      <div className="font-bold text-slate-800">{s.studentName}</div>
+                                                      <div className="text-xs text-slate-500">{s.studentNis}</div>
+                                                  </div>
+                                              </div>
                                           </td>
                                           <td className="px-4 py-3 text-slate-600">{s.className}</td>
                                           <td className="px-4 py-3 text-slate-500">
-                                              <div className="truncate max-w-[200px]" title={s.notes}>{s.notes}</div>
+                                              <div className="text-xs leading-relaxed" title={s.notes}>{s.notes}</div>
                                           </td>
                                           <td className="px-4 py-3 text-right">
                                               <Link 
