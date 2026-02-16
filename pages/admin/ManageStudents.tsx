@@ -1,7 +1,11 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
 import { Student, ClassGroup, Teacher, Role } from '../../types';
-import { Plus, Trash2, Users, ChevronRight, ArrowLeft, UserCog, Check, X, Pencil, Save, Upload, FileSpreadsheet, Download, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Users, ChevronRight, ArrowLeft, UserCog, Check, X, Pencil, Save, Upload, FileSpreadsheet, Download, AlertCircle, ChevronUp, ChevronDown, ArrowUpDown, Square, CheckSquare } from 'lucide-react';
+
+type SortKey = 'name' | 'nis' | 'gender';
+type SortDirection = 'asc' | 'desc';
 
 const ManageStudents: React.FC = () => {
   const [view, setView] = useState<'CLASSES' | 'STUDENTS'>('CLASSES');
@@ -39,14 +43,81 @@ const ManageStudents: React.FC = () => {
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
 
+  // --- BULK & SORT STATE ---
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc'
+  });
+
   useEffect(() => {
     refreshData();
   }, []);
+
+  // Reset selection when view changes
+  useEffect(() => {
+    setSelectedStudentIds([]);
+  }, [view, selectedClassId]);
 
   const refreshData = () => {
     setStudents(DataService.getStudents());
     setClasses(DataService.getClasses());
     setTeachers(DataService.getTeachers());
+  };
+
+  // --- SORTING LOGIC ---
+  const handleSort = (key: SortKey) => {
+    let direction: SortDirection = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortedStudents = (studentList: Student[]) => {
+    const sorted = [...studentList];
+    sorted.sort((a, b) => {
+      const direction = sortConfig.direction === 'asc' ? 1 : -1;
+      switch (sortConfig.key) {
+        case 'name':
+          return a.name.localeCompare(b.name) * direction;
+        case 'nis':
+          return a.nis.localeCompare(b.nis) * direction;
+        case 'gender':
+          return a.gender.localeCompare(b.gender) * direction;
+        default:
+          return 0;
+      }
+    });
+    return sorted;
+  };
+
+  // --- BULK SELECTION LOGIC ---
+  const handleSelectAll = (currentListIds: string[]) => {
+    if (selectedStudentIds.length === currentListIds.length && currentListIds.length > 0) {
+      setSelectedStudentIds([]);
+    } else {
+      setSelectedStudentIds(currentListIds);
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    if (selectedStudentIds.includes(id)) {
+      setSelectedStudentIds(prev => prev.filter(item => item !== id));
+    } else {
+      setSelectedStudentIds(prev => [...prev, id]);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedStudentIds.length === 0) return;
+    
+    if (confirm(`Yakin ingin menghapus ${selectedStudentIds.length} siswa terpilih? Data pelanggaran mereka juga akan hilang.`)) {
+      const updated = students.filter(s => !selectedStudentIds.includes(s.id));
+      DataService.saveStudents(updated);
+      setStudents(updated);
+      setSelectedStudentIds([]);
+    }
   };
 
   // --- CLASS MANAGEMENT ---
@@ -157,6 +228,10 @@ const ManageStudents: React.FC = () => {
       const updated = students.filter(s => s.id !== id);
       DataService.saveStudents(updated);
       setStudents(updated);
+      // Remove from selection if it was selected
+      if (selectedStudentIds.includes(id)) {
+        setSelectedStudentIds(prev => prev.filter(i => i !== id));
+      }
     }
   };
 
@@ -272,6 +347,25 @@ const ManageStudents: React.FC = () => {
     setIsTeacherModalOpen(false);
   };
 
+  // --- HELPER COMPONENT: SORT HEADER ---
+  const SortHeader = ({ label, sKey, className = "" }: { label: string, sKey: SortKey, className?: string }) => (
+    <th 
+      className={`px-6 py-3 font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors select-none ${className}`}
+      onClick={() => handleSort(sKey)}
+    >
+      <div className={`flex items-center gap-2`}>
+        {label}
+        <div className="flex flex-col">
+           {sortConfig.key === sKey ? (
+             sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3 text-indigo-600" /> : <ChevronDown className="h-3 w-3 text-indigo-600" />
+           ) : (
+             <ArrowUpDown className="h-3 w-3 text-slate-300" />
+           )}
+        </div>
+      </div>
+    </th>
+  );
+
   // --- VIEWS ---
 
   if (view === 'CLASSES') {
@@ -352,6 +446,8 @@ const ManageStudents: React.FC = () => {
 
   const currentClass = classes.find(c => c.id === selectedClassId);
   const classStudents = students.filter(s => s.classId === selectedClassId);
+  const sortedClassStudents = getSortedStudents(classStudents);
+  
   const currentHomeroom = teachers.find(t => t.id === currentClass?.homeroomTeacherId);
 
   // Filter Logic for Homeroom Dropdown
@@ -381,7 +477,7 @@ const ManageStudents: React.FC = () => {
                   <Pencil className="h-5 w-5" />
                 </button>
               </div>
-              <p className="text-slate-500">{students.filter(s => s.classId === selectedClassId).length} Siswa Terdaftar</p>
+              <p className="text-slate-500">{classStudents.length} Siswa Terdaftar</p>
             </div>
             
             <div className="flex items-center gap-2">
@@ -426,20 +522,54 @@ const ManageStudents: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* Bulk Actions Header */}
+        {selectedStudentIds.length > 0 && (
+           <div className="bg-indigo-50 p-4 border-b border-indigo-100 flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-3">
+                 <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded-full">{selectedStudentIds.length}</span>
+                 <span className="text-indigo-900 font-medium text-sm">Siswa Terpilih</span>
+              </div>
+              <button 
+                onClick={handleBulkDelete}
+                className="flex items-center gap-2 bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-red-700 shadow-sm transition-colors"
+              >
+                 <Trash2 className="h-4 w-4" /> Hapus Terpilih
+              </button>
+           </div>
+        )}
+
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 border-b">
             <tr>
-              <th className="px-6 py-3 font-semibold text-slate-700">Nama Lengkap</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">NIS</th>
-              <th className="px-6 py-3 font-semibold text-slate-700">L/P</th>
+              <th className="px-4 py-3 w-10 text-center">
+                 <button 
+                   onClick={() => handleSelectAll(classStudents.map(s => s.id))}
+                   className="text-slate-400 hover:text-indigo-600 flex items-center justify-center w-full h-full"
+                   title="Pilih Semua"
+                 >
+                    {selectedStudentIds.length > 0 && selectedStudentIds.length === classStudents.length ? 
+                       <CheckSquare className="h-5 w-5 text-indigo-600" /> : <Square className="h-5 w-5" />
+                    }
+                 </button>
+              </th>
+              <SortHeader label="Nama Lengkap" sKey="name" />
+              <SortHeader label="NIS" sKey="nis" />
+              <SortHeader label="L/P" sKey="gender" />
               <th className="px-6 py-3 font-semibold text-slate-700">TTL</th>
               <th className="px-6 py-3 font-semibold text-slate-700">Alamat</th>
               <th className="px-6 py-3 font-semibold text-slate-700 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {classStudents.map(s => (
-              <tr key={s.id} className="hover:bg-slate-50">
+            {sortedClassStudents.map(s => (
+              <tr key={s.id} className={`hover:bg-slate-50 transition-colors ${selectedStudentIds.includes(s.id) ? 'bg-indigo-50' : ''}`}>
+                <td className="px-4 py-3 text-center">
+                   <button onClick={() => handleSelectRow(s.id)} className="flex items-center justify-center w-full h-full text-slate-400 hover:text-indigo-600">
+                      {selectedStudentIds.includes(s.id) ? 
+                         <CheckSquare className="h-5 w-5 text-indigo-600" /> : <Square className="h-5 w-5" />
+                      }
+                   </button>
+                </td>
                 <td className="px-6 py-3 font-medium text-slate-900">{s.name}</td>
                 <td className="px-6 py-3">{s.nis}</td>
                 <td className="px-6 py-3">{s.gender}</td>
@@ -469,7 +599,7 @@ const ManageStudents: React.FC = () => {
             ))}
             {classStudents.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-slate-500">Belum ada siswa di kelas ini.</td>
+                <td colSpan={7} className="px-6 py-8 text-center text-slate-500">Belum ada siswa di kelas ini.</td>
               </tr>
             )}
           </tbody>
