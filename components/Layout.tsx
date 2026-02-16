@@ -126,9 +126,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       setPasswordError('Dilarang menggunakan password default "123".');
       return;
     }
-    if (newPassword.length < 4) {
-      setPasswordError('Password minimal 4 karakter.');
+    // VALIDASI BARU: Min 6 huruf & Kombinasi Angka+Huruf
+    if (newPassword.length < 6) {
+      setPasswordError('Password minimal 6 karakter.');
       return;
+    }
+    
+    const hasLetter = /[a-zA-Z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    
+    if (!hasLetter || !hasNumber) {
+        setPasswordError('Password wajib kombinasi huruf dan angka.');
+        return;
     }
 
     if (currentUser) {
@@ -226,9 +235,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </div>
                  ) : (
                    <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
-                      <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Password Baru" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                      <div>
+                          <p className="text-xs text-slate-500 mb-2 bg-slate-50 p-2 rounded border">
+                              Format Baru: Minimal 6 karakter, wajib kombinasi huruf & angka.
+                          </p>
+                          <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Password Baru" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                      </div>
                       <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Konfirmasi Password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
-                      {passwordError && <p className="text-red-500 text-sm">{passwordError}</p>}
+                      {passwordError && <p className="text-red-500 text-sm font-bold">{passwordError}</p>}
                       <button type="submit" disabled={isSavingPass} className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">
                         {isSavingPass ? 'Menyimpan...' : 'Simpan Password'}
                       </button>
