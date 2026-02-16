@@ -31,10 +31,9 @@ import {
   Search,
   Wifi,
   WifiOff,
-  CloudCheck,
   CloudOff
 } from 'lucide-react';
-import { Role } from '../types';
+import { Role, Teacher } from '../types';
 
 // ============================================================================
 // 👇👇👇 GANTI LINK LOGO SEKOLAH DI BARIS BAWAH INI 👇👇👇
@@ -70,7 +69,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Logo Error State (Fallback if image fails)
   const [logoError, setLogoError] = useState(false);
   
-  const currentUser = DataService.getCurrentUser();
+  // Explicitly type this to prevent 'never' inference
+  const currentUser: Teacher | null = DataService.getCurrentUser();
 
   // Force Password Change State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -108,7 +108,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
        };
     }
     
-    if (currentUser?.mustChangePassword && !successMessage) {
+    // Check for forced password change
+    if (currentUser && currentUser.mustChangePassword && !successMessage) {
       setShowPasswordModal(true);
     }
 
@@ -117,7 +118,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
        window.removeEventListener('online', handleOnline);
        window.removeEventListener('offline', handleOffline);
     };
-  }, [currentUser, successMessage]);
+  }, [currentUser?.id, successMessage]); // Safe dependency check
 
   const handleLogout = () => {
     DataService.logout();
@@ -128,12 +129,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if(confirm("Tindakan ini akan membersihkan cache database di browser untuk memperbaiki error koneksi. Data di server aman. Lanjutkan?")) {
         try {
             // Clear IndexedDB Firebase
-            const dbs = await window.indexedDB.databases();
-            dbs.forEach(db => { 
-                if(db.name && db.name.includes('firebase')) {
-                    window.indexedDB.deleteDatabase(db.name);
-                }
-            });
+            // @ts-ignore
+            if (window.indexedDB && window.indexedDB.databases) {
+                // @ts-ignore
+                const dbs = await window.indexedDB.databases();
+                dbs.forEach((db: any) => { 
+                    if(db.name && db.name.includes('firebase')) {
+                        window.indexedDB.deleteDatabase(db.name);
+                    }
+                });
+            }
             localStorage.clear();
             window.location.reload();
         } catch (e) {
@@ -404,7 +409,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {/* 4. STATE: AMAN (IDLE/SAVED) */}
                 {isOnline && (syncState === 'IDLE' || syncState === 'SAVED') && (
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200" title="Data tersimpan aman di Cloud">
-                        <CloudCheck className="h-4 w-4 text-emerald-600" />
+                        <Cloud className="h-4 w-4 text-emerald-600" />
                         <span className="text-xs font-bold text-emerald-600 hidden sm:inline">Aman di Cloud</span>
                     </div>
                 )}
