@@ -57,8 +57,7 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- DATA SEEDING (Hanya dipanggil manual atau jika admin kosong) ---
-// Data ini TIDAK akan menimpa data yang sudah ada, hanya dipakai jika DB benar-benar kosong.
+// --- DATA SEEDING (Hanya jika Cloud Kosong Melompong) ---
 const SEED_DATA = {
     categories: [
         { id: 'cat1', name: 'Kedisiplinan', targetType: IncidentTypeCategory.VIOLATION },
@@ -77,24 +76,21 @@ const SEED_DATA = {
     admin: { id: 'admin1', name: 'Administrator', nip: '000000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false }
 };
 
-// --- STORAGE HELPER (Safe Parse) ---
+// --- STORAGE HELPER (Hanya untuk Backup/Cache) ---
 const saveToStorage = (key: string, data: any) => {
   try {
       localStorage.setItem(key, JSON.stringify(data));
   } catch (e) {
-      console.error(`Failed to save ${key} to local storage`, e);
+      // Ignore quota errors
   }
 };
 
 const loadFromStorage = (key: string) => {
     try {
         const item = localStorage.getItem(key);
-        if (!item) return null;
-        const parsed = JSON.parse(item);
-        // Validasi dasar: harus array jika bukan ActivityLog (activity log bisa banyak)
-        return Array.isArray(parsed) ? parsed : [];
+        return item ? JSON.parse(item) : [];
     } catch(e) {
-        return null;
+        return [];
     }
 };
 
@@ -104,8 +100,7 @@ const syncToCloud = async (collectionName: string, data: any) => {
   
   notifyListeners('SYNCING');
   try {
-    // Deep copy to remove undefined values which Firestore dislikes
-    const cleanData = JSON.parse(JSON.stringify(data)); 
+    const cleanData = JSON.parse(JSON.stringify(data)); // Remove undefined
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
     notifyListeners('SAVED');
   } catch (error: any) {
@@ -126,57 +121,16 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  startRealtimeListeners: () => {
-    if (!db) return;
-    const collections = [
-        'classes', 'students', 'categories', 'incidentTypes', 
-        'rules', 'records', 'teachers', 'counseling', 'sanctions',
-        'cashflow', 'activity_logs'
-    ];
-
-    collections.forEach(colName => {
-        onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
-            if (docSnapshot.exists()) {
-                const cloudData = docSnapshot.data().data;
-                const localDataStr = localStorage.getItem(colName);
-                
-                // Compare stringified to avoid unnecessary updates
-                if (JSON.stringify(cloudData) !== localDataStr) {
-                    console.log(`🔄 [Realtime] Update diterima: ${colName}`);
-                    
-                    // Update Memory
-                    switch(colName) {
-                        case 'teachers': _teachers = cloudData; break;
-                        case 'students': _students = cloudData; break;
-                        case 'classes': _classes = cloudData; break;
-                        case 'records': _records = cloudData; break;
-                        case 'categories': _categories = cloudData; break;
-                        case 'incidentTypes': _incidents = cloudData; break;
-                        case 'rules': _rules = cloudData; break;
-                        case 'counseling': _counseling = cloudData; break;
-                        case 'sanctions': _sanctions = cloudData; break;
-                        case 'cashflow': _cashflow = cloudData; break;
-                        case 'activity_logs': _activityLogs = cloudData; break;
-                    }
-
-                    // Update Cache
-                    saveToStorage(colName, cloudData);
-                    notifyDataChange();
-                }
-            }
-        });
-    });
-  },
-
-  // --- INITIALIZATION (CLOUD FIRST STRATEGY) ---
+  // --- STRICT CLOUD INITIALIZATION ---
   initializeData: async (): Promise<boolean> => {
-    console.log("🚀 [Init] Memulai inisialisasi CLOUD FIRST...");
+    console.log("🚀 [Init] Memulai inisialisasi CLOUD FIRST STRICT...");
     
-    // 1. Connect Auth
     if (!db) {
         console.warn("⚠️ Database belum dikonfigurasi.");
         return false;
     }
+
+    // 1. Connect Auth (Wajib Tunggu)
     const isAuth = await connectToFirebase();
     if (!isAuth) {
         notifyListeners('ERROR', "Gagal Autentikasi Cloud.");
@@ -199,19 +153,22 @@ export const DataService = {
             let data: any[] = [];
 
             if (snap.exists()) {
+                // DATA CLOUD DITEMUKAN - GUNAKAN INI
                 data = snap.data().data || [];
+                console.log(`✅ [Cloud] Loaded ${colName}: ${data.length} items`);
             } else {
-                // If cloud empty, try local cache as fallback, else empty array
+                // DATA CLOUD TIDAK ADA (Baru pertama kali run atau terhapus)
+                console.warn(`⚠️ [Cloud] Kosong untuk ${colName}. Mencoba cache lokal...`);
+                // Coba ambil dari cache lokal HANYA jika cloud kosong
                 const local = loadFromStorage(colName);
-                if (local) {
-                    console.warn(`⚠️ [Init] Cloud kosong untuk ${colName}, menggunakan cache lokal.`);
+                if (local && local.length > 0) {
                     data = local;
-                    // Auto-healing: push local to cloud since cloud is empty
-                    syncToCloud(colName, data); 
+                    console.log(`♻️ [Cache] Restore ${colName} dari lokal dan upload ke cloud.`);
+                    syncToCloud(colName, data); // Self-healing
                 }
             }
 
-            // Assign to memory variables
+            // Assign to memory
             switch(colName) {
                 case 'teachers': _teachers = data; break;
                 case 'students': _students = data; break;
@@ -226,11 +183,11 @@ export const DataService = {
                 case 'activity_logs': _activityLogs = data; break;
             }
             
-            // Update Cache
+            // Selalu update cache lokal agar sinkron
             saveToStorage(colName, data);
         });
 
-        // 4. Seeding Logic (Only if strictly necessary)
+        // 4. Safe Seeding (Hanya jika benar-benar kosong di semua level)
         if (_categories.length === 0) {
             _categories = SEED_DATA.categories;
             syncToCloud('categories', _categories);
@@ -239,25 +196,65 @@ export const DataService = {
             _rules = SEED_DATA.rules;
             syncToCloud('rules', _rules);
         }
-        // ONLY seed admin if teachers are absolutely empty
         if (_teachers.length === 0) {
             _teachers = [SEED_DATA.admin];
             syncToCloud('teachers', _teachers);
-            console.log("✨ [Init] Admin default dibuat karena database kosong.");
+            console.log("✨ [Init] Admin default dibuat.");
         }
 
-        console.log("✅ [Init] Data berhasil dimuat ke Memori.");
+        // 5. Start Realtime Listeners (Agar update dari device lain masuk)
         DataService.startRealtimeListeners();
+        
         return true;
 
     } catch (e) {
-        console.error("❌ [Init] Gagal memuat data:", e);
-        notifyListeners('ERROR', "Gagal memuat data dari server.");
+        console.error("❌ [Init] Fatal Error:", e);
+        notifyListeners('ERROR', "Koneksi Gagal. Cek internet Anda.");
         return false;
     }
   },
 
-  // --- GETTERS (Memory Access - Sangat Cepat & Stabil) ---
+  startRealtimeListeners: () => {
+    if (!db) return;
+    const collections = [
+        'classes', 'students', 'categories', 'incidentTypes', 
+        'rules', 'records', 'teachers', 'counseling', 'sanctions',
+        'cashflow', 'activity_logs'
+    ];
+
+    collections.forEach(colName => {
+        onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
+            if (docSnapshot.exists()) {
+                const cloudData = docSnapshot.data().data;
+                const localDataStr = localStorage.getItem(colName);
+                
+                // Hanya update jika berbeda, mencegah loop render
+                if (JSON.stringify(cloudData) !== localDataStr) {
+                    console.log(`🔄 [Realtime] Update masuk: ${colName}`);
+                    
+                    switch(colName) {
+                        case 'teachers': _teachers = cloudData; break;
+                        case 'students': _students = cloudData; break;
+                        case 'classes': _classes = cloudData; break;
+                        case 'records': _records = cloudData; break;
+                        case 'categories': _categories = cloudData; break;
+                        case 'incidentTypes': _incidents = cloudData; break;
+                        case 'rules': _rules = cloudData; break;
+                        case 'counseling': _counseling = cloudData; break;
+                        case 'sanctions': _sanctions = cloudData; break;
+                        case 'cashflow': _cashflow = cloudData; break;
+                        case 'activity_logs': _activityLogs = cloudData; break;
+                    }
+
+                    saveToStorage(colName, cloudData);
+                    notifyDataChange();
+                }
+            }
+        });
+    });
+  },
+
+  // --- GETTERS (Memory Access - Cepat) ---
   getClasses: () => _classes || [],
   getStudents: () => _students || [],
   getCategories: () => _categories || [],
@@ -270,7 +267,7 @@ export const DataService = {
   getActivityLogs: () => _activityLogs || [],
   getTeachers: () => _teachers || [],
 
-  // --- SETTERS (Update Memory -> Cache -> Cloud) ---
+  // --- SETTERS (Update Memory -> Local -> Cloud) ---
   saveClasses: (data: ClassGroup[]) => { _classes = data; saveToStorage('classes', data); syncToCloud('classes', data); notifyDataChange(); },
   saveStudents: (data: Student[]) => { _students = data; saveToStorage('students', data); syncToCloud('students', data); notifyDataChange(); },
   saveCategories: (data: MasterCategory[]) => { _categories = data; saveToStorage('categories', data); syncToCloud('categories', data); notifyDataChange(); },
@@ -287,7 +284,7 @@ export const DataService = {
       saveToStorage('counseling', data); 
       syncToCloud('counseling', data); 
       
-      // SIDE EFFECT: Check if the latest session affects required records
+      // SIDE EFFECT: Update status record jika diperlukan
       if (data.length > 0) {
           const latestSession = data[data.length - 1]; 
           if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
@@ -329,8 +326,7 @@ export const DataService = {
       notifyDataChange();
   },
 
-  // --- LOGIC HELPER ---
-  // ... (Sama seperti sebelumnya, tapi menggunakan _memory variables) ...
+  // ... (Sisa fungsi logika seperti logActivity, login, calculateStudentPoints, dll SAMA PERSIS dengan sebelumnya)
   
   logActivity: (user: Teacher, action: 'LOGIN' | 'LOGOUT' | 'SYNC') => {
     const logs = _activityLogs;
@@ -371,15 +367,12 @@ export const DataService = {
   getClassBalance: (classId: string) => {
     const flows = _cashflow;
     const classFlows = flows.filter(f => f.classId === classId && f.status === 'APPROVED');
-    
     let totalIn = 0;
     let totalOut = 0;
-
     classFlows.forEach(f => {
        if (f.type === 'IN') totalIn += f.amount;
        if (f.type === 'OUT') totalOut += f.amount;
     });
-
     return {
         balance: totalIn - totalOut,
         totalIn,
@@ -422,7 +415,6 @@ export const DataService = {
   login: (username: string, password: string): Teacher | null => {
     const teachers = _teachers; 
     let user = teachers.find(t => t.username === username && t.password === password);
-    
     if (user) {
       localStorage.setItem('currentUser', JSON.stringify(user));
       DataService.logActivity(user, 'LOGIN');
@@ -463,7 +455,6 @@ export const DataService = {
 
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const validRecords = Array.isArray(records) ? records : [];
-    
     const studentRecords = validRecords.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
     let achievementPoints = 0;
@@ -477,7 +468,6 @@ export const DataService = {
     studentRecords.forEach(record => {
       const recordTime = record.date ? new Date(record.date).getTime() : 0;
       const isAutoAccepted = (record.status === 'PENDING') && ((now - recordTime) > AUTO_ACCEPT_MS);
-      
       const effectiveStatus = record.status || 'APPROVED';
       const isEffective = effectiveStatus === 'APPROVED' || isAutoAccepted;
 
@@ -494,8 +484,7 @@ export const DataService = {
       }
     });
 
-    let effectiveViolationScore = grossViolationPoints;
-    return { effectiveViolationScore, grossViolationPoints, achievementPoints, violationCount, achievementCount, redemptionCount };
+    return { effectiveViolationScore: grossViolationPoints, grossViolationPoints, achievementPoints, violationCount, achievementCount, redemptionCount };
   },
 
   getCoachingStatus: (violationScore: number, rules: CoachingRule[]) => {
@@ -541,11 +530,9 @@ export const DataService = {
             redemptionStatus: RedemptionStatus.NONE,
             isRedeemed: false
         };
-        
         DataService.saveSanctions([...sanctions, newSanction]);
         return newLevel;
     }
-
     return null;
   },
 
@@ -574,7 +561,6 @@ export const DataService = {
   cleanupOrphanData: () => {
     const students = _students;
     const validStudentIds = new Set(students.map(s => s.id));
-
     const records = _records;
     const counselings = _counseling;
     const sanctions = _sanctions;

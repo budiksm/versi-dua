@@ -8,7 +8,7 @@ import ClassList from './pages/teacher/ClassList';
 import StudentList from './pages/teacher/StudentList';
 import StudentProfile from './pages/teacher/StudentProfile';
 import ActiveCoaching from './pages/teacher/bk/ActiveCoaching';
-import BKStudentMonitoring from './pages/teacher/bk/BKStudentMonitoring'; // NEW IMPORT
+import BKStudentMonitoring from './pages/teacher/bk/BKStudentMonitoring'; 
 import KesiswaanMonitoring from './pages/teacher/KesiswaanMonitoring';
 import KesiswaanAction from './pages/teacher/KesiswaanAction';
 import TeacherInputLog from './pages/teacher/TeacherInputLog';
@@ -21,16 +21,23 @@ import OsisInput from './pages/osis/OsisInput';
 import StudentInput from './pages/student/StudentInput';
 import { Role } from './types';
 import { DataService } from './services/dataService';
-import { Cloud, Loader2 } from 'lucide-react';
+import { Cloud, Loader2, WifiOff } from 'lucide-react';
 
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState(false);
 
   useEffect(() => {
     const initApp = async () => {
-      // Pull data from Firebase when app loads
-      await DataService.initializeData();
-      setIsInitializing(false);
+      // Strategi: BLOCKING INIT.
+      // Kita tidak merender aplikasi sampai data cloud terunduh.
+      const success = await DataService.initializeData();
+      if (success) {
+          setIsInitializing(false);
+      } else {
+          setInitError(true);
+          setIsInitializing(false);
+      }
     };
     initApp();
   }, []);
@@ -38,20 +45,41 @@ const App: React.FC = () => {
   if (isInitializing) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-        <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center max-w-sm text-center">
-           <div className="relative mb-4">
-             <Cloud className="h-16 w-16 text-indigo-200" />
+        <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center max-w-sm text-center animate-fade-in">
+           <div className="relative mb-6">
+             <Cloud className="h-20 w-20 text-indigo-100" />
              <div className="absolute inset-0 flex items-center justify-center">
-               <Loader2 className="h-8 w-8 text-indigo-600 animate-spin" />
+               <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
              </div>
            </div>
-           <h2 className="text-xl font-bold text-slate-800 mb-2">Menghubungkan ke Server</h2>
+           <h2 className="text-xl font-bold text-slate-800 mb-2">Menghubungkan Database</h2>
            <p className="text-slate-500 text-sm">
-             Sedang mengunduh data terbaru dari cloud database. Mohon tunggu sebentar...
+             Sedang mengunduh data terbaru dari cloud untuk memastikan integritas data. Mohon tunggu...
            </p>
         </div>
       </div>
     );
+  }
+
+  if (initError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-4">
+            <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center max-w-md text-center">
+                <WifiOff className="h-16 w-16 text-red-500 mb-4" />
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Koneksi Gagal</h2>
+                <p className="text-slate-500 text-sm mb-6">
+                    Aplikasi gagal terhubung ke database Cloud. Periksa koneksi internet Anda.
+                    Aplikasi ini membutuhkan internet saat pertama kali dibuka untuk menghindari kehilangan data.
+                </p>
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold shadow-md hover:bg-red-700 transition-colors"
+                >
+                    Coba Lagi
+                </button>
+            </div>
+        </div>
+      );
   }
 
   return (
