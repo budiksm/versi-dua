@@ -1,9 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { DataService } from '../services/dataService';
-import { Role } from '../types';
+import { Role, Teacher } from '../types';
 
 // --- KONFIGURASI GAMBAR (GANTI LINK DI SINI) ---
 const SCHOOL_LOGO_URL = "https://i.ibb.co.com/HkW9d0t/512.png";
@@ -18,6 +18,32 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const currentUser = DataService.getCurrentUser();
+    if (currentUser) {
+      redirectUser(currentUser);
+    }
+  }, []);
+
+  const redirectUser = (user: Teacher) => {
+    const roles = user.roles || [];
+    
+    // Priority Redirect Logic
+    if (roles.includes(Role.ADMIN)) {
+      navigate('/admin/students');
+    } else if (roles.includes(Role.STUDENT)) {
+      // Siswa langsung ke Poe Ibu
+      navigate('/teacher/poe-ibu');
+    } else if (roles.includes(Role.OSIS)) {
+      // OSIS langsung ke Input Keterlambatan
+      navigate('/teacher/osis/input');
+    } else {
+      // Guru, BK, Walikelas, Kesiswaan ke Dashboard
+      navigate('/teacher/dashboard');
+    }
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -28,21 +54,7 @@ const Login: React.FC = () => {
       const user = DataService.login(username, password);
       
       if (user) {
-        const roles = user.roles || [];
-        
-        // Priority Redirect Logic
-        if (roles.includes(Role.ADMIN)) {
-          navigate('/admin/students');
-        } else if (roles.includes(Role.STUDENT)) {
-          // Siswa langsung ke Poe Ibu
-          navigate('/teacher/poe-ibu');
-        } else if (roles.includes(Role.OSIS)) {
-          // OSIS langsung ke Input Keterlambatan
-          navigate('/teacher/osis/input');
-        } else {
-          // Guru, BK, Walikelas, Kesiswaan ke Dashboard
-          navigate('/teacher/dashboard');
-        }
+        redirectUser(user);
       } else {
         setError('Username atau password salah.');
         setIsLoading(false);
