@@ -1021,16 +1021,42 @@ const StudentProfile: React.FC = () => {
                   {homeroomSessions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada data.</div> : 
                     homeroomSessions.map(session => {
                       const isCaseSession = session.relatedRecordIds && session.relatedRecordIds.length > 0;
+                      
+                      // LOGIC: Check if case is resolved
+                      let isCaseResolved = false;
+                      if (isCaseSession) {
+                          const relatedRecs = records.filter(r => session.relatedRecordIds?.includes(r.id));
+                          if (relatedRecs.length > 0 && relatedRecs.every(r => r.bkStatus === 'COMPLETED')) {
+                              isCaseResolved = true;
+                          }
+                      }
+
                       return (
                         <div key={session.id} onClick={() => handleOpenDetail(session)} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md cursor-pointer hover:border-orange-300">
-                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseSession ? 'bg-orange-600' : 'bg-yellow-400'}`} />
+                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseResolved ? 'bg-emerald-500' : isCaseSession ? 'bg-orange-600' : 'bg-yellow-400'}`} />
+                           
                            <div className="flex justify-between items-start mb-2 pl-2">
                              <div className="flex flex-col">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseSession ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'}`}>{isCaseSession ? 'Pembinaan Kasus' : 'Pembinaan Preventif'}</span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseSession ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                    {isCaseSession ? 'Pembinaan Kasus' : 'Pembinaan Preventif'}
+                                </span>
                                 <div className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</div>
                              </div>
-                             {session.recommendation !== 'NONE' && <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>}
+                             
+                             {/* STATUS BADGE LOGIC */}
+                             {isCaseResolved ? (
+                                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase rounded border border-emerald-200 flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Kasus Selesai
+                                </span>
+                             ) : (
+                                session.recommendation !== 'NONE' && (
+                                    <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
+                                        ! {translateRecommendation(session.recommendation)}
+                                    </span>
+                                )
+                             )}
                            </div>
+                           
                            <p className="text-sm text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-100 ml-1 line-clamp-2">{session.notes}</p>
                            {isCaseSession && <div className="mt-3 ml-2 text-[10px] bg-slate-100 text-slate-600 p-2 rounded border border-slate-200 flex items-center gap-2"><CheckCircle2 className="h-3 w-3 text-orange-500" /><span>Menindaklanjuti {session.relatedRecordIds!.length} pelanggaran.</span></div>}
                            <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1 pl-2"><span className="font-semibold text-slate-500">Wali Kelas:</span> {session.counselorName} <span className="text-indigo-500 font-bold ml-auto flex items-center gap-1">Detail <ArrowLeft className="h-3 w-3 rotate-180" /></span></div>
@@ -1103,12 +1129,39 @@ const StudentProfile: React.FC = () => {
                   {bkSessions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada data.</div> : 
                     bkSessions.map(session => {
                       const isCaseCounseling = session.relatedRecordIds && session.relatedRecordIds.length > 0;
+                      
+                      // LOGIC: Check if case is resolved
+                      let isCaseResolved = false;
+                      if (isCaseCounseling) {
+                          const relatedRecs = records.filter(r => session.relatedRecordIds?.includes(r.id));
+                          if (relatedRecs.length > 0 && relatedRecs.every(r => r.bkStatus === 'COMPLETED')) {
+                              isCaseResolved = true;
+                          }
+                      }
+
                       return (
                         <div key={session.id} onClick={() => handleOpenDetail(session)} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md cursor-pointer hover:border-blue-300">
-                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseCounseling ? 'bg-orange-500' : 'bg-blue-400'}`} />
+                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseResolved ? 'bg-emerald-500' : isCaseCounseling ? 'bg-orange-500' : 'bg-blue-400'}`} />
                            <div className="flex justify-between items-start mb-3 pl-2">
-                             <div className="flex flex-col"><span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseCounseling ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{isCaseCounseling ? 'Konseling Kasus' : 'Konseling Preventif'}</span><span className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</span></div>
-                             {session.recommendation !== 'NONE' && <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>}
+                             <div className="flex flex-col">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseCounseling ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {isCaseCounseling ? 'Konseling Kasus' : 'Konseling Preventif'}
+                                </span>
+                                <span className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</span>
+                             </div>
+                             
+                             {/* STATUS BADGE LOGIC */}
+                             {isCaseResolved ? (
+                                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase rounded border border-emerald-200 flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Kasus Selesai
+                                </span>
+                             ) : (
+                                session.recommendation !== 'NONE' && (
+                                    <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">
+                                        ! {translateRecommendation(session.recommendation)}
+                                    </span>
+                                )
+                             )}
                            </div>
                            <p className="text-sm text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-100 ml-1 line-clamp-2">{session.notes}</p>
                            {isCaseCounseling && <div className="mt-3 ml-2 text-[10px] bg-slate-100 text-slate-600 p-2 rounded border border-slate-200 flex items-center gap-2"><CheckCircle2 className="h-3 w-3 text-orange-500" /><span>Menyelesaikan {session.relatedRecordIds!.length} kasus pelanggaran.</span></div>}
