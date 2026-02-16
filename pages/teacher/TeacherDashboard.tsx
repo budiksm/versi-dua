@@ -311,10 +311,6 @@ const TeacherDashboard: React.FC = () => {
   const handleNextPage = () => { if (recentPage < totalPages - 1) setRecentPage(prev => prev + 1); };
 
   // --- FILTERED STATS FOR WALIKELAS ---
-  // Ensure we check if the user IS a walikelas and filter specifically for their class students if needed.
-  // If myClasses is empty (e.g. Admin), myStudentIds is empty, so we shouldn't filter by empty array unless intended.
-  // 'shouldFilterMyClass' handles the logic: true only if (Walikelas OR Teacher) AND NOT (Admin/BK/Kesiswaan).
-  
   const violationsToday = records.filter(r => 
     r.typeSnapshot === IncidentTypeCategory.VIOLATION && 
     r.status !== 'REJECTED' &&
@@ -721,7 +717,7 @@ const TeacherDashboard: React.FC = () => {
                  </div>
               </div>
             );
-          })
+          })}
         </div>
       )}
 
