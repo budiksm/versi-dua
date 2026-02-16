@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar, LayoutGrid } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -310,14 +310,19 @@ const TeacherDashboard: React.FC = () => {
   const handlePrevPage = () => { if (recentPage > 0) setRecentPage(prev => prev - 1); };
   const handleNextPage = () => { if (recentPage < totalPages - 1) setRecentPage(prev => prev + 1); };
 
+  // --- FILTERED STATS FOR WALIKELAS (Issue 3) ---
   const violationsToday = records.filter(r => 
-    r.typeSnapshot === IncidentTypeCategory.VIOLATION && r.status !== 'REJECTED' &&
-    new Date(r.date).toDateString() === new Date().toDateString()
+    r.typeSnapshot === IncidentTypeCategory.VIOLATION && 
+    r.status !== 'REJECTED' &&
+    new Date(r.date).toDateString() === new Date().toDateString() &&
+    (!shouldFilterMyClass || myStudentIds.includes(r.studentId)) // Apply filter
   ).length;
 
   const achievementsToday = records.filter(r => 
-    r.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT && r.status !== 'REJECTED' &&
-    new Date(r.date).toDateString() === new Date().toDateString()
+    r.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT && 
+    r.status !== 'REJECTED' &&
+    new Date(r.date).toDateString() === new Date().toDateString() &&
+    (!shouldFilterMyClass || myStudentIds.includes(r.studentId)) // Apply filter
   ).length;
 
   return (
@@ -504,8 +509,8 @@ const TeacherDashboard: React.FC = () => {
                
                if (score >= 30 && score < 40) listApproachingBK.push(studentData);
                if (score >= 70 && score < 80) listCandidateSP1.push(studentData);
-               if (score >= 110 && score < 120) listCandidateSP2.push(studentData); // Assuming SP2 starts at 120
-               if (score >= 150 && score < 160) listCandidateSP3.push(studentData); // Assuming SP3 starts at 160
+               if (score >= 110 && score < 120) listCandidateSP2.push(studentData); 
+               if (score >= 150 && score < 160) listCandidateSP3.push(studentData); 
 
                if (score > highestScore) {
                   highestScore = score;
@@ -607,12 +612,12 @@ const TeacherDashboard: React.FC = () => {
                           </div>
                        </div>
 
-                       {/* Bagian 3: Status Kritis */}
+                       {/* Bagian 3: Status Kritis - REMOVED FIXED HEIGHT */}
                        <div className="p-6 space-y-4 relative overflow-hidden">
                           <div className="absolute top-0 right-0 p-4 opacity-10"><AlertTriangle className="h-24 w-24 text-red-500" /></div>
                           <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><AlertTriangle className="h-4 w-4" /> Status Perhatian</h3>
                           
-                          <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                          <div className="space-y-2">
                              {/* Approaching BK */}
                              <div 
                                 onClick={() => handleOpenClassDetail('Mendekati Ambang BK (30-39 Poin)', 'STUDENTS', listApproachingBK)}
@@ -662,9 +667,29 @@ const TeacherDashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4"><div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle className="h-6 w-6" /></div><div><p className="text-sm text-slate-500 font-medium">Pelanggaran Hari Ini</p><p className="text-2xl font-bold text-slate-900">{violationsToday}</p></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4"><div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><Award className="h-6 w-6" /></div><div><p className="text-sm text-slate-500 font-medium">Prestasi Hari Ini</p><p className="text-2xl font-bold text-slate-900">{achievementsToday}</p></div></div>
-        <button onClick={() => navigate('/teacher/classes')} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 p-6 rounded-xl shadow-sm flex flex-col items-center justify-center transition-colors group"><span className="font-semibold text-lg group-hover:text-indigo-600 transition-colors">Lihat Semua Kelas</span><span className="text-slate-400 text-sm mt-1">Pencatatan kelas lain</span></button>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle className="h-6 w-6" /></div>
+            <div>
+                <p className="text-sm text-slate-500 font-medium">Pelanggaran Hari Ini</p>
+                <p className="text-2xl font-bold text-slate-900">{violationsToday}</p>
+                {shouldFilterMyClass && <p className="text-[10px] text-slate-400">Khusus Kelas Anda</p>}
+            </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><Award className="h-6 w-6" /></div>
+            <div>
+                <p className="text-sm text-slate-500 font-medium">Prestasi Hari Ini</p>
+                <p className="text-2xl font-bold text-slate-900">{achievementsToday}</p>
+                {shouldFilterMyClass && <p className="text-[10px] text-slate-400">Khusus Kelas Anda</p>}
+            </div>
+        </div>
+        <button onClick={() => navigate('/teacher/classes')} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 p-6 rounded-xl shadow-sm flex flex-col items-center justify-center transition-colors group">
+            <div className="h-12 w-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 mb-3 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                <LayoutGrid className="h-6 w-6" />
+            </div>
+            <span className="font-semibold text-lg group-hover:text-indigo-600 transition-colors">Lihat Semua Kelas</span>
+            <span className="text-slate-400 text-sm mt-1">Pencatatan kelas lain</span>
+        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -966,38 +991,232 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
       
-      {/* Teacher Section */}
-      <div className="bg-indigo-600 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-        <div className="absolute right-0 top-0 opacity-10"><Star className="h-48 w-48 -mr-10 -mt-10" /></div>
-        <div className="relative z-10">
-          <h2 className="text-lg font-medium text-indigo-100 mb-4">Kelas Perwalian Anda</h2>
-          {myClasses.length > 0 ? (
-            <div className="flex flex-wrap gap-4">
-              {myClasses.map(cls => (
-                <div key={cls.id} className="bg-white/10 backdrop-blur-sm p-4 rounded-lg border border-white/20 min-w-[200px]">
-                  <h3 className="text-2xl font-bold">{cls.name}</h3>
-                  <div className="mt-2 space-y-3">
-                    <span className="text-sm text-indigo-100 flex items-center gap-1"><Users className="h-4 w-4" /> {students.filter(s => s.classId === cls.id).length} Siswa</span>
-                    <Link to={`/teacher/classes/${cls.id}`} className="inline-flex w-full justify-center items-center gap-1 text-sm font-semibold bg-white text-indigo-600 px-3 py-2 rounded hover:bg-indigo-50 transition-colors shadow-sm">Kelola Kelas <ArrowRight className="h-3 w-3" /></Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center gap-3 text-indigo-100"><UserX className="h-8 w-8 opacity-50" /><div><p className="font-semibold">Tidak ada kelas perwalian.</p></div></div>
-          )}
-        </div>
+      {/* Teacher Section (INTERACTIVE UPDATE) */}
+      <div className="space-y-6">
+        {myClasses.length > 0 ? (
+          myClasses.map(cls => {
+            // --- CALCULATION LOGIC FOR CLASS STATS ---
+            const classStudents = students.filter(s => s.classId === cls.id);
+            const studentIds = classStudents.map(s => s.id);
+            const maleCount = classStudents.filter(s => s.gender === 'L').length;
+            const femaleCount = classStudents.filter(s => s.gender === 'P').length;
+
+            let totalClassPoints = 0;
+            
+            // Arrays for Modal
+            const listStudentsInCoaching: any[] = [];
+            const listCleanStudents: any[] = [];
+            const listApproachingBK: any[] = [];
+            const listCandidateSP1: any[] = [];
+            const listCandidateSP2: any[] = [];
+            const listCandidateSP3: any[] = [];
+
+            let highestScore = -1;
+            let highestStudentId = '';
+            let highestStudentName = '-';
+
+            classStudents.forEach(s => {
+               const stats = DataService.calculateStudentPoints(s.id, records, incidents);
+               const score = stats.effectiveViolationScore;
+               totalClassPoints += score;
+
+               const studentData = { id: s.id, name: s.name, nis: s.nis, score };
+
+               if (score === 0) listCleanStudents.push(studentData);
+               if (score >= 20) listStudentsInCoaching.push(studentData);
+               
+               if (score >= 30 && score < 40) listApproachingBK.push(studentData);
+               if (score >= 70 && score < 80) listCandidateSP1.push(studentData);
+               if (score >= 110 && score < 120) listCandidateSP2.push(studentData); // Assuming SP2 starts at 120
+               if (score >= 150 && score < 160) listCandidateSP3.push(studentData); // Assuming SP3 starts at 160
+
+               if (score > highestScore) {
+                  highestScore = score;
+                  highestStudentName = s.name;
+                  highestStudentId = s.id;
+               }
+            });
+
+            // Cases This Month (For Modal)
+            const currentMonth = new Date().getMonth();
+            const currentYear = new Date().getFullYear();
+            const casesThisMonth = records.filter(r => 
+                studentIds.includes(r.studentId) && 
+                r.typeSnapshot === IncidentTypeCategory.VIOLATION &&
+                new Date(r.date).getMonth() === currentMonth &&
+                new Date(r.date).getFullYear() === currentYear
+            ).map(r => ({
+                id: r.id,
+                date: r.date,
+                studentId: r.studentId,
+                studentName: students.find(s => s.id === r.studentId)?.name || 'Unknown',
+                incidentName: incidents.find(i => i.id === r.incidentTypeId)?.name || 'Unknown',
+                points: r.pointSnapshot
+            }));
+
+            return (
+              <div key={cls.id} className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg overflow-hidden text-white relative">
+                 <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><Star className="h-64 w-64 -mr-16 -mt-16" /></div>
+
+                 <div className="relative z-10">
+                    {/* HEADER */}
+                    <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/10">
+                        <div className="flex items-center gap-3">
+                           <div className="p-2 bg-white/20 rounded-lg"><Users className="h-6 w-6 text-white" /></div>
+                           <div>
+                              <h2 className="text-xl font-bold">Kelas Perwalian: {cls.name}</h2>
+                              <p className="text-blue-200 text-xs">Total Siswa: {classStudents.length} Orang</p>
+                           </div>
+                        </div>
+                        <Link to={`/teacher/classes/${cls.id}`} className="px-4 py-2 bg-white text-indigo-700 font-bold rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-2 shadow-md text-sm">
+                           Kelola Kelas <ArrowRight className="h-4 w-4" />
+                        </Link>
+                    </div>
+
+                    {/* CONTENT GRID */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/10">
+                       
+                       {/* Bagian 1: Statistik Siswa */}
+                       <div className="p-6 space-y-4">
+                          <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><Users className="h-4 w-4" /> Statistik Siswa</h3>
+                          <div className="grid grid-cols-2 gap-3">
+                             <div className="bg-white/10 rounded-lg p-3 text-center"><User className="h-5 w-5 mx-auto mb-1 opacity-80" /><p className="text-lg font-bold">{maleCount}</p><p className="text-[10px] text-blue-200 uppercase">Laki-laki</p></div>
+                             <div className="bg-white/10 rounded-lg p-3 text-center"><User className="h-5 w-5 mx-auto mb-1 opacity-80 text-pink-200" /><p className="text-lg font-bold">{femaleCount}</p><p className="text-[10px] text-blue-200 uppercase">Perempuan</p></div>
+                          </div>
+                          <div className="space-y-2 mt-2">
+                             <div 
+                                onClick={() => handleOpenClassDetail('Siswa Dalam Pembinaan (Poin ≥ 20)', 'STUDENTS', listStudentsInCoaching)}
+                                className="flex justify-between items-center text-sm cursor-pointer hover:bg-white/10 p-1.5 rounded transition-colors group"
+                             >
+                                <span className="text-blue-200 group-hover:text-white">Dalam Pembinaan</span>
+                                <span className="font-bold bg-white/20 px-2 rounded text-xs group-hover:bg-white group-hover:text-indigo-600 transition-colors">{listStudentsInCoaching.length}</span>
+                             </div>
+                             <div 
+                                onClick={() => handleOpenClassDetail('Siswa Bebas Pelanggaran (0 Poin)', 'STUDENTS', listCleanStudents)}
+                                className="flex justify-between items-center text-sm cursor-pointer hover:bg-white/10 p-1.5 rounded transition-colors group"
+                             >
+                                <span className="text-blue-200 group-hover:text-white">Bebas Pelanggaran</span>
+                                <span className="font-bold bg-emerald-500/30 text-emerald-100 px-2 rounded text-xs group-hover:bg-emerald-400 group-hover:text-white">{listCleanStudents.length}</span>
+                             </div>
+                          </div>
+                       </div>
+
+                       {/* Bagian 2: Ringkasan Disiplin */}
+                       <div className="p-6 space-y-4">
+                          <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><TrendingUp className="h-4 w-4" /> Ringkasan Disiplin</h3>
+                          <div className="flex items-center gap-3 bg-white/10 p-3 rounded-lg mb-3">
+                             <ShieldAlert className="h-8 w-8 text-yellow-300 opacity-80" />
+                             <div><p className="text-2xl font-bold">{totalClassPoints}</p><p className="text-xs text-blue-200 uppercase">Total Poin Kelas</p></div>
+                          </div>
+                          <div className="space-y-2">
+                             <div className="text-sm">
+                                <p className="text-blue-200 text-xs mb-1">Pelanggar Tertinggi:</p>
+                                <div className="flex justify-between font-medium bg-white/5 p-2 rounded">
+                                   {highestScore > 0 ? (
+                                     <Link to={`/teacher/student/${highestStudentId}`} className="truncate max-w-[120px] hover:text-yellow-300 hover:underline cursor-pointer">{highestStudentName}</Link>
+                                   ) : (
+                                     <span className="truncate max-w-[120px]">-</span>
+                                   )}
+                                   <span className="text-yellow-300">{highestScore > 0 ? highestScore : 0} Poin</span>
+                                </div>
+                             </div>
+                             <div 
+                                onClick={() => handleOpenClassDetail(`Kejadian Bulan Ini (${new Date().toLocaleDateString('id-ID', {month: 'long'})})`, 'INCIDENTS', casesThisMonth)}
+                                className="flex justify-between items-center text-sm pt-2 cursor-pointer hover:bg-white/10 p-1.5 rounded transition-colors group"
+                             >
+                                <span className="text-blue-200 group-hover:text-white">Kasus Bulan Ini</span>
+                                <span className="font-bold group-hover:text-yellow-300">{casesThisMonth.length} Kejadian</span>
+                             </div>
+                          </div>
+                       </div>
+
+                       {/* Bagian 3: Status Kritis - REMOVED FIXED HEIGHT */}
+                       <div className="p-6 space-y-4 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-10"><AlertTriangle className="h-24 w-24 text-red-500" /></div>
+                          <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><AlertTriangle className="h-4 w-4" /> Status Perhatian</h3>
+                          
+                          <div className="space-y-2">
+                             {/* Approaching BK */}
+                             <div 
+                                onClick={() => handleOpenClassDetail('Mendekati Ambang BK (30-39 Poin)', 'STUDENTS', listApproachingBK)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listApproachingBK.length > 0 ? 'bg-orange-500/20 border-orange-400/30 hover:bg-orange-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                             >
+                                <div><p className={`font-bold text-xs ${listApproachingBK.length > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{listApproachingBK.length} Siswa</p><p className="text-[10px] text-blue-200">Mendekati BK (30-39)</p></div>
+                                {listApproachingBK.length > 0 && <AlertCircle className="h-4 w-4 text-orange-300" />}
+                             </div>
+
+                             {/* Candidate SP 1 */}
+                             <div 
+                                onClick={() => handleOpenClassDetail('Kandidat SP 1 (70-79 Poin)', 'STUDENTS', listCandidateSP1)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listCandidateSP1.length > 0 ? 'bg-red-500/20 border-red-400/30 hover:bg-red-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                             >
+                                <div><p className={`font-bold text-xs ${listCandidateSP1.length > 0 ? 'text-red-200' : 'text-slate-300'}`}>{listCandidateSP1.length} Siswa</p><p className="text-[10px] text-blue-200">Kandidat SP 1 (70-79)</p></div>
+                                {listCandidateSP1.length > 0 && <ShieldAlert className="h-4 w-4 text-red-300" />}
+                             </div>
+
+                             {/* Candidate SP 2 */}
+                             <div 
+                                onClick={() => handleOpenClassDetail('Kandidat SP 2 (110-119 Poin)', 'STUDENTS', listCandidateSP2)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listCandidateSP2.length > 0 ? 'bg-red-600/30 border-red-500/40 hover:bg-red-600/40' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                             >
+                                <div><p className={`font-bold text-xs ${listCandidateSP2.length > 0 ? 'text-red-100' : 'text-slate-300'}`}>{listCandidateSP2.length} Siswa</p><p className="text-[10px] text-blue-200">Kandidat SP 2 (110-119)</p></div>
+                                {listCandidateSP2.length > 0 && <Skull className="h-4 w-4 text-red-200" />}
+                             </div>
+
+                             {/* Candidate SP 3 */}
+                             <div 
+                                onClick={() => handleOpenClassDetail('Kandidat SP 3 (150-159 Poin)', 'STUDENTS', listCandidateSP3)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listCandidateSP3.length > 0 ? 'bg-rose-900/40 border-rose-700/50 hover:bg-rose-900/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                             >
+                                <div><p className={`font-bold text-xs ${listCandidateSP3.length > 0 ? 'text-rose-100' : 'text-slate-300'}`}>{listCandidateSP3.length} Siswa</p><p className="text-[10px] text-blue-200">Kandidat SP 3 (150-159)</p></div>
+                                {listCandidateSP3.length > 0 && <Ban className="h-4 w-4 text-rose-200" />}
+                             </div>
+                          </div>
+                       </div>
+
+                    </div>
+                 </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center gap-3 text-indigo-100 hidden"><UserX className="h-8 w-8 opacity-50" /><div><p className="font-semibold">Tidak ada kelas perwalian.</p></div></div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4"><div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle className="h-6 w-6" /></div><div><p className="text-sm text-slate-500 font-medium">Pelanggaran Hari Ini</p><p className="text-2xl font-bold text-slate-900">{violationsToday}</p></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4"><div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><Award className="h-6 w-6" /></div><div><p className="text-sm text-slate-500 font-medium">Prestasi Hari Ini</p><p className="text-2xl font-bold text-slate-900">{achievementsToday}</p></div></div>
-        <button onClick={() => navigate('/teacher/classes')} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 p-6 rounded-xl shadow-sm flex flex-col items-center justify-center transition-colors group"><span className="font-semibold text-lg group-hover:text-indigo-600 transition-colors">Lihat Semua Kelas</span><span className="text-slate-400 text-sm mt-1">Pencatatan kelas lain</span></button>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle className="h-6 w-6" /></div>
+            <div>
+                <p className="text-sm text-slate-500 font-medium">Pelanggaran Hari Ini</p>
+                <p className="text-2xl font-bold text-slate-900">{violationsToday}</p>
+                {shouldFilterMyClass && <p className="text-[10px] text-slate-400">Khusus Kelas Anda</p>}
+            </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><Award className="h-6 w-6" /></div>
+            <div>
+                <p className="text-sm text-slate-500 font-medium">Prestasi Hari Ini</p>
+                <p className="text-2xl font-bold text-slate-900">{achievementsToday}</p>
+                {shouldFilterMyClass && <p className="text-[10px] text-slate-400">Khusus Kelas Anda</p>}
+            </div>
+        </div>
+        <button onClick={() => navigate('/teacher/classes')} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 p-6 rounded-xl shadow-sm flex flex-col items-center justify-center transition-colors group">
+            <div className="h-12 w-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 mb-3 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                <LayoutGrid className="h-6 w-6" />
+            </div>
+            <span className="font-semibold text-lg group-hover:text-indigo-600 transition-colors">Lihat Semua Kelas</span>
+            <span className="text-slate-400 text-sm mt-1">Pencatatan kelas lain</span>
+        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-          <div className="flex items-center gap-2"><Clock className="h-5 w-5 text-slate-400" /><h2 className="font-semibold text-slate-800">Aktivitas Terkini {shouldFilterMyClass ? '(Kelas Perwalian)' : ''}</h2></div>
+          <div className="flex items-center gap-2"><Clock className="h-5 w-5 text-slate-400" />
+            <h2 className="font-semibold text-slate-800">
+                Aktivitas Terkini {shouldFilterMyClass ? '(Kelas Perwalian)' : ''}
+            </h2>
+          </div>
           {allRecentRecords.length > ITEMS_PER_PAGE && (
             <div className="flex items-center gap-2">
                <button onClick={handlePrevPage} disabled={recentPage === 0} className="p-1 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"><ChevronLeft className="h-5 w-5 text-slate-600" /></button>
@@ -1008,7 +1227,9 @@ const TeacherDashboard: React.FC = () => {
         </div>
         <div className="divide-y divide-slate-100 min-h-[300px]">
           {currentRecords.length === 0 ? (
-            <div className="p-6 text-center text-slate-500 flex flex-col items-center justify-center h-full pt-16"><Clock className="h-8 w-8 text-slate-300 mb-2" />{shouldFilterMyClass ? "Belum ada aktivitas di kelas perwalian Anda." : "Belum ada data kejadian."}</div>
+            <div className="p-6 text-center text-slate-500 flex flex-col items-center justify-center h-full pt-16"><Clock className="h-8 w-8 text-slate-300 mb-2" />
+               {shouldFilterMyClass ? "Belum ada aktivitas di kelas perwalian Anda." : "Belum ada data kejadian."}
+            </div>
           ) : (
             currentRecords.map(record => (
               <div key={record.id} className="p-4 flex items-start gap-4 hover:bg-slate-50 transition-colors animate-fade-in">
