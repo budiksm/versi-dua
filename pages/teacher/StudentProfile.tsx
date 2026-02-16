@@ -287,8 +287,16 @@ const StudentProfile: React.FC = () => {
   const isBK = roles.includes(Role.BK);
   const isKesiswaan = roles.includes(Role.KESISWAAN);
 
-  // BK ACCESS LOGIC
-  const canAccessBK = isBK;
+  // --- ACCESS LOGIC REVISED ---
+  
+  // Logic: Kesiswaan can only see BK Tab if points >= 40 OR there is a referral from Homeroom
+  const hasMandatoryBKCondition = stats.effectiveViolationScore >= 40 || 
+        counselingSessions.some(s => s.sessionType === 'HOMEROOM' && s.recommendation === 'TO_BK');
+
+  const showBkTab = isBK || (isKesiswaan && hasMandatoryBKCondition);
+  
+  // Logic: Only BK Role can INPUT counseling sessions. Kesiswaan is Read-Only.
+  const canInputBk = isBK; 
   
   // LOGIKA BARU: VISIBILITAS PANEL KESISWAAN
   const hasReferralToKesiswaan = counselingSessions.some(s => 
@@ -722,7 +730,7 @@ const StudentProfile: React.FC = () => {
                  </span>
               </button>
             )}
-            {canAccessBK && (
+            {showBkTab && (
               <button
                  onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); setBkMode('CASE'); setSelectedCounselingRecords([]); }}
                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
@@ -1070,60 +1078,62 @@ const StudentProfile: React.FC = () => {
         )}
 
         {/* ... (Tabs BK & Sanctions similar structure) ... */}
-        {activeTab === 'BK_COUNSELING' && canAccessBK && (
+        {activeTab === 'BK_COUNSELING' && showBkTab && (
            <>
-             <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   <div className="p-6 border-b flex justify-between items-center bg-blue-50 border-blue-100">
-                     <h2 className="font-bold flex items-center gap-2 text-blue-800"><HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling BK</h2>
-                   </div>
-                   <div className="px-6 pt-6">
-                      <div className="flex p-1 bg-slate-100 rounded-lg">
-                         <button onClick={() => setBkMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Konseling Kasus (Disiplin)</button>
-                         <button onClick={() => setBkMode('PREVENTIVE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'PREVENTIVE' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-700'}`}><LifeBuoy className="h-4 w-4" /> Konseling Preventif</button>
-                      </div>
-                   </div>
-                   <form onSubmit={(e) => handleSubmitCounseling(e, 'BK')} className="p-6 space-y-6">
-                      {bkMode === 'CASE' ? (
-                          <>
-                            <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100 flex items-start gap-2">
-                                <AlertTriangle className="h-5 w-5 shrink-0" />
-                                <div><p className="font-bold">Mode Penanganan Kasus</p><p className="text-xs mt-1">Gunakan mode ini untuk menindaklanjuti pelanggaran spesifik. Kasus yang dipilih akan ditandai sebagai <b>SELESAI</b> dalam alur disiplin.</p></div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">Pilih Kasus / Pelanggaran Terkait</label>
-                                <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
-                                    {activeViolationRecordsForForm.length === 0 ? (
-                                        <p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif yang butuh penanganan.</p>
-                                    ) : (
-                                        activeViolationRecordsForForm.map(record => {
-                                            const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
-                                            const isSelected = selectedCounselingRecords.includes(record.id);
-                                            const isRequired = record.bkStatus === 'REQUIRED';
-                                            return (
-                                                <div key={record.id} onClick={() => toggleCounselingRecord(record.id)} className={`p-3 rounded-lg border cursor-pointer text-xs flex items-center gap-3 transition-all ${isSelected ? 'bg-orange-50 border-orange-300 text-orange-900' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
-                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-white border-slate-300'}`}>{isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}</div>
-                                                    <div className="flex-1">
-                                                        <div className="flex justify-between"><span className="font-bold text-sm">{incidentName}</span><span className="font-bold text-red-600">+{record.pointSnapshot} Poin</span></div>
-                                                        <div className="flex items-center gap-2 mt-1"><span className="text-slate-500">{new Date(record.date).toLocaleDateString()}</span>{isRequired && <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}</div>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })
-                                    )}
+             {canInputBk && (
+                <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="p-6 border-b flex justify-between items-center bg-blue-50 border-blue-100">
+                        <h2 className="font-bold flex items-center gap-2 text-blue-800"><HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling BK</h2>
+                    </div>
+                    <div className="px-6 pt-6">
+                        <div className="flex p-1 bg-slate-100 rounded-lg">
+                            <button onClick={() => setBkMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Konseling Kasus (Disiplin)</button>
+                            <button onClick={() => setBkMode('PREVENTIVE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'PREVENTIVE' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-700'}`}><LifeBuoy className="h-4 w-4" /> Konseling Preventif</button>
+                        </div>
+                    </div>
+                    <form onSubmit={(e) => handleSubmitCounseling(e, 'BK')} className="p-6 space-y-6">
+                        {bkMode === 'CASE' ? (
+                            <>
+                                <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100 flex items-start gap-2">
+                                    <AlertTriangle className="h-5 w-5 shrink-0" />
+                                    <div><p className="font-bold">Mode Penanganan Kasus</p><p className="text-xs mt-1">Gunakan mode ini untuk menindaklanjuti pelanggaran spesifik. Kasus yang dipilih akan ditandai sebagai <b>SELESAI</b> dalam alur disiplin.</p></div>
                                 </div>
-                            </div>
-                          </>
-                      ) : (
-                          <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100 flex items-start gap-2"><LifeBuoy className="h-5 w-5 shrink-0" /><div><p className="font-bold">Mode Konseling Preventif</p><p className="text-xs mt-1">Gunakan mode ini untuk bimbingan karir, masalah pribadi, atau rujukan wali kelas yang <b>bukan</b> pelanggaran disiplin. Tidak mengubah status poin.</p></div></div>
-                      )}
-                      <div><label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil</label><textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900" placeholder={bkMode === 'CASE' ? "Jelaskan penyelesaian kasus dan komitmen siswa..." : "Catat hasil diskusi dan saran pengembangan diri..."} /></div>
-                      <div><label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label><select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"><option value="NONE">Cukup Pembinaan (Selesai)</option><option value="PARENT_CALL">Perlu Panggilan Orang Tua</option><option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Perlu Sanksi Tegas)</option><option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option></select></div>
-                      <button type="submit" disabled={isSubmitting || !counselingNotes} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"><Save className="h-5 w-5" /> {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan BK'}</button>
-                   </form>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">Pilih Kasus / Pelanggaran Terkait</label>
+                                    <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                                        {activeViolationRecordsForForm.length === 0 ? (
+                                            <p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif yang butuh penanganan.</p>
+                                        ) : (
+                                            activeViolationRecordsForForm.map(record => {
+                                                const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
+                                                const isSelected = selectedCounselingRecords.includes(record.id);
+                                                const isRequired = record.bkStatus === 'REQUIRED';
+                                                return (
+                                                    <div key={record.id} onClick={() => toggleCounselingRecord(record.id)} className={`p-3 rounded-lg border cursor-pointer text-xs flex items-center gap-3 transition-all ${isSelected ? 'bg-orange-50 border-orange-300 text-orange-900' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
+                                                        <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-white border-slate-300'}`}>{isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}</div>
+                                                        <div className="flex-1">
+                                                            <div className="flex justify-between"><span className="font-bold text-sm">{incidentName}</span><span className="font-bold text-red-600">+{record.pointSnapshot} Poin</span></div>
+                                                            <div className="flex items-center gap-2 mt-1"><span className="text-slate-500">{new Date(record.date).toLocaleDateString()}</span>{isRequired && <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}</div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100 flex items-start gap-2"><LifeBuoy className="h-5 w-5 shrink-0" /><div><p className="font-bold">Mode Konseling Preventif</p><p className="text-xs mt-1">Gunakan mode ini untuk bimbingan karir, masalah pribadi, atau rujukan wali kelas yang <b>bukan</b> pelanggaran disiplin. Tidak mengubah status poin.</p></div></div>
+                        )}
+                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil</label><textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900" placeholder={bkMode === 'CASE' ? "Jelaskan penyelesaian kasus dan komitmen siswa..." : "Catat hasil diskusi dan saran pengembangan diri..."} /></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label><select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"><option value="NONE">Cukup Pembinaan (Selesai)</option><option value="PARENT_CALL">Perlu Panggilan Orang Tua</option><option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Perlu Sanksi Tegas)</option><option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option></select></div>
+                        <button type="submit" disabled={isSubmitting || !counselingNotes} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"><Save className="h-5 w-5" /> {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan BK'}</button>
+                    </form>
+                    </div>
                 </div>
-             </div>
-             <div className="space-y-4">
+             )}
+             <div className={`space-y-4 ${!canInputBk ? 'lg:col-span-3' : ''}`}>
                 <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><BookOpen className="h-5 w-5" /> Riwayat Konseling BK</div>
                 <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
                   {bkSessions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada data.</div> : 
