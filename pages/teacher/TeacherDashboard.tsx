@@ -665,67 +665,181 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ... (Existing Kesiswaan/BK/Walikelas Dashboard Logic - unchanged) ... */}
-      
       {/* --- KESISWAAN DASHBOARD --- */}
       {isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
-          {/* ... (Same as previous, just rendering) ... */}
-          {/* Omitted for brevity since no logic changes here, assume it's kept as is */}
-          <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-             {/* ... */}
-             <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-6">
-                   <div className="p-2 bg-orange-500 rounded-lg"><Gavel className="h-6 w-6 text-white" /></div>
-                   <div><h2 className="text-xl font-bold">Dashboard Kesiswaan</h2><p className="text-slate-400 text-sm">Pusat kontrol ketertiban dan kedisiplinan sekolah</p></div>
-                </div>
-                {/* ... Stats Grid ... */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                   <div onClick={() => handleOpenStatModal(SanctionLevel.SP1)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                      <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 1 <ExternalLink className="h-3 w-3" /></p>
-                      <p className="text-3xl font-bold mt-1">{sp1Count}</p>
-                   </div>
-                   <div onClick={() => handleOpenStatModal(SanctionLevel.SP2)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                      <p className="text-orange-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 2 <ExternalLink className="h-3 w-3" /></p>
-                      <p className="text-3xl font-bold mt-1">{sp2Count}</p>
-                   </div>
-                   <div onClick={() => handleOpenStatModal(SanctionLevel.SP3)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                      <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 3 <ExternalLink className="h-3 w-3" /></p>
-                      <p className="text-3xl font-bold mt-1">{sp3Count}</p>
-                   </div>
-                   <div onClick={() => handleOpenStatModal(SanctionLevel.DROP_OUT)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30 cursor-pointer hover:bg-red-900/50 transition-all hover:scale-105">
-                      <p className="text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"><Skull className="h-3 w-3" /> Drop Out <ExternalLink className="h-3 w-3" /></p>
-                      <p className="text-3xl font-bold mt-1">{doCount}</p>
-                   </div>
-                   <div onClick={() => handleOpenStatModal('REDEMPTION')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                      <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Penebusan Jalan <ExternalLink className="h-3 w-3" /></p>
-                      <p className="text-3xl font-bold mt-1">{activeRedemptions}</p>
-                   </div>
-                </div>
-                {/* ... Tables ... */}
-             </div>
-          </div>
-        </div>
-      )}
+            <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
+                <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><Gavel className="h-64 w-64 -mr-16 -mt-16" /></div>
+                
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-orange-500 rounded-lg"><Gavel className="h-6 w-6 text-white" /></div>
+                        <div><h2 className="text-xl font-bold">Dashboard Kesiswaan</h2><p className="text-slate-400 text-sm">Pusat kontrol ketertiban dan kedisiplinan sekolah</p></div>
+                    </div>
 
-      {/* --- BK DASHBOARD --- */}
-      {isBK && !isKesiswaan && (
-        <div className="space-y-6 animate-fade-in">
-           {/* ... (Kept as is) ... */}
-           <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-              <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><HeartHandshake className="h-64 w-64 -mr-16 -mt-16" /></div>
-              <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-6"><div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div><div><h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2><p className="text-blue-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p></div></div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                   {/* ... Stats ... */}
-                   <div onClick={() => handleOpenStatModal('BK_ACTIVE')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{bkStats.activeCounseling}</p></div>
-                   {/* ... Other stats ... */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP1)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 1 <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{sp1Count}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP2)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-orange-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 2 <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{sp2Count}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP3)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 3 <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{sp3Count}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.DROP_OUT)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30 cursor-pointer hover:bg-red-900/50 transition-all hover:scale-105">
+                            <p className="text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"><Skull className="h-3 w-3" /> Drop Out <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{doCount}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal('REDEMPTION')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Penebusan Jalan <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{activeRedemptions}</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-slate-700/50 rounded-xl border border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
+                                <h3 className="font-bold text-sm flex items-center gap-2 text-orange-300"><ClipboardList className="h-4 w-4" /> Antrean Sanksi Otomatis</h3>
+                                <span className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingTaskSanctions.length}</span>
+                            </div>
+                            <div className="divide-y divide-white/5 max-h-60 overflow-y-auto">
+                                {pendingTaskSanctions.length === 0 ? (
+                                    <div className="p-4 text-center text-slate-400 text-xs">Aman. Tidak ada sanksi baru yang butuh tugas.</div>
+                                ) : (
+                                    pendingTaskSanctions.map((item, idx) => (
+                                        <div key={idx} className="p-3 hover:bg-white/5 transition-colors flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-sm">{item.student.name} <span className="text-slate-400 font-normal">({item.className})</span></div>
+                                                <div className="text-xs text-slate-300 mt-0.5 flex items-center gap-2">
+                                                    <span className="text-red-400 font-bold">{item.level}</span> • Skor: {item.currentScore}
+                                                </div>
+                                            </div>
+                                            <button onClick={() => handleOpenTaskModal(item)} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded shadow-sm">Beri Tugas</button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-700/50 rounded-xl border border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
+                                <h3 className="font-bold text-sm flex items-center gap-2 text-blue-300"><HeartHandshake className="h-4 w-4" /> Rujukan Tindakan Lanjut (Dari BK)</h3>
+                                <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">{bkHandledList.length}</span>
+                            </div>
+                            <div className="divide-y divide-white/5 max-h-60 overflow-y-auto">
+                                {bkHandledList.length === 0 ? (
+                                    <div className="p-4 text-center text-slate-400 text-xs">Tidak ada rujukan eskalasi dari BK.</div>
+                                ) : (
+                                    bkHandledList.map((item, idx) => (
+                                        <div key={idx} className="p-3 hover:bg-white/5 transition-colors flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-sm">{item.student.name}</div>
+                                                <div className="text-xs text-slate-300 mt-0.5">
+                                                    {translateRecommendation(item.session.recommendation)}
+                                                </div>
+                                            </div>
+                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white text-xs font-bold rounded">Lihat</Link>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
                 </div>
-              </div>
-           </div>
-           {/* ... Tables ... */}
+            </div>
         </div>
-      )}
+    )}
+
+    {/* --- BK DASHBOARD --- */}
+    {isBK && !isKesiswaan && (
+        <div className="space-y-6 animate-fade-in">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
+                <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><HeartHandshake className="h-64 w-64 -mr-16 -mt-16" /></div>
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div>
+                        <div><h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2><p className="text-blue-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p></div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                        <div onClick={() => handleOpenStatModal('BK_ACTIVE')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{bkStats.activeCounseling}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal('BK_MANDATORY')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-400/50 bg-red-900/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-red-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Prioritas (Wajib) <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{bkStats.mandatoryCases}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal('BK_REFERRAL')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-orange-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Rujukan Walas <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{bkStats.referrals}</p>
+                        </div>
+                        <div onClick={() => handleOpenStatModal('BK_HIGH_RISK')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                            <p className="text-yellow-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Risiko Tinggi <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-3xl font-bold mt-1">{bkStats.highRiskCount}</p>
+                        </div>
+                        <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
+                            <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider">Sesi Bulan Ini</p>
+                            <p className="text-3xl font-bold mt-1">{bkStats.monthlySessions}</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white/10 rounded-xl border border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
+                                <h3 className="font-bold text-sm flex items-center gap-2 text-red-200"><AlertCircle className="h-4 w-4" /> Siswa Wajib Konseling</h3>
+                            </div>
+                            <div className="divide-y divide-white/10 max-h-60 overflow-y-auto">
+                                {bkMandatoryList.length === 0 ? (
+                                    <div className="p-4 text-center text-blue-200 text-xs">Tidak ada siswa yang mencapai ambang batas poin (40).</div>
+                                ) : (
+                                    bkMandatoryList.map((item, idx) => (
+                                        <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-blue-300 font-normal">({item.className})</span></div>
+                                                <div className="text-xs text-red-300 mt-0.5 font-medium">
+                                                    {item.score} Poin - {item.topIncident}
+                                                </div>
+                                            </div>
+                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-white text-indigo-700 text-xs font-bold rounded hover:bg-blue-50">Proses</Link>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-white/10 rounded-xl border border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
+                                <h3 className="font-bold text-sm flex items-center gap-2 text-orange-200"><User className="h-4 w-4" /> Masuk: Rujukan Wali Kelas</h3>
+                            </div>
+                            <div className="divide-y divide-white/10 max-h-60 overflow-y-auto">
+                                {bkReferralList.length === 0 ? (
+                                    <div className="p-4 text-center text-blue-200 text-xs">Tidak ada rujukan baru dari Wali Kelas.</div>
+                                ) : (
+                                    bkReferralList.map((item, idx) => (
+                                        <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-blue-300 font-normal">({item.className})</span></div>
+                                                <div className="text-xs text-orange-200 mt-0.5">
+                                                    Dari: {item.homeroomName}
+                                                </div>
+                                                <div className="text-[10px] text-blue-200 italic mt-0.5 truncate max-w-[200px]">"{item.note}"</div>
+                                            </div>
+                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-orange-500/80 text-white text-xs font-bold rounded hover:bg-orange-500">Terima</Link>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )}
       
       {/* --- HOMEROOM / TEACHER DASHBOARD (INTERACTIVE) --- */}
       {myClasses.length > 0 && (
