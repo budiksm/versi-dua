@@ -69,8 +69,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Logo Error State (Fallback if image fails)
   const [logoError, setLogoError] = useState(false);
   
-  // Explicitly type this to prevent 'never' inference
-  const currentUser: Teacher | null = DataService.getCurrentUser();
+  // Explicitly cast to Teacher | null to avoid 'never' inference issues in some environments
+  const currentUser = DataService.getCurrentUser() as Teacher | null;
 
   // Force Password Change State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -98,7 +98,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (currentUser) {
        DataService.updateHeartbeat(currentUser.id);
        const interval = setInterval(() => {
-          DataService.updateHeartbeat(currentUser.id);
+          // Re-check user existence in interval closure
+          const activeUser = DataService.getCurrentUser();
+          if (activeUser) DataService.updateHeartbeat(activeUser.id);
        }, 60000);
        return () => {
          clearInterval(interval);
@@ -109,7 +111,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
     
     // Check for forced password change
-    if (currentUser && currentUser.mustChangePassword && !successMessage) {
+    // We use a safe check here
+    if (currentUser && (currentUser as Teacher).mustChangePassword === true && !successMessage) {
       setShowPasswordModal(true);
     }
 
@@ -118,7 +121,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
        window.removeEventListener('online', handleOnline);
        window.removeEventListener('offline', handleOffline);
     };
-  }, [currentUser?.id, successMessage]); // Safe dependency check
+  }, [currentUser?.id, successMessage]); 
 
   const handleLogout = () => {
     DataService.logout();
@@ -133,6 +136,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             if (window.indexedDB && window.indexedDB.databases) {
                 // @ts-ignore
                 const dbs = await window.indexedDB.databases();
+                // @ts-ignore
                 dbs.forEach((db: any) => { 
                     if(db.name && db.name.includes('firebase')) {
                         window.indexedDB.deleteDatabase(db.name);
