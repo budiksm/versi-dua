@@ -307,7 +307,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <input type="password" required className="w-full p-3 border rounded-lg" placeholder="Konfirmasi Password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
                       {passwordError && <p className="text-red-500 text-sm font-bold">{passwordError}</p>}
                       <button type="submit" disabled={isSavingPass} className="w-full py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">
-                        {isSavingPass ? 'Menyimpan...' : 'Simpan Password'}
+                        {isSavingPass ? 'Syncing...' : 'Simpan Password'}
                       </button>
                    </form>
                  )}
@@ -414,7 +414,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {isOnline && (syncState === 'IDLE' || syncState === 'SAVED') && (
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200" title="Data tersimpan aman di Cloud">
                         <Cloud className="h-4 w-4 text-emerald-600" />
-                        <span className="text-xs font-bold text-emerald-600 hidden sm:inline">Aman di Cloud</span>
+                        <span className="text-xs font-bold text-emerald-600 hidden sm:inline">Synced</span>
                     </div>
                 )}
              </div>
