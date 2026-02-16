@@ -32,6 +32,11 @@ import {
 } from 'lucide-react';
 import { Role } from '../types';
 
+// ============================================================================
+// 👇👇👇 GANTI LINK LOGO SEKOLAH DI BARIS BAWAH INI 👇👇👇
+const SCHOOL_LOGO_URL = "https://i.ibb.co.com/HkW9d0t/512.png"; 
+// ============================================================================
+
 interface LayoutProps {
   children: React.ReactNode;
   role: Role; 
@@ -46,6 +51,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [syncState, setSyncState] = useState<SyncState>('IDLE');
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  
+  // Logo Error State (Fallback if image fails)
+  const [logoError, setLogoError] = useState(false);
   
   const currentUser = DataService.getCurrentUser();
 
@@ -260,8 +268,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-30 w-64 transform bg-white shadow-xl transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-16 items-center px-6 border-b border-slate-100 gap-2 font-bold text-indigo-900 text-lg">
-           <School className="h-6 w-6 text-indigo-600" /> SMKN Jayakerta
+        <div className="flex h-16 items-center px-6 border-b border-slate-100 gap-3 font-bold text-indigo-900 text-lg">
+           {!logoError ? (
+               <img 
+                 src={SCHOOL_LOGO_URL} 
+                 alt="Logo" 
+                 className="h-8 w-8 object-contain" 
+                 onError={() => setLogoError(true)}
+               />
+           ) : (
+               <School className="h-8 w-8 text-indigo-600" />
+           )}
+           <span>SMKN Jayakerta</span>
         </div>
 
         <div className="px-6 py-4 flex items-center gap-3 border-b border-slate-50">
