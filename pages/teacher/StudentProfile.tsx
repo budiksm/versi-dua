@@ -130,21 +130,27 @@ const StudentProfile: React.FC = () => {
 
   const loadStudentData = () => {
     if (!studentId) return;
-    setStudent(DataService.getStudents().find((s: any) => s.id === studentId) || null);
-    setRecords(DataService.getRecords().filter((r: any) => r.studentId === studentId));
-    setCategories(DataService.getCategories());
-    setIncidents(DataService.getIncidentTypes());
-    setRules(DataService.getRules());
-    setClasses(DataService.getClasses());
     
-    const allSessions = DataService.getCounselingSessions();
+    const allStudents = DataService.getStudents() || [];
+    setStudent(allStudents.find((s: any) => s.id === studentId) || null);
+    
+    // SAFEGUARD: Ensure we work with arrays even if DataService returns null (fixed in service, but extra safety here)
+    const allRecords = DataService.getRecords() || [];
+    setRecords(allRecords.filter((r: any) => r && r.studentId === studentId));
+    
+    setCategories(DataService.getCategories() || []);
+    setIncidents(DataService.getIncidentTypes() || []);
+    setRules(DataService.getRules() || []);
+    setClasses(DataService.getClasses() || []);
+    
+    const allSessions = DataService.getCounselingSessions() || [];
     setCounselingSessions(allSessions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => {
         const dateA = a.date ? new Date(a.date).getTime() : 0;
         const dateB = b.date ? new Date(b.date).getTime() : 0;
         return dateB - dateA;
     }));
 
-    const allSanctions = DataService.getSanctions();
+    const allSanctions = DataService.getSanctions() || [];
     setSanctions(allSanctions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => {
         const dateA = a.assignedDate ? new Date(a.assignedDate).getTime() : 0;
         const dateB = b.assignedDate ? new Date(b.assignedDate).getTime() : 0;

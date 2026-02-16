@@ -54,9 +54,7 @@ const notifyDataChange = () => {
 const INITIAL_TEACHERS: Teacher[] = [
   { id: 'admin1', name: 'Administrator', nip: '000000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false },
   { id: 't1', name: 'Budi Raharjo, S.Pd', nip: '19800101', roles: [Role.TEACHER, Role.WALIKELAS], username: 'budi', password: '123', mustChangePassword: false },
-  // MOCK BENDAHARA (SISWA)
   { id: 's_bendahara', name: 'Siti Aminah (Bendahara)', nip: '1001', roles: [Role.STUDENT], username: 'siti', password: '123', mustChangePassword: false, assignedClassId: 'c1' },
-  // MOCK OSIS (PETUGAS GERBANG)
   { id: 'osis_gate', name: 'Petugas OSIS (Gerbang)', nip: 'OSIS001', roles: [Role.OSIS], username: 'osis', password: '123', mustChangePassword: false },
 ];
 const INITIAL_CLASSES: ClassGroup[] = [{ id: 'c1', name: 'X IPA 1', level: 10, homeroomTeacherId: 't1' }];
@@ -69,14 +67,12 @@ const INITIAL_CATEGORIES: MasterCategory[] = [
 const INITIAL_INCIDENTS: MasterIncidentType[] = [
   { id: 'inc1', name: 'Terlambat', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 3, severity: 'LOW', isActive: true },
   { id: 'inc2', name: 'Terlambat Berulang (>3 kali)', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 8, severity: 'MEDIUM', isActive: true },
-  // JENIS PELANGGARAN KHUSUS INPUT SISWA/PERWAKILAN KELAS
   { id: 'inc_alpha', name: 'Tidak masuk tanpa keterangan', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 10, severity: 'MEDIUM', isActive: true },
   { id: 'inc_bolos_jam', name: 'Membolos satu jam pelajaran', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
   { id: 'inc_bolos_hari', name: 'Membolos seharian', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 20, severity: 'HIGH', isActive: true },
   { id: 'inc_skip_event', name: 'Tidak mengikuti kegiatan wajib sekolah', categoryId: 'cat1', type: IncidentTypeCategory.VIOLATION, points: 5, severity: 'LOW', isActive: true },
 ];
 
-// REVISI ATURAN POIN (HIRARKI UPDATE SP3 & DO)
 const INITIAL_RULES: CoachingRule[] = [
   { id: 'r1', minPoints: 0, maxPoints: 19, statusLabel: 'Normal', color: 'bg-green-100 text-green-800' },
   { id: 'r2', minPoints: 20, maxPoints: 39, statusLabel: 'Pembinaan Wali Kelas', color: 'bg-yellow-100 text-yellow-800' },
@@ -87,14 +83,36 @@ const INITIAL_RULES: CoachingRule[] = [
   { id: 'r7', minPoints: 201, maxPoints: 9999, statusLabel: 'DO (Dikembalikan ke Ortu)', color: 'bg-slate-900 text-white border-2 border-red-500' },
 ];
 
-// Helper for LocalStorage
+// --- CRITICAL FIX: ROBUST LOAD HELPER ---
 const loadFromStorage = <T,>(key: string, initial: T): T => {
-  const stored = localStorage.getItem(key);
-  return stored ? JSON.parse(stored) : initial;
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return initial;
+    
+    const parsed = JSON.parse(stored);
+    
+    // Safety check: if parsed is null or undefined, return initial
+    if (parsed === null || parsed === undefined) return initial;
+    
+    // Safety check: if we expect an array but got something else, return initial
+    if (Array.isArray(initial) && !Array.isArray(parsed)) {
+        console.warn(`Data corruption detected for ${key}. Expected array, got ${typeof parsed}. Resetting to empty.`);
+        return initial;
+    }
+    
+    return parsed;
+  } catch (e) {
+    console.error(`Failed to load ${key} from storage:`, e);
+    return initial;
+  }
 };
 
 const saveToStorage = (key: string, data: any) => {
-  localStorage.setItem(key, JSON.stringify(data));
+  try {
+      localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+      console.error(`Failed to save ${key} to storage`, e);
+  }
 };
 
 // Helper for Firestore Sync
@@ -205,7 +223,7 @@ export const DataService = {
     return true; 
   },
 
-  // --- GETTERS ---
+  // --- GETTERS (Now Safely Using Robust Load) ---
   getClasses: () => loadFromStorage<ClassGroup[]>('classes', INITIAL_CLASSES),
   getStudents: () => loadFromStorage<Student[]>('students', INITIAL_STUDENTS),
   getCategories: () => loadFromStorage<MasterCategory[]>('categories', INITIAL_CATEGORIES),
@@ -218,16 +236,17 @@ export const DataService = {
   getActivityLogs: () => loadFromStorage<ActivityLog[]>('activity_logs', []),
 
   getTeachers: (): Teacher[] => {
-    // FIX: Removed dangerous side-effect saveToStorage inside getter which caused account resets.
-    // Also changed fallback to empty array if storage is empty but initialized, to prevent overwriting cloud data.
+    // FIX: Removed side-effect saveToStorage inside getter to prevent resets
     const stored = localStorage.getItem('teachers');
     let teachers: Teacher[] = [];
     
     if (stored) {
-        teachers = JSON.parse(stored);
+        try {
+            teachers = JSON.parse(stored);
+            if (!Array.isArray(teachers)) teachers = [];
+        } catch(e) { teachers = []; }
     } else {
-        // Only use INITIAL_TEACHERS if we haven't initialized from cloud yet (Offline First Run)
-        // If we have initialized and it's empty, it means all teachers were deleted (valid state).
+        // Only fallback to INITIAL if offline/fresh start
         teachers = isInitializedFromCloud ? [] : INITIAL_TEACHERS;
     }
 
@@ -248,7 +267,6 @@ export const DataService = {
   saveRecords: (data: IncidentRecord[]) => { saveToStorage('records', data); syncToCloud('records', data); },
   saveTeachers: (data: Teacher[]) => { saveToStorage('teachers', data); syncToCloud('teachers', data); },
   
-  // UPDATE: Improved Logic for Session Side-Effects
   saveCounselingSessions: (data: CounselingSession[]) => { 
       saveToStorage('counseling', data); 
       syncToCloud('counseling', data); 
@@ -263,7 +281,6 @@ export const DataService = {
               
               const updatedRecords = allRecords.map(r => {
                   if (relatedIds.includes(r.id)) {
-                      // LOGIC FIX:
                       // 1. If BK handles it -> It becomes COMPLETED
                       if (latestSession.sessionType === 'BK') {
                           if (r.bkStatus !== 'COMPLETED') {
@@ -391,7 +408,7 @@ export const DataService = {
     DataService.saveCashflows(updatedFlows);
   },
 
-  // --- AUTH LOGIC (Aplikasi) ---
+  // --- AUTH LOGIC ---
   login: (username: string, password: string): Teacher | null => {
     const teachers = DataService.getTeachers(); 
     let user = teachers.find(t => t.username === username && t.password === password);
@@ -400,16 +417,11 @@ export const DataService = {
         const defaultAdmin = INITIAL_TEACHERS.find(t => t.roles.includes(Role.ADMIN));
         if (defaultAdmin && username === defaultAdmin.username && password === defaultAdmin.password) {
             const existingAdminIndex = teachers.findIndex(t => t.roles.includes(Role.ADMIN));
-            if (existingAdminIndex === -1) {
-                // We only add the default admin to memory/storage if NO teachers exist at all
-                // This prevents re-creating admin if it was deleted intentionally
-                if (teachers.length === 0) {
-                    const newTeachers = [...teachers, defaultAdmin];
-                    saveToStorage('teachers', newTeachers);
-                    user = defaultAdmin;
-                }
+            if (existingAdminIndex === -1 && teachers.length === 0) {
+                const newTeachers = [...teachers, defaultAdmin];
+                saveToStorage('teachers', newTeachers);
+                user = defaultAdmin;
             } else {
-                // If found in initial but not in loaded teachers (shouldn't happen with getTeachers logic)
                 user = defaultAdmin;
             }
         }
@@ -431,8 +443,10 @@ export const DataService = {
   },
 
   getCurrentUser: (): Teacher | null => {
-    const stored = localStorage.getItem('currentUser');
-    return stored ? JSON.parse(stored) : null;
+    try {
+        const stored = localStorage.getItem('currentUser');
+        return stored ? JSON.parse(stored) : null;
+    } catch(e) { return null; }
   },
 
   updatePassword: (userId: string, newPass: string) => {
@@ -452,7 +466,10 @@ export const DataService = {
   },
 
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
-    const studentRecords = records.filter(r => r.studentId === studentId);
+    // CRITICAL FIX: Ensure inputs are arrays
+    const validRecords = Array.isArray(records) ? records : [];
+    
+    const studentRecords = validRecords.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
     let achievementPoints = 0;
     let violationCount = 0;
@@ -460,10 +477,11 @@ export const DataService = {
     let redemptionCount = 0;
 
     const now = new Date().getTime();
-    const AUTO_ACCEPT_MS = 2 * 24 * 60 * 60 * 1000; // 48 Hours
+    const AUTO_ACCEPT_MS = 2 * 24 * 60 * 60 * 1000;
 
     studentRecords.forEach(record => {
-      const recordTime = new Date(record.date).getTime();
+      // Safe Date parsing
+      const recordTime = record.date ? new Date(record.date).getTime() : 0;
       const isAutoAccepted = (record.status === 'PENDING') && ((now - recordTime) > AUTO_ACCEPT_MS);
       
       const effectiveStatus = record.status || 'APPROVED';
@@ -471,12 +489,12 @@ export const DataService = {
 
       if (isEffective) {
         if (record.typeSnapshot === IncidentTypeCategory.VIOLATION) {
-          grossViolationPoints += record.pointSnapshot;
+          grossViolationPoints += (record.pointSnapshot || 0);
           violationCount++;
         } else if (record.typeSnapshot === IncidentTypeCategory.REDEMPTION) {
           redemptionCount++;
         } else if (record.typeSnapshot === IncidentTypeCategory.ACHIEVEMENT) {
-          achievementPoints += record.pointSnapshot;
+          achievementPoints += (record.pointSnapshot || 0);
           achievementCount++;
         }
       }
@@ -487,7 +505,9 @@ export const DataService = {
   },
 
   getCoachingStatus: (violationScore: number, rules: CoachingRule[]) => {
-    const rule = rules.find(r => violationScore >= r.minPoints && violationScore <= r.maxPoints);
+    // CRITICAL FIX: Ensure rules is an array
+    const validRules = Array.isArray(rules) ? rules : [];
+    const rule = validRules.find(r => violationScore >= r.minPoints && violationScore <= r.maxPoints);
     return rule || { id: 'unknown', minPoints: 0, maxPoints: 0, statusLabel: 'Unknown', color: 'bg-gray-100 text-gray-800' };
   },
 
@@ -525,7 +545,7 @@ export const DataService = {
             assignedBy: 'SYSTEM (Otomatis)',
             assignedDate: new Date().toISOString(),
             notes: `Sanksi otomatis sistem karena poin mencapai skor ${score}.`,
-            redemptionStatus: RedemptionStatus.NONE, // Belum ada tugas penebusan
+            redemptionStatus: RedemptionStatus.NONE,
             isRedeemed: false
         };
         
@@ -540,20 +560,17 @@ export const DataService = {
     const allRecords = DataService.getRecords();
     const updatedRecords = allRecords.map(r => {
       if (r.id === recordId) {
-        // UPDATE LOGIC: Check for mandatory BK Counseling (>= 40 Points)
         let bkStatus: BkCounselingStatus = r.bkStatus || 'NONE';
-        
         if (status === 'APPROVED') {
             if (r.pointSnapshot >= 40 && r.typeSnapshot === IncidentTypeCategory.VIOLATION) {
                 bkStatus = 'REQUIRED';
             }
         }
-
         return { 
           ...r, 
           status: status,
           rejectionReason: status === 'REJECTED' ? reason : undefined,
-          bkStatus: bkStatus // Set BK Status
+          bkStatus: bkStatus 
         };
       }
       return r;
