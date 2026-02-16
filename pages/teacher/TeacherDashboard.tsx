@@ -530,11 +530,9 @@ const TeacherDashboard: React.FC = () => {
       )}
       
       {/* --- HOMEROOM / TEACHER DASHBOARD (INTERACTIVE) --- */}
-      {/* Logic: If user is Homeroom, show their class stats card. If not, don't show blank area. */}
       {myClasses.length > 0 && (
         <div className="space-y-6">
           {myClasses.map(cls => {
-            // --- CALCULATION LOGIC FOR CLASS STATS ---
             const classStudents = students.filter(s => s.classId === cls.id);
             const studentIds = classStudents.map(s => s.id);
             const maleCount = classStudents.filter(s => s.gender === 'L').length;
@@ -542,13 +540,20 @@ const TeacherDashboard: React.FC = () => {
 
             let totalClassPoints = 0;
             
-            // Arrays for Modal
+            // --- UPDATED BUCKET LOGIC ---
+            // 20-39: Coaching Wali Kelas
+            // 40-79: Konseling BK
+            // 80-119: SP 1
+            // 120-159: SP 2
+            // >= 160: SP 3
+            
             const listStudentsInCoaching: any[] = [];
             const listCleanStudents: any[] = [];
-            const listApproachingBK: any[] = [];
-            const listCandidateSP1: any[] = [];
-            const listCandidateSP2: any[] = [];
-            const listCandidateSP3: any[] = [];
+            
+            const listRangeBK: any[] = [];  // 40-79
+            const listRangeSP1: any[] = []; // 80-119
+            const listRangeSP2: any[] = []; // 120-159
+            const listRangeSP3: any[] = []; // >= 160
 
             let highestScore = -1;
             let highestStudentId = '';
@@ -564,10 +569,11 @@ const TeacherDashboard: React.FC = () => {
                if (score === 0) listCleanStudents.push(studentData);
                if (score >= 20) listStudentsInCoaching.push(studentData);
                
-               if (score >= 30 && score < 40) listApproachingBK.push(studentData);
-               if (score >= 70 && score < 80) listCandidateSP1.push(studentData);
-               if (score >= 110 && score < 120) listCandidateSP2.push(studentData); 
-               if (score >= 150 && score < 160) listCandidateSP3.push(studentData); 
+               // Bucket Distribution
+               if (score >= 40 && score < 80) listRangeBK.push(studentData);
+               if (score >= 80 && score < 120) listRangeSP1.push(studentData);
+               if (score >= 120 && score < 160) listRangeSP2.push(studentData);
+               if (score >= 160) listRangeSP3.push(studentData);
 
                if (score > highestScore) {
                   highestScore = score;
@@ -675,40 +681,40 @@ const TeacherDashboard: React.FC = () => {
                           <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><AlertTriangle className="h-4 w-4" /> Status Perhatian</h3>
                           
                           <div className="space-y-2">
-                             {/* Approaching BK */}
+                             {/* Range BK */}
                              <div 
-                                onClick={() => handleOpenClassDetail('Mendekati Ambang BK (30-39 Poin)', 'STUDENTS', listApproachingBK)}
-                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listApproachingBK.length > 0 ? 'bg-orange-500/20 border-orange-400/30 hover:bg-orange-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                                onClick={() => handleOpenClassDetail('Perlu Konseling BK (40-79 Poin)', 'STUDENTS', listRangeBK)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeBK.length > 0 ? 'bg-orange-500/20 border-orange-400/30 hover:bg-orange-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                              >
-                                <div><p className={`font-bold text-xs ${listApproachingBK.length > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{listApproachingBK.length} Siswa</p><p className="text-[10px] text-blue-200">Mendekati BK (30-39)</p></div>
-                                {listApproachingBK.length > 0 && <AlertCircle className="h-4 w-4 text-orange-300" />}
+                                <div><p className={`font-bold text-xs ${listRangeBK.length > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{listRangeBK.length} Siswa</p><p className="text-[10px] text-blue-200">Perlu BK (40-79)</p></div>
+                                {listRangeBK.length > 0 && <AlertCircle className="h-4 w-4 text-orange-300" />}
                              </div>
 
-                             {/* Candidate SP 1 */}
+                             {/* Range SP 1 */}
                              <div 
-                                onClick={() => handleOpenClassDetail('Kandidat SP 1 (70-79 Poin)', 'STUDENTS', listCandidateSP1)}
-                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listCandidateSP1.length > 0 ? 'bg-red-500/20 border-red-400/30 hover:bg-red-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                                onClick={() => handleOpenClassDetail('Kategori SP 1 (80-119 Poin)', 'STUDENTS', listRangeSP1)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeSP1.length > 0 ? 'bg-red-500/20 border-red-400/30 hover:bg-red-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                              >
-                                <div><p className={`font-bold text-xs ${listCandidateSP1.length > 0 ? 'text-red-200' : 'text-slate-300'}`}>{listCandidateSP1.length} Siswa</p><p className="text-[10px] text-blue-200">Kandidat SP 1 (70-79)</p></div>
-                                {listCandidateSP1.length > 0 && <ShieldAlert className="h-4 w-4 text-red-300" />}
+                                <div><p className={`font-bold text-xs ${listRangeSP1.length > 0 ? 'text-red-200' : 'text-slate-300'}`}>{listRangeSP1.length} Siswa</p><p className="text-[10px] text-blue-200">Kategori SP 1 (80-119)</p></div>
+                                {listRangeSP1.length > 0 && <ShieldAlert className="h-4 w-4 text-red-300" />}
                              </div>
 
-                             {/* Candidate SP 2 */}
+                             {/* Range SP 2 */}
                              <div 
-                                onClick={() => handleOpenClassDetail('Kandidat SP 2 (110-119 Poin)', 'STUDENTS', listCandidateSP2)}
-                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listCandidateSP2.length > 0 ? 'bg-red-600/30 border-red-500/40 hover:bg-red-600/40' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                                onClick={() => handleOpenClassDetail('Kategori SP 2 (120-159 Poin)', 'STUDENTS', listRangeSP2)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeSP2.length > 0 ? 'bg-red-600/30 border-red-500/40 hover:bg-red-600/40' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                              >
-                                <div><p className={`font-bold text-xs ${listCandidateSP2.length > 0 ? 'text-red-100' : 'text-slate-300'}`}>{listCandidateSP2.length} Siswa</p><p className="text-[10px] text-blue-200">Kandidat SP 2 (110-119)</p></div>
-                                {listCandidateSP2.length > 0 && <Skull className="h-4 w-4 text-red-200" />}
+                                <div><p className={`font-bold text-xs ${listRangeSP2.length > 0 ? 'text-red-100' : 'text-slate-300'}`}>{listRangeSP2.length} Siswa</p><p className="text-[10px] text-blue-200">Kategori SP 2 (120-159)</p></div>
+                                {listRangeSP2.length > 0 && <Skull className="h-4 w-4 text-red-200" />}
                              </div>
 
-                             {/* Candidate SP 3 */}
+                             {/* Range SP 3 */}
                              <div 
-                                onClick={() => handleOpenClassDetail('Kandidat SP 3 (150-159 Poin)', 'STUDENTS', listCandidateSP3)}
-                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listCandidateSP3.length > 0 ? 'bg-rose-900/40 border-rose-700/50 hover:bg-rose-900/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                                onClick={() => handleOpenClassDetail('Kategori SP 3 (≥ 160 Poin)', 'STUDENTS', listRangeSP3)}
+                                className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeSP3.length > 0 ? 'bg-rose-900/40 border-rose-700/50 hover:bg-rose-900/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                              >
-                                <div><p className={`font-bold text-xs ${listCandidateSP3.length > 0 ? 'text-rose-100' : 'text-slate-300'}`}>{listCandidateSP3.length} Siswa</p><p className="text-[10px] text-blue-200">Kandidat SP 3 (150-159)</p></div>
-                                {listCandidateSP3.length > 0 && <Ban className="h-4 w-4 text-rose-200" />}
+                                <div><p className={`font-bold text-xs ${listRangeSP3.length > 0 ? 'text-rose-100' : 'text-slate-300'}`}>{listRangeSP3.length} Siswa</p><p className="text-[10px] text-blue-200">Kategori SP 3 (≥ 160)</p></div>
+                                {listRangeSP3.length > 0 && <Ban className="h-4 w-4 text-rose-200" />}
                              </div>
                           </div>
                        </div>
