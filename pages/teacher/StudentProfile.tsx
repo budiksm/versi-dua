@@ -44,7 +44,8 @@ import {
   Check,
   Play,
   Shield,
-  LifeBuoy
+  LifeBuoy,
+  MessageCircle
 } from 'lucide-react';
 
 const StudentProfile: React.FC = () => {
@@ -141,8 +142,6 @@ const StudentProfile: React.FC = () => {
   const isKesiswaan = roles.includes(Role.KESISWAAN);
 
   // BK ACCESS LOGIC
-  // BK can always access if role is BK, but the form context might change.
-  // We remove the strict restriction for viewing the tab, but logic inside handles what they see.
   const canAccessBK = isBK;
   
   // LOGIKA BARU: VISIBILITAS PANEL KESISWAAN
@@ -273,8 +272,6 @@ const StudentProfile: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Determine final related records based on mode
-    // If Preventive, strictly no related records to avoid changing their status
     const finalRelatedRecords = (type === 'BK' && bkMode === 'CASE') 
         ? selectedCounselingRecords 
         : [];
@@ -431,6 +428,16 @@ const StudentProfile: React.FC = () => {
 
   // Filter for BK Form: ONLY Show ACTIVE (REQUIRED) Violations
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');
+
+  // Logic to find active referrals from Homeroom
+  // Rujukan dianggap aktif jika tipe 'TO_BK' DAN belum ada sesi BK yang lebih baru
+  const activeHomeroomReferrals = counselingSessions.filter(s => {
+      if (s.sessionType !== 'HOMEROOM' || s.recommendation !== 'TO_BK') return false;
+      const hasNewerBK = counselingSessions.some(bk => 
+          bk.sessionType === 'BK' && new Date(bk.date) > new Date(s.date)
+      );
+      return !hasNewerBK;
+  });
 
   return (
     <div className="space-y-8 pb-12">
@@ -917,13 +924,39 @@ const StudentProfile: React.FC = () => {
                             </div>
                           </>
                       ) : (
-                          <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100 flex items-start gap-2">
-                                <LifeBuoy className="h-5 w-5 shrink-0" />
-                                <div>
-                                    <p className="font-bold">Mode Konseling Preventif</p>
-                                    <p className="text-xs mt-1">Gunakan mode ini untuk bimbingan karir, masalah pribadi, atau rujukan wali kelas yang <b>bukan</b> pelanggaran disiplin. Tidak mengubah status poin.</p>
+                          <>
+                            {/* --- REFERRAL DISPLAY (NEW) --- */}
+                            {activeHomeroomReferrals.length > 0 ? (
+                                <div className="mb-4 space-y-2 animate-fade-in">
+                                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                        <p className="text-sm font-bold text-orange-800 flex items-center gap-2 mb-2">
+                                           <MessageCircle className="h-4 w-4" /> Rujukan Wali Kelas (Perlu Penanganan):
+                                        </p>
+                                        <div className="space-y-2">
+                                            {activeHomeroomReferrals.map(ref => (
+                                                <div key={ref.id} className="bg-white border border-orange-100 p-2.5 rounded text-sm text-slate-700 shadow-sm">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <span className="font-bold text-xs text-orange-600">{new Date(ref.date).toLocaleDateString()} - Oleh {ref.counselorName}</span>
+                                                    </div>
+                                                    <p className="italic text-xs">"{ref.notes}"</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-[10px] text-orange-700 mt-2 font-medium flex items-center gap-1">
+                                            <CheckCircle2 className="h-3 w-3" /> Menyimpan sesi ini akan otomatis menandai rujukan sebagai "Ditangani".
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100 flex items-start gap-2">
+                                    <LifeBuoy className="h-5 w-5 shrink-0" />
+                                    <div>
+                                        <p className="font-bold">Mode Konseling Preventif</p>
+                                        <p className="text-xs mt-1">Gunakan mode ini untuk bimbingan karir, masalah pribadi, atau rujukan wali kelas yang <b>bukan</b> pelanggaran disiplin. Tidak mengubah status poin.</p>
+                                    </div>
+                                </div>
+                            )}
+                          </>
                       )}
                       
                       <div>
@@ -984,97 +1017,6 @@ const StudentProfile: React.FC = () => {
                         </div>
                       )
                     })
-                  }
-                </div>
-             </div>
-           </>
-        )}
-
-        {activeTab === 'BK_COUNSELING' && !canAccessBK && isBK && (
-            <div className="lg:col-span-3">
-               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center text-center text-slate-500">
-                  <Lock className="h-16 w-16 mb-4 text-slate-300" />
-                  <h3 className="text-lg font-bold text-slate-700">Akses Pembinaan Dibatasi</h3>
-                  <p className="max-w-md mt-2 mb-4">Sesuai hirarki, BK hanya dapat menangani siswa jika: Poin ≥ 40, ada kasus berat (≥ 40 poin), atau ada rujukan.</p>
-               </div>
-            </div>
-        )}
-        
-        {/* TAB SANCTIONS */}
-        {activeTab === 'SANCTIONS' && shouldShowSanctionPanel && (
-           <>
-             <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   <div className={`p-6 border-b border-slate-100 flex justify-between items-center ${editingSanctionId ? 'bg-orange-50' : 'bg-red-50'}`}>
-                     <h2 className={`font-bold flex items-center gap-2 ${editingSanctionId ? 'text-orange-800' : 'text-slate-800'}`}>
-                        {editingSanctionId ? <PenSquare className="h-5 w-5" /> : <Gavel className="h-5 w-5 text-red-600" />}
-                        {editingSanctionId ? 'Edit Sanksi / Beri Tugas' : 'Tetapkan Sanksi Baru'}
-                     </h2>
-                     {editingSanctionId && <button onClick={cancelEditSanction} className="text-xs text-orange-700 hover:underline font-bold">Batal Edit</button>}
-                   </div>
-                   <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Tingkat Sanksi</label>
-                            <select value={sanctionLevel} onChange={(e) => setSanctionLevel(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900">
-                               <option value="SP1">SP 1</option><option value="SP2">SP 2</option><option value="SP3">SP 3</option><option value="SKORSING">Skorsing</option><option value="DROP_OUT">Drop Out</option>
-                            </select>
-                         </div>
-                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Tugas Penebusan</label>
-                            <input type="text" value={sanctionRedemptionTask} onChange={(e) => setSanctionRedemptionTask(e.target.value)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900" placeholder="Contoh: Membersihkan Masjid..." />
-                         </div>
-                      </div>
-                      <div>
-                         <label className="block text-sm font-medium text-slate-700 mb-2">Alasan</label>
-                         <textarea required value={sanctionNotes} onChange={(e) => setSanctionNotes(e.target.value)} rows={4} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900" placeholder="Dasar penetapan..." />
-                      </div>
-                      <button type="submit" disabled={isSubmitting} className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-semibold py-4 rounded-xl shadow-md">
-                          {editingSanctionId ? <Save className="h-5 w-5" /> : <Gavel className="h-5 w-5" />} {isSubmitting ? 'Menyimpan...' : 'Simpan'}
-                      </button>
-                   </form>
-                </div>
-             </div>
-             <div className="space-y-4">
-                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><Gavel className="h-5 w-5" /> Riwayat Sanksi</div>
-                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-                  {sanctions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada sanksi.</div> : 
-                    sanctions.map(item => (
-                      <div key={item.id} className={`bg-white p-5 rounded-xl border shadow-sm relative overflow-hidden transition-all ${editingSanctionId === item.id ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`}>
-                         <div className="flex justify-between items-start mb-2">
-                           <div className="text-xs font-semibold text-slate-500">{new Date(item.assignedDate).toLocaleDateString()}</div>
-                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
-                               item.redemptionStatus === RedemptionStatus.COMPLETED ? 'bg-green-100 text-green-700 border-green-200' : 
-                               item.redemptionStatus === RedemptionStatus.IN_PROGRESS ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                               'bg-red-100 text-red-700 border-red-200'
-                           }`}>
-                               {item.redemptionStatus === RedemptionStatus.COMPLETED ? 'Selesai' : item.redemptionStatus === RedemptionStatus.IN_PROGRESS ? 'Sedang Jalan' : 'Belum Dikerjakan'}
-                           </span>
-                         </div>
-                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-lg font-bold text-red-600">{item.level}</span>
-                            {item.redemptionStatus === RedemptionStatus.NONE && <button onClick={() => startEditSanction(item)} className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg font-bold"><PenSquare className="h-3 w-3" /> Edit</button>}
-                         </div>
-                         <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">"{item.notes}"</p>
-                         {item.redemptionTask && <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3"><b>Tugas:</b> {item.redemptionTask}</div>}
-                         
-                         {/* Action Buttons based on Status */}
-                         <div className="flex gap-2 justify-end mt-2">
-                            {item.redemptionStatus === RedemptionStatus.ASSIGNED && item.redemptionTask && (
-                               <button onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.IN_PROGRESS)} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm flex items-center gap-1">
-                                  <Play className="h-3 w-3" /> Mulai Penebusan
-                               </button>
-                            )}
-                            {item.redemptionStatus === RedemptionStatus.IN_PROGRESS && (
-                               <button onClick={() => updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED)} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 shadow-sm flex items-center gap-1">
-                                  <Check className="h-3 w-3" /> Selesai
-                               </button>
-                            )}
-                         </div>
-
-                         <div className="mt-2 text-[10px] text-slate-400 text-right">Oleh: {item.assignedBy}</div>
-                      </div>
-                    ))
                   }
                 </div>
              </div>
