@@ -406,7 +406,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {isOnline && syncState === 'SYNCING' && (
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-100 border border-blue-200" title="Sedang mengirim data ke Cloud...">
                         <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
-                        <span className="text-xs font-bold text-blue-600 hidden sm:inline">Menyimpan...</span>
+                        <span className="text-xs font-bold text-blue-600 hidden sm:inline">Saving…</span>
                     </div>
                 )}
 
