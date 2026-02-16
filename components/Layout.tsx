@@ -28,7 +28,11 @@ import {
   Wallet,
   Clock,
   ShieldAlert,
-  Search
+  Search,
+  Wifi,
+  WifiOff,
+  CloudCheck,
+  CloudOff
 } from 'lucide-react';
 import { Role } from '../types';
 
@@ -59,8 +63,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   
   // Sync Status State
   const [syncState, setSyncState] = useState<SyncState>('IDLE');
-  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [lastSync, setLastSync] = useState<Date | null>(new Date());
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   // Logo Error State (Fallback if image fails)
   const [logoError, setLogoError] = useState(false);
@@ -76,33 +81,42 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    // HEARTBEAT UPDATE (Online Status)
-    if (currentUser) {
-       // Update immediately on mount
-       DataService.updateHeartbeat(currentUser.id);
-       
-       // Update every minute while page is open
-       const interval = setInterval(() => {
-          DataService.updateHeartbeat(currentUser.id);
-       }, 60000);
-       
-       return () => clearInterval(interval);
-    }
-  }, [currentUser?.id]);
+    // Network Listeners
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
-  useEffect(() => {
     // Subscribe to DataService Sync events
     const unsubscribe = DataService.subscribeToSync((state, time, error) => {
       setSyncState(state);
       if (time) setLastSync(time);
       if (error) setSyncError(error);
     });
+
+    // Heartbeat
+    if (currentUser) {
+       DataService.updateHeartbeat(currentUser.id);
+       const interval = setInterval(() => {
+          DataService.updateHeartbeat(currentUser.id);
+       }, 60000);
+       return () => {
+         clearInterval(interval);
+         unsubscribe();
+         window.removeEventListener('online', handleOnline);
+         window.removeEventListener('offline', handleOffline);
+       };
+    }
     
     if (currentUser?.mustChangePassword && !successMessage) {
       setShowPasswordModal(true);
     }
 
-    return () => unsubscribe();
+    return () => {
+       unsubscribe();
+       window.removeEventListener('online', handleOnline);
+       window.removeEventListener('offline', handleOffline);
+    };
   }, [currentUser, successMessage]);
 
   const handleLogout = () => {
@@ -113,6 +127,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleResetConnection = async () => {
     if(confirm("Tindakan ini akan membersihkan cache database di browser untuk memperbaiki error koneksi. Data di server aman. Lanjutkan?")) {
         try {
+            // Clear IndexedDB Firebase
             const dbs = await window.indexedDB.databases();
             dbs.forEach(db => { 
                 if(db.name && db.name.includes('firebase')) {
@@ -187,58 +202,41 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         ];
     }
 
-    // 2. KESISWAAN (Layout Khusus dengan Separator)
+    // 2. KESISWAAN
     if (roles.includes(Role.KESISWAAN)) {
         const items: MenuItem[] = [
             { type: 'link', path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-            
             { type: 'separator' },
-            
             { type: 'link', path: '/teacher/kesiswaan/monitoring', label: 'Monitoring Siswa', icon: MonitorCheck },
             { type: 'link', path: '/teacher/kesiswaan/poe-monitoring', label: 'Monitoring Poe Ibu', icon: Wallet },
-            
             { type: 'separator' },
-            
             { type: 'link', path: '/teacher/kesiswaan/action', label: 'Pembinaan & SP', icon: Gavel },
             { type: 'link', path: '/teacher/kesiswaan/logs', label: 'Log Input Guru', icon: ClipboardList },
         ];
-
-        // Jika Kesiswaan juga Wali Kelas, tambahkan akses Kas Poe Ibu
         if (isWalikelas) {
             items.push({ type: 'separator' });
             items.push({ type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
         }
-
-        // Tambahkan akses Data Kelas standard untuk melihat profil detail
         items.push({ type: 'separator' });
         items.push({ type: 'link', path: '/teacher/classes', label: 'Data Kelas', icon: Users });
-
         return items;
     }
 
-    // 3. GURU BK (Layout Khusus dengan Sub-Header)
+    // 3. GURU BK
     if (roles.includes(Role.BK)) {
         const items: MenuItem[] = [
-            // Section 1: Monitoring
             { type: 'header', label: 'Monitoring' },
             { type: 'link', path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { type: 'link', path: '/teacher/bk/monitoring', label: 'Monitoring Siswa', icon: Search },
-            
-            // Section 2: Pembinaan
             { type: 'header', label: 'Pembinaan' },
             { type: 'link', path: '/teacher/bk/active', label: 'Pembinaan Aktif', icon: HeartHandshake },
         ];
-
-        // Section 3: Keuangan (Jika Wali Kelas)
         if (isWalikelas) {
             items.push({ type: 'header', label: 'Keuangan' });
             items.push({ type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
         }
-
-        // Tambahkan akses Data Kelas standard
         items.push({ type: 'separator' });
         items.push({ type: 'link', path: '/teacher/classes', label: 'Data Kelas', icon: Users });
-
         return items;
     }
 
@@ -263,11 +261,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { type: 'link', path: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { type: 'link', path: '/teacher/classes', label: 'Daftar Kelas', icon: Users },
     ];
-
     if (isWalikelas) {
         teacherItems.push({ type: 'link', path: '/teacher/poe-ibu', label: 'Kas Poe Ibu', icon: Wallet });
     }
-
     return teacherItems;
   };
 
@@ -344,21 +340,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         <nav className="p-4 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)]">
           {menuItems.map((item, index) => {
-            if (item.type === 'header') {
-                return (
-                    <div key={index} className="px-4 mt-6 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        {item.label}
-                    </div>
-                );
-            }
-            
-            if (item.type === 'separator') {
-                return <hr key={index} className="my-3 border-slate-200" />;
-            }
-
+            if (item.type === 'header') return <div key={index} className="px-4 mt-6 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">{item.label}</div>;
+            if (item.type === 'separator') return <hr key={index} className="my-3 border-slate-200" />;
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
-            
             return (
               <Link
                 key={index}
@@ -389,65 +374,73 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
              <button onClick={() => setIsSidebarOpen(true)} className="text-slate-500 lg:hidden">
                <Menu className="h-6 w-6" />
              </button>
-             {/* SYNC INDICATOR */}
-             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200" title="Status Sinkronisasi Data">
-                {syncState === 'SYNCING' && (
-                  <>
-                     <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
-                     <span className="text-xs font-medium text-blue-600">Menyimpan...</span>
-                  </>
+             
+             {/* --- DATABASE INDICATOR (TRAFFIC LIGHT) --- */}
+             <div className="flex items-center gap-3">
+                {/* 1. STATE: OFFLINE */}
+                {!isOnline && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 border border-red-200 animate-pulse" title="Koneksi Internet Terputus">
+                        <WifiOff className="h-4 w-4 text-red-600" />
+                        <span className="text-xs font-bold text-red-600 hidden sm:inline">Offline</span>
+                    </div>
                 )}
-                {syncState === 'SAVED' && (
-                  <>
-                     <Cloud className="h-4 w-4 text-emerald-600" />
-                     <span className="text-xs font-medium text-emerald-600">Tersimpan</span>
-                  </>
+
+                {/* 2. STATE: ERROR */}
+                {isOnline && syncState === 'ERROR' && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 border border-red-200" title="Gagal terhubung ke Database">
+                        <CloudOff className="h-4 w-4 text-red-600" />
+                        <span className="text-xs font-bold text-red-600 hidden sm:inline">Koneksi DB Error!</span>
+                    </div>
                 )}
-                {syncState === 'IDLE' && (
-                  <>
-                     <Cloud className="h-4 w-4 text-slate-400" />
-                     <span className="text-xs text-slate-400">Siap</span>
-                  </>
+
+                {/* 3. STATE: SYNCING */}
+                {isOnline && syncState === 'SYNCING' && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-100 border border-blue-200" title="Sedang mengirim data ke Cloud...">
+                        <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
+                        <span className="text-xs font-bold text-blue-600 hidden sm:inline">Menyimpan...</span>
+                    </div>
                 )}
-                {syncState === 'ERROR' && (
-                  <>
-                     <AlertOctagon className="h-4 w-4 text-red-500" />
-                     <span className="text-xs font-bold text-red-500">Gagal Simpan!</span>
-                  </>
+
+                {/* 4. STATE: AMAN (IDLE/SAVED) */}
+                {isOnline && (syncState === 'IDLE' || syncState === 'SAVED') && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200" title="Data tersimpan aman di Cloud">
+                        <CloudCheck className="h-4 w-4 text-emerald-600" />
+                        <span className="text-xs font-bold text-emerald-600 hidden sm:inline">Aman di Cloud</span>
+                    </div>
                 )}
              </div>
           </div>
           
           <div className="text-xs text-slate-400 hidden sm:block">
-            {lastSync ? `Sinkronisasi terakhir: ${lastSync.toLocaleTimeString()}` : ''}
+            {lastSync ? `Disinkronkan: ${lastSync.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}` : ''}
           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
-          {syncState === 'ERROR' && (
+          {(syncState === 'ERROR' || !isOnline) && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex flex-col md:flex-row items-start gap-4 animate-fade-in shadow-sm">
                <div className="flex items-start gap-3">
                    <AlertOctagon className="h-6 w-6 text-red-600 shrink-0 mt-1" />
                    <div>
-                      <h3 className="text-sm font-bold text-red-800">Gagal Sinkronisasi Cloud</h3>
-                      <p className="text-xs text-red-700 mt-1 mb-2 font-mono bg-red-100 p-1 rounded break-all">
-                         {syncError || "Unknown Error"}
-                      </p>
-                      <p className="text-xs text-red-600 leading-relaxed">
-                         Kemungkinan Cache Browser Anda menyimpan sesi lama yang tidak valid.
-                         <br/>
-                         Klik tombol di kanan untuk membersihkan cache dan menghubungkan ulang secara otomatis.
+                      <h3 className="text-sm font-bold text-red-800">Koneksi Database Bermasalah</h3>
+                      <p className="text-xs text-red-600 leading-relaxed mt-1">
+                         {!isOnline 
+                            ? "Internet Anda terputus. Data tidak akan tersimpan ke Cloud sampai Anda online kembali." 
+                            : `Terjadi kesalahan saat menghubungi server: ${syncError || "Koneksi timeout"}. Coba refresh halaman.`
+                         }
                       </p>
                    </div>
                </div>
                
-               <button 
-                 onClick={handleResetConnection}
-                 className="mt-2 md:mt-0 md:ml-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center gap-2 shrink-0 transition-transform active:scale-95"
-               >
-                 <RotateCcw className="h-4 w-4" />
-                 Perbaiki & Reset Koneksi
-               </button>
+               {isOnline && (
+                   <button 
+                     onClick={handleResetConnection}
+                     className="mt-2 md:mt-0 md:ml-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center gap-2 shrink-0"
+                   >
+                     <RotateCcw className="h-4 w-4" />
+                     Reset Koneksi
+                   </button>
+               )}
             </div>
           )}
           <div className="mx-auto max-w-5xl">{children}</div>
