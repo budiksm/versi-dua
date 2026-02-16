@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -728,27 +728,170 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
       
-      {/* Teacher Section */}
-      <div className="bg-indigo-600 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-        <div className="absolute right-0 top-0 opacity-10"><Star className="h-48 w-48 -mr-10 -mt-10" /></div>
-        <div className="relative z-10">
-          <h2 className="text-lg font-medium text-indigo-100 mb-4">Kelas Perwalian Anda</h2>
-          {myClasses.length > 0 ? (
-            <div className="flex flex-wrap gap-4">
-              {myClasses.map(cls => (
-                <div key={cls.id} className="bg-white/10 backdrop-blur-sm p-4 rounded-lg border border-white/20 min-w-[200px]">
-                  <h3 className="text-2xl font-bold">{cls.name}</h3>
-                  <div className="mt-2 space-y-3">
-                    <span className="text-sm text-indigo-100 flex items-center gap-1"><Users className="h-4 w-4" /> {students.filter(s => s.classId === cls.id).length} Siswa</span>
-                    <Link to={`/teacher/classes/${cls.id}`} className="inline-flex w-full justify-center items-center gap-1 text-sm font-semibold bg-white text-indigo-600 px-3 py-2 rounded hover:bg-indigo-50 transition-colors shadow-sm">Kelola Kelas <ArrowRight className="h-3 w-3" /></Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center gap-3 text-indigo-100"><UserX className="h-8 w-8 opacity-50" /><div><p className="font-semibold">Tidak ada kelas perwalian.</p></div></div>
-          )}
-        </div>
+      {/* Teacher Section - REDESIGNED */}
+      <div className="space-y-6">
+        {myClasses.length > 0 ? (
+          myClasses.map(cls => {
+            // --- CALCULATION LOGIC FOR CLASS STATS ---
+            const classStudents = students.filter(s => s.classId === cls.id);
+            const studentIds = classStudents.map(s => s.id);
+            const maleCount = classStudents.filter(s => s.gender === 'L').length;
+            const femaleCount = classStudents.filter(s => s.gender === 'P').length;
+
+            let totalClassPoints = 0;
+            let studentsInCoaching = 0; // Poin >= 20
+            let cleanStudents = 0; // Poin == 0
+            let highestScore = 0;
+            let highestStudentName = '-';
+            let approachingBK = 0; // 30-39
+            let candidateSP1 = 0; // 70-79
+
+            classStudents.forEach(s => {
+               const stats = DataService.calculateStudentPoints(s.id, records, incidents);
+               const score = stats.effectiveViolationScore;
+               totalClassPoints += score;
+
+               if (score === 0) cleanStudents++;
+               if (score >= 20) studentsInCoaching++; 
+               if (score >= 30 && score < 40) approachingBK++;
+               if (score >= 70 && score < 80) candidateSP1++;
+
+               if (score > highestScore) {
+                  highestScore = score;
+                  highestStudentName = s.name;
+               }
+            });
+
+            // Cases This Month
+            const currentMonth = new Date().getMonth();
+            const currentYear = new Date().getFullYear();
+            const casesThisMonth = records.filter(r => 
+                studentIds.includes(r.studentId) && 
+                r.typeSnapshot === IncidentTypeCategory.VIOLATION &&
+                new Date(r.date).getMonth() === currentMonth &&
+                new Date(r.date).getFullYear() === currentYear
+            ).length;
+
+            return (
+              <div key={cls.id} className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg overflow-hidden text-white relative">
+                 {/* Background Decoration */}
+                 <div className="absolute right-0 top-0 opacity-10 pointer-events-none">
+                    <Star className="h-64 w-64 -mr-16 -mt-16" />
+                 </div>
+
+                 <div className="relative z-10">
+                    {/* HEADER */}
+                    <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/10">
+                        <div className="flex items-center gap-3">
+                           <div className="p-2 bg-white/20 rounded-lg"><Users className="h-6 w-6 text-white" /></div>
+                           <div>
+                              <h2 className="text-xl font-bold">Kelas Perwalian: {cls.name}</h2>
+                              <p className="text-blue-200 text-xs">Total Siswa: {classStudents.length} Orang</p>
+                           </div>
+                        </div>
+                        <Link 
+                          to={`/teacher/classes/${cls.id}`} 
+                          className="px-4 py-2 bg-white text-indigo-700 font-bold rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-2 shadow-md text-sm"
+                        >
+                           Kelola Kelas <ArrowRight className="h-4 w-4" />
+                        </Link>
+                    </div>
+
+                    {/* CONTENT GRID */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/10">
+                       
+                       {/* Bagian 1: Statistik Kelas */}
+                       <div className="p-6 space-y-4">
+                          <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3">
+                             <Users className="h-4 w-4" /> Statistik Siswa
+                          </h3>
+                          <div className="grid grid-cols-2 gap-3">
+                             <div className="bg-white/10 rounded-lg p-3 text-center">
+                                <User className="h-5 w-5 mx-auto mb-1 opacity-80" />
+                                <p className="text-lg font-bold">{maleCount}</p>
+                                <p className="text-[10px] text-blue-200 uppercase">Laki-laki</p>
+                             </div>
+                             <div className="bg-white/10 rounded-lg p-3 text-center">
+                                <User className="h-5 w-5 mx-auto mb-1 opacity-80 text-pink-200" />
+                                <p className="text-lg font-bold">{femaleCount}</p>
+                                <p className="text-[10px] text-blue-200 uppercase">Perempuan</p>
+                             </div>
+                          </div>
+                          <div className="space-y-2 mt-2">
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-blue-200">Dalam Pembinaan</span>
+                                <span className="font-bold bg-white/20 px-2 rounded text-xs">{studentsInCoaching}</span>
+                             </div>
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-blue-200">Bebas Pelanggaran</span>
+                                <span className="font-bold bg-emerald-500/30 text-emerald-100 px-2 rounded text-xs">{cleanStudents}</span>
+                             </div>
+                          </div>
+                       </div>
+
+                       {/* Bagian 2: Ringkasan Disiplin */}
+                       <div className="p-6 space-y-4">
+                          <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3">
+                             <TrendingUp className="h-4 w-4" /> Ringkasan Disiplin
+                          </h3>
+                          <div className="flex items-center gap-3 bg-white/10 p-3 rounded-lg mb-3">
+                             <ShieldAlert className="h-8 w-8 text-yellow-300 opacity-80" />
+                             <div>
+                                <p className="text-2xl font-bold">{totalClassPoints}</p>
+                                <p className="text-xs text-blue-200 uppercase">Total Poin Kelas</p>
+                             </div>
+                          </div>
+                          <div className="space-y-2">
+                             <div className="text-sm">
+                                <p className="text-blue-200 text-xs mb-1">Pelanggar Tertinggi:</p>
+                                <div className="flex justify-between font-medium bg-white/5 p-2 rounded">
+                                   <span className="truncate max-w-[120px]">{highestStudentName}</span>
+                                   <span className="text-yellow-300">{highestScore} Poin</span>
+                                </div>
+                             </div>
+                             <div className="flex justify-between items-center text-sm pt-2">
+                                <span className="text-blue-200">Kasus Bulan Ini</span>
+                                <span className="font-bold">{casesThisMonth} Kejadian</span>
+                             </div>
+                          </div>
+                       </div>
+
+                       {/* Bagian 3: Status Kritis */}
+                       <div className="p-6 space-y-4 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-10">
+                             <AlertTriangle className="h-24 w-24 text-red-500" />
+                          </div>
+                          <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3">
+                             <AlertTriangle className="h-4 w-4" /> Status Perhatian
+                          </h3>
+                          
+                          <div className="space-y-3">
+                             <div className={`p-3 rounded-lg border flex items-center justify-between ${approachingBK > 0 ? 'bg-orange-500/20 border-orange-400/30' : 'bg-white/5 border-white/10'}`}>
+                                <div>
+                                   <p className={`font-bold ${approachingBK > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{approachingBK} Siswa</p>
+                                   <p className="text-[10px] text-blue-200">Mendekati BK (30-39 Poin)</p>
+                                </div>
+                                {approachingBK > 0 && <AlertCircle className="h-5 w-5 text-orange-300" />}
+                             </div>
+
+                             <div className={`p-3 rounded-lg border flex items-center justify-between ${candidateSP1 > 0 ? 'bg-red-500/20 border-red-400/30' : 'bg-white/5 border-white/10'}`}>
+                                <div>
+                                   <p className={`font-bold ${candidateSP1 > 0 ? 'text-red-200' : 'text-slate-300'}`}>{candidateSP1} Siswa</p>
+                                   <p className="text-[10px] text-blue-200">Kandidat SP 1 (70-79 Poin)</p>
+                                </div>
+                                {candidateSP1 > 0 && <ShieldAlert className="h-5 w-5 text-red-300" />}
+                             </div>
+                          </div>
+                       </div>
+
+                    </div>
+                 </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center gap-3 text-indigo-100 hidden"><UserX className="h-8 w-8 opacity-50" /><div><p className="font-semibold">Tidak ada kelas perwalian.</p></div></div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
