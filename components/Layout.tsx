@@ -414,7 +414,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {isOnline && (syncState === 'IDLE' || syncState === 'SAVED') && (
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200" title="Data tersimpan aman di Cloud">
                         <Cloud className="h-4 w-4 text-emerald-600" />
-                        <span className="text-xs font-bold text-emerald-600 hidden sm:inline">Synced</span>
+                        <span className="text-xs font-bold text-emerald-600 hidden sm:inline">Saved</span>
                     </div>
                 )}
              </div>
