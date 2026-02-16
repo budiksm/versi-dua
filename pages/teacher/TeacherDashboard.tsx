@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar, LayoutGrid } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar, LayoutGrid, UserPlus, Activity, MessageSquare } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const TeacherDashboard: React.FC = () => {
@@ -21,11 +21,19 @@ const TeacherDashboard: React.FC = () => {
   const [recentPage, setRecentPage] = useState(0);
   const ITEMS_PER_PAGE = 5;
 
-  // BK Specific State
-  const [highRiskStudents, setHighRiskStudents] = useState<{student: Student, score: number, status: string}[]>([]);
+  // BK Specific State (Refactored)
+  const [bkStats, setBkStats] = useState({
+      activeCounseling: 0,
+      mandatoryCases: 0,
+      referrals: 0,
+      approachingSP: 0,
+      monthlySessions: 0
+  });
+  const [bkMandatoryList, setBkMandatoryList] = useState<any[]>([]);
+  const [bkReferralList, setBkReferralList] = useState<any[]>([]);
+  const [bkRecentActivity, setBkRecentActivity] = useState<CounselingSession[]>([]);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const [globalSearchResults, setGlobalSearchResults] = useState<Student[]>([]);
-  const [counselingCount, setCounselingCount] = useState(0);
 
   // Kesiswaan Specific State
   const [allSanctions, setAllSanctions] = useState<StudentSanction[]>([]);
@@ -93,7 +101,6 @@ const TeacherDashboard: React.FC = () => {
     setRecords(recs);
     setIncidents(incs);
     setStudents(stds);
-    setCounselingCount(counselings.length);
     
     if (user) {
       const myClassGroups = classes.filter(c => c.homeroomTeacherId === user.id);
@@ -117,20 +124,90 @@ const TeacherDashboard: React.FC = () => {
          setPendingApprovals(pendings);
       }
 
+      // --- LOGIKA DASHBOARD BK ---
       if (user.roles.includes(Role.BK)) {
-        const riskList: {student: Student, score: number, status: string}[] = [];
+        let activeCount = 0;
+        let mandatoryCount = 0;
+        let referralCount = 0;
+        let approachingSPCount = 0;
+        let monthlyCount = 0;
+
+        const currentMonth = new Date().getMonth();
+        const mandatoryListTemp: any[] = [];
+        const referralListTemp: any[] = [];
+
+        // 1. Calculate Per-Student Stats
         stds.forEach(s => {
-          const stats = DataService.calculateStudentPoints(s.id, recs, incs);
-          if (stats.effectiveViolationScore >= 40) {
-             const status = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
-             riskList.push({
-               student: s,
-               score: stats.effectiveViolationScore,
-               status: status.statusLabel
-             });
-          }
+            const stats = DataService.calculateStudentPoints(s.id, recs, incs);
+            const sSessions = counselings.filter(c => c.studentId === s.id);
+            const latestSession = sSessions.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+            const latestHomeroom = sSessions.find(c => c.sessionType === 'HOMEROOM');
+
+            // Active Counseling (Open Session)
+            if (latestSession && latestSession.status === 'OPEN') {
+                activeCount++;
+            }
+
+            // Mandatory Case (> 40 Points OR Specific Required Record)
+            const hasRequiredRecord = recs.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
+            if (hasRequiredRecord || (stats.effectiveViolationScore >= 40 && (!latestSession || latestSession.status === 'CLOSED'))) {
+                mandatoryCount++;
+                // Add to list for "Antrian"
+                const activeViolations = recs.filter(r => r.studentId === s.id && (r.bkStatus === 'REQUIRED' || (r.pointSnapshot >= 10 && r.typeSnapshot === IncidentTypeCategory.VIOLATION))).sort((a,b) => b.pointSnapshot - a.pointSnapshot);
+                const topViolation = activeViolations[0];
+                
+                if (topViolation) { // Only add if there are violations
+                    mandatoryListTemp.push({
+                        student: s,
+                        score: stats.effectiveViolationScore,
+                        className: classes.find(c => c.id === s.classId)?.name || '-',
+                        topIncident: incs.find(i => i.id === topViolation.incidentTypeId)?.name || 'Akumulasi Poin',
+                        incidentDate: topViolation.date
+                    });
+                }
+            }
+
+            // Referrals (From Homeroom)
+            if (latestHomeroom && latestHomeroom.recommendation === 'TO_BK') {
+                // Check if already addressed by a newer BK session
+                const newerBKSession = sSessions.find(c => c.sessionType === 'BK' && new Date(c.date) > new Date(latestHomeroom.date));
+                if (!newerBKSession) {
+                    referralCount++;
+                    referralListTemp.push({
+                        student: s,
+                        className: classes.find(c => c.id === s.classId)?.name || '-',
+                        homeroomName: latestHomeroom.counselorName,
+                        date: latestHomeroom.date,
+                        note: latestHomeroom.notes
+                    });
+                }
+            }
+
+            // Approaching SP (50 - 79 Points) -> SP1 starts at 80
+            if (stats.effectiveViolationScore >= 50 && stats.effectiveViolationScore < 80) {
+                approachingSPCount++;
+            }
         });
-        setHighRiskStudents(riskList.sort((a,b) => b.score - a.score).slice(0, 10));
+
+        // 2. Monthly Stats
+        monthlyCount = counselings.filter(c => new Date(c.date).getMonth() === currentMonth).length;
+
+        // 3. Recent Activity
+        const recentActivity = counselings
+            .filter(c => c.sessionType === 'BK')
+            .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .slice(0, 5);
+
+        setBkStats({
+            activeCounseling: activeCount,
+            mandatoryCases: mandatoryCount,
+            referrals: referralCount,
+            approachingSP: approachingSPCount,
+            monthlySessions: monthlyCount
+        });
+        setBkMandatoryList(mandatoryListTemp.sort((a,b) => b.score - a.score).slice(0, 10)); // Top 10 Priority
+        setBkReferralList(referralListTemp.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setBkRecentActivity(recentActivity);
       }
 
       if (user.roles.includes(Role.KESISWAAN)) {
@@ -199,27 +276,86 @@ const TeacherDashboard: React.FC = () => {
   const getStudentsForStatModal = () => {
       if (!selectedStatType) return [];
       const allClasses = DataService.getClasses(); 
-      let filteredSanctions: StudentSanction[] = [];
+      let filteredStudents: any[] = []; // Changed to generic array to hold mixed types if needed
 
-      if (selectedStatType === 'REDEMPTION') {
-          filteredSanctions = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS);
+      // --- LOGIKA DATA MODAL UNTUK BK & KESISWAAN ---
+      
+      // 1. Logic BK
+      if (selectedStatType.startsWith('BK_')) {
+          const allCounselings = DataService.getCounselingSessions();
+          
+          students.forEach(s => {
+              const stats = DataService.calculateStudentPoints(s.id, records, incidents);
+              const sSessions = allCounselings.filter(c => c.studentId === s.id);
+              const latestSession = sSessions.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+              const latestHomeroom = sSessions.find(c => c.sessionType === 'HOMEROOM');
+
+              let include = false;
+              let note = '';
+
+              if (selectedStatType === 'BK_ACTIVE' && latestSession?.status === 'OPEN') {
+                  include = true;
+                  note = 'Sesi Aktif';
+              } else if (selectedStatType === 'BK_MANDATORY') {
+                  const hasRequiredRecord = records.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
+                  if (hasRequiredRecord || (stats.effectiveViolationScore >= 40 && (!latestSession || latestSession.status === 'CLOSED'))) {
+                      include = true;
+                      note = `Poin: ${stats.effectiveViolationScore}`;
+                  }
+              } else if (selectedStatType === 'BK_REFERRAL') {
+                  if (latestHomeroom?.recommendation === 'TO_BK') {
+                      const newerBK = sSessions.find(c => c.sessionType === 'BK' && new Date(c.date) > new Date(latestHomeroom.date));
+                      if (!newerBK) {
+                          include = true;
+                          note = `Dari: ${latestHomeroom.counselorName}`;
+                      }
+                  }
+              } else if (selectedStatType === 'BK_APPROACHING') {
+                  if (stats.effectiveViolationScore >= 50 && stats.effectiveViolationScore < 80) {
+                      include = true;
+                      note = `${stats.effectiveViolationScore} Poin (Waspada)`;
+                  }
+              }
+
+              if (include) {
+                  const cl = allClasses.find(c => c.id === s.classId);
+                  filteredStudents.push({
+                      id: `stat_${s.id}`,
+                      studentId: s.id,
+                      studentName: s.name,
+                      studentNis: s.nis,
+                      className: cl?.name || '-',
+                      date: new Date().toISOString(), // Dummy date for sort
+                      notes: note
+                  });
+              }
+          });
+          
       } else {
-          filteredSanctions = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed);
+          // 2. Logic Kesiswaan (Existing)
+          let filteredSanctions: StudentSanction[] = [];
+          if (selectedStatType === 'REDEMPTION') {
+              filteredSanctions = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS);
+          } else {
+              filteredSanctions = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed);
+          }
+
+          filteredStudents = filteredSanctions.map(s => {
+              const st = students.find(student => student.id === s.studentId);
+              const cl = allClasses.find(c => c.id === st?.classId);
+              return {
+                  id: s.id,
+                  studentId: s.studentId,
+                  studentName: st?.name || 'Unknown',
+                  studentNis: st?.nis || '-',
+                  className: cl?.name || '-',
+                  date: s.assignedDate,
+                  notes: s.notes
+              };
+          });
       }
 
-      return filteredSanctions.map(s => {
-          const st = students.find(student => student.id === s.studentId);
-          const cl = allClasses.find(c => c.id === st?.classId);
-          return {
-              id: s.id,
-              studentId: s.studentId,
-              studentName: st?.name || 'Unknown',
-              studentNis: st?.nis || '-',
-              className: cl?.name || '-',
-              date: s.assignedDate,
-              notes: s.notes
-          };
-      });
+      return filteredStudents;
   };
 
   const handleOpenTaskModal = (sanctionItem: any) => {
@@ -472,59 +608,177 @@ const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* --- BK DASHBOARD --- */}
+      {/* --- BK DASHBOARD (REDESIGNED) --- */}
       {isBK && !isKesiswaan && (
         <div className="space-y-6 animate-fade-in">
-           <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative">
-              <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
-                  <div className="absolute right-0 top-0 opacity-10">
-                    <HeartHandshake className="h-64 w-64 -mr-16 -mt-16" />
-                  </div>
+           {/* HEADER CARD */}
+           <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
+              <div className="absolute right-0 top-0 opacity-10 pointer-events-none">
+                  <HeartHandshake className="h-64 w-64 -mr-16 -mt-16" />
               </div>
-
               <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-6">
                    <div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div>
-                   <h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2>
+                   <div>
+                     <h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2>
+                     <p className="text-blue-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p>
+                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                      <p className="text-indigo-100 text-sm">Siswa Dalam Pantauan</p>
-                      <p className="text-3xl font-bold mt-1">{highRiskStudents.length}</p>
+
+                {/* STATS CARDS */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                   <div onClick={() => handleOpenStatModal('BK_ACTIVE')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                      <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p>
+                      <p className="text-3xl font-bold mt-1">{bkStats.activeCounseling}</p>
+                   </div>
+                   <div onClick={() => handleOpenStatModal('BK_MANDATORY')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-400/50 bg-red-900/20 cursor-pointer hover:bg-red-900/30 transition-all hover:scale-105">
+                      <p className="text-red-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Wajib Konseling <ExternalLink className="h-3 w-3" /></p>
+                      <p className="text-3xl font-bold mt-1">{bkStats.mandatoryCases}</p>
+                   </div>
+                   <div onClick={() => handleOpenStatModal('BK_REFERRAL')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                      <p className="text-orange-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Rujukan Wali Kelas <ExternalLink className="h-3 w-3" /></p>
+                      <p className="text-3xl font-bold mt-1">{bkStats.referrals}</p>
+                   </div>
+                   <div onClick={() => handleOpenStatModal('BK_APPROACHING')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
+                      <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Mendekati SP (50-79) <ExternalLink className="h-3 w-3" /></p>
+                      <p className="text-3xl font-bold mt-1">{bkStats.approachingSP}</p>
                    </div>
                    <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                      <p className="text-indigo-100 text-sm">Total Riwayat Konseling</p>
-                      <p className="text-3xl font-bold mt-1">{counselingCount}</p>
-                   </div>
-                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 relative">
-                       <label className="text-indigo-100 text-sm block mb-2 flex items-center gap-2">
-                          <Search className="h-4 w-4" /> Cari Siswa
-                       </label>
-                       <div className="relative">
-                          <input 
-                            type="text" 
-                            className="w-full bg-white text-slate-800 px-3 py-2 rounded text-sm outline-none" 
-                            placeholder="Ketik Nama..." 
-                            value={globalSearchTerm} 
-                            onChange={handleGlobalSearch} 
-                          />
-                          {globalSearchResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 bg-white mt-1 rounded-lg shadow-xl overflow-hidden text-slate-800 border border-slate-200 max-h-96 overflow-y-auto" style={{ zIndex: 9999 }}>
-                               {globalSearchResults.map(s => (
-                                 <Link 
-                                   key={s.id} 
-                                   to={`/teacher/student/${s.id}`} 
-                                   className="block px-4 py-2 hover:bg-slate-100 text-sm border-b last:border-0 font-bold"
-                                 >
-                                   {s.name}
-                                 </Link>
-                               ))}
-                            </div>
-                          )}
-                       </div>
+                      <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Sesi Bulan Ini</p>
+                      <p className="text-3xl font-bold mt-1">{bkStats.monthlySessions}</p>
                    </div>
                 </div>
               </div>
+           </div>
+
+           {/* MAIN CONTENT GRID */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* KOLOM KIRI: ANTRIAN WAJIB */}
+                <div className="lg:col-span-2 bg-white text-slate-800 rounded-lg p-5 shadow-sm border border-slate-200">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold flex items-center gap-2 text-slate-700">
+                            <AlertCircle className="h-5 w-5 text-red-600" />
+                            Antrian Konseling Wajib (Kasus &gt;40 Poin)
+                        </h3>
+                        {/* Search bar inside header for quick access */}
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                className="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none w-48"
+                                placeholder="Cari siswa..."
+                                value={globalSearchTerm}
+                                onChange={handleGlobalSearch}
+                            />
+                            <Search className="h-3 w-3 text-slate-400 absolute left-2.5 top-2" />
+                            {globalSearchResults.length > 0 && (
+                                <div className="absolute top-full right-0 bg-white mt-1 border border-slate-200 shadow-lg rounded-lg w-64 z-50 max-h-48 overflow-y-auto">
+                                    {globalSearchResults.map(s => (
+                                        <Link key={s.id} to={`/teacher/student/${s.id}`} className="block px-3 py-2 hover:bg-slate-50 text-xs border-b last:border-0">
+                                            <div className="font-bold text-slate-800">{s.name}</div>
+                                            <div className="text-slate-500">{s.nis}</div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="overflow-hidden border border-slate-200 rounded-lg">
+                        <div className="max-h-[400px] overflow-y-auto">
+                            <table className="w-full text-sm text-left relative">
+                                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="px-4 py-3">Siswa</th>
+                                        <th className="px-4 py-3">Poin</th>
+                                        <th className="px-4 py-3">Pelanggaran Terberat</th>
+                                        <th className="px-4 py-3 text-right">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {bkMandatoryList.length === 0 ? (
+                                        <tr><td colSpan={4} className="p-8 text-center text-slate-500 flex flex-col items-center justify-center"><CheckCircle2 className="h-8 w-8 text-emerald-500 mb-2" /><span className="font-semibold">Semua Aman! Tidak ada antrian wajib.</span></td></tr>
+                                    ) : (
+                                        bkMandatoryList.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3">
+                                                    <div className="font-bold text-slate-900">{item.student.name}</div>
+                                                    <div className="text-xs text-slate-500">{item.className}</div>
+                                                </td>
+                                                <td className="px-4 py-3 font-bold text-red-600">{item.score}</td>
+                                                <td className="px-4 py-3">
+                                                    <div className="text-sm text-slate-700">{item.topIncident}</div>
+                                                    <div className="text-xs text-slate-400">{new Date(item.incidentDate).toLocaleDateString()}</div>
+                                                </td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <Link to="/teacher/bk/active" className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm inline-flex items-center gap-1 transition-transform active:scale-95">
+                                                        <HeartHandshake className="h-3 w-3" /> Proses
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                {/* KOLOM KANAN: RUJUKAN & LOG */}
+                <div className="flex flex-col gap-6">
+                    {/* PANEL RUJUKAN */}
+                    <div className="bg-white text-slate-800 rounded-lg p-5 shadow-sm border border-slate-200 flex flex-col max-h-[300px]">
+                        <h3 className="font-bold flex items-center gap-2 mb-3 text-slate-700 text-sm border-b pb-2">
+                            <UserPlus className="h-4 w-4 text-orange-600" /> Rujukan Wali Kelas
+                        </h3>
+                        <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+                            {bkReferralList.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic text-center py-4">Belum ada rujukan baru.</p>
+                            ) : (
+                                bkReferralList.map((ref, idx) => (
+                                    <div key={idx} className="p-2.5 bg-orange-50 border border-orange-100 rounded-lg group">
+                                        <div className="flex justify-between items-start">
+                                            <span className="font-bold text-sm text-slate-800">{ref.student.name}</span>
+                                            <span className="text-[10px] text-slate-500">{new Date(ref.date).toLocaleDateString()}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-600 mt-1 line-clamp-2 italic">"{ref.note}"</p>
+                                        <div className="mt-2 flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-orange-700">Dari: {ref.homeroomName}</span>
+                                            <Link to={`/teacher/student/${ref.student.id}`} className="text-blue-600 hover:underline text-xs font-bold">Lihat</Link>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* PANEL AKTIVITAS */}
+                    <div className="bg-white text-slate-800 rounded-lg p-5 shadow-sm border border-slate-200 flex flex-col flex-1">
+                        <h3 className="font-bold flex items-center gap-2 mb-3 text-slate-700 text-sm border-b pb-2">
+                            <Activity className="h-4 w-4 text-blue-600" /> Aktivitas Terakhir
+                        </h3>
+                        <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+                            {bkRecentActivity.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic text-center py-4">Belum ada sesi konseling.</p>
+                            ) : (
+                                bkRecentActivity.map((act, idx) => {
+                                    const st = students.find(s => s.id === act.studentId);
+                                    return (
+                                        <div key={idx} className="flex gap-3 items-start text-xs border-b border-slate-50 pb-2 last:border-0 last:pb-0">
+                                            <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full mt-0.5">
+                                                <MessageSquare className="h-3 w-3" />
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-slate-800">{st?.name || 'Unknown'}</p>
+                                                <p className="text-slate-500">{new Date(act.date).toLocaleDateString()}</p>
+                                                <p className="text-slate-600 mt-0.5 line-clamp-1">{act.notes}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
            </div>
         </div>
       )}
@@ -939,7 +1193,7 @@ const TeacherDashboard: React.FC = () => {
                   <div className="bg-slate-800 text-white p-4 flex justify-between items-center shrink-0">
                       <h3 className="font-bold flex items-center gap-2">
                           <Users className="h-5 w-5" /> 
-                          Daftar Siswa - {selectedStatType === 'REDEMPTION' ? 'Sedang Penebusan' : selectedStatType}
+                          {selectedStatType.startsWith('BK_') ? 'Detail Statistik BK' : `Daftar Siswa - ${selectedStatType === 'REDEMPTION' ? 'Sedang Penebusan' : selectedStatType}`}
                       </h3>
                       <button onClick={() => setShowStatModal(false)} className="text-slate-400 hover:text-white">
                           <X className="h-5 w-5" />
@@ -952,7 +1206,7 @@ const TeacherDashboard: React.FC = () => {
                               <tr>
                                   <th className="px-4 py-3 font-semibold">Nama Siswa</th>
                                   <th className="px-4 py-3 font-semibold">Kelas</th>
-                                  <th className="px-4 py-3 font-semibold">Tgl Penetapan</th>
+                                  <th className="px-4 py-3 font-semibold">Info Detail</th>
                                   <th className="px-4 py-3 text-right">Aksi</th>
                               </tr>
                           </thead>
@@ -971,7 +1225,9 @@ const TeacherDashboard: React.FC = () => {
                                               <div className="text-xs text-slate-500">{s.studentNis}</div>
                                           </td>
                                           <td className="px-4 py-3 text-slate-600">{s.className}</td>
-                                          <td className="px-4 py-3 text-slate-500">{new Date(s.date).toLocaleDateString()}</td>
+                                          <td className="px-4 py-3 text-slate-500">
+                                              <div className="truncate max-w-[200px]" title={s.notes}>{s.notes}</div>
+                                          </td>
                                           <td className="px-4 py-3 text-right">
                                               <Link 
                                                   to={`/teacher/student/${s.studentId}`}
