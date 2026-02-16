@@ -242,12 +242,13 @@ export const DataService = {
   saveRules: (data: CoachingRule[]) => { saveToStorage('rules', data); syncToCloud('rules', data); },
   saveRecords: (data: IncidentRecord[]) => { saveToStorage('records', data); syncToCloud('records', data); },
   saveTeachers: (data: Teacher[]) => { saveToStorage('teachers', data); syncToCloud('teachers', data); },
-  // UPDATE: Use custom logic inside a new helper for sessions
+  
+  // UPDATE: Improved Logic for Session Side-Effects
   saveCounselingSessions: (data: CounselingSession[]) => { 
       saveToStorage('counseling', data); 
       syncToCloud('counseling', data); 
       
-      // SIDE EFFECT: Check if the latest session completed any required records
+      // SIDE EFFECT: Check if the latest session affects required records
       if (data.length > 0) {
           const latestSession = data[data.length - 1]; 
           if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
@@ -256,9 +257,32 @@ export const DataService = {
               const relatedIds = latestSession.relatedRecordIds;
               
               const updatedRecords = allRecords.map(r => {
-                  if (relatedIds.includes(r.id) && r.bkStatus === 'REQUIRED') {
-                      recordsChanged = true;
-                      return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+                  if (relatedIds.includes(r.id)) {
+                      // LOGIC FIX:
+                      // 1. If BK handles it -> It becomes COMPLETED
+                      if (latestSession.sessionType === 'BK') {
+                          if (r.bkStatus !== 'COMPLETED') {
+                              recordsChanged = true;
+                              return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+                          }
+                      } 
+                      // 2. If Homeroom handles it
+                      else if (latestSession.sessionType === 'HOMEROOM') {
+                          // If Referral to BK -> MUST be REQUIRED
+                          if (latestSession.recommendation === 'TO_BK') {
+                              if (r.bkStatus !== 'REQUIRED') {
+                                  recordsChanged = true;
+                                  return { ...r, bkStatus: 'REQUIRED' as BkCounselingStatus };
+                              }
+                          }
+                          // If Resolved by Homeroom (NONE) -> COMPLETED
+                          else if (latestSession.recommendation === 'NONE') {
+                              if (r.bkStatus !== 'COMPLETED') {
+                                  recordsChanged = true;
+                                  return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+                              }
+                          }
+                      }
                   }
                   return r;
               });
