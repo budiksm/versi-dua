@@ -289,15 +289,27 @@ const StudentProfile: React.FC = () => {
 
   // --- ACCESS LOGIC REVISED ---
   
-  // Logic: Kesiswaan can only see BK Tab if points >= 40 OR there is a referral from Homeroom
+  // Logic: "Mandatory Case" condition (Point >= 40 OR Referral)
   const hasMandatoryBKCondition = stats.effectiveViolationScore >= 40 || 
-        counselingSessions.some(s => s.sessionType === 'HOMEROOM' && s.recommendation === 'TO_BK');
+        counselingSessions.some(s => s.sessionType === 'HOMEROOM' && s.recommendation === 'TO_BK') ||
+        records.some(r => r.bkStatus === 'REQUIRED');
 
+  // Logic: Kesiswaan can only see BK Tab if Mandatory Condition met. BK Teacher always sees it.
   const showBkTab = isBK || (isKesiswaan && hasMandatoryBKCondition);
   
   // Logic: Only BK Role can INPUT counseling sessions. Kesiswaan is Read-Only.
   const canInputBk = isBK; 
   
+  // Logic: Auto-switch BK Mode based on condition
+  useEffect(() => {
+      if (activeTab === 'BK_COUNSELING' && !hasMandatoryBKCondition) {
+          setBkMode('PREVENTIVE');
+      } else if (activeTab === 'BK_COUNSELING' && hasMandatoryBKCondition && bkMode === 'PREVENTIVE' && records.some(r => r.bkStatus === 'REQUIRED')) {
+          // Optional: Auto switch to CASE if they have a case, but let's be less intrusive
+          // setBkMode('CASE'); 
+      }
+  }, [activeTab, hasMandatoryBKCondition]);
+
   // LOGIKA BARU: VISIBILITAS PANEL KESISWAAN
   const hasReferralToKesiswaan = counselingSessions.some(s => 
       s.sessionType === 'BK' && 
@@ -1088,7 +1100,9 @@ const StudentProfile: React.FC = () => {
                     </div>
                     <div className="px-6 pt-6">
                         <div className="flex p-1 bg-slate-100 rounded-lg">
-                            <button onClick={() => setBkMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Konseling Kasus (Disiplin)</button>
+                            {hasMandatoryBKCondition && (
+                                <button onClick={() => setBkMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Konseling Kasus (Disiplin)</button>
+                            )}
                             <button onClick={() => setBkMode('PREVENTIVE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'PREVENTIVE' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-700'}`}><LifeBuoy className="h-4 w-4" /> Konseling Preventif</button>
                         </div>
                     </div>
