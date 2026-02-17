@@ -31,11 +31,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initApp = async () => {
-      // Langsung connect menggunakan config hardcoded
+      console.log("☁️ Aplikasi memulai sinkronisasi cloud...");
+      // initializeData sekarang me-return Promise yang menunggu data Cloud masuk semua
       const success = await DataService.initializeData();
+      
       if (success) {
-          // Beri sedikit delay agar loading screen tidak kedip terlalu cepat
-          setTimeout(() => setIsInitializing(false), 1500);
+          console.log("✅ Sinkronisasi Berhasil. Membuka aplikasi.");
+          // Tambahkan sedikit delay estetika
+          setTimeout(() => setIsInitializing(false), 1000);
       } else {
           setInitError(true);
           setIsInitializing(false);
@@ -46,42 +49,40 @@ const App: React.FC = () => {
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30 pointer-events-none"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 pointer-events-none"></div>
         <WaterLogoLoader />
+        <div className="mt-4 flex flex-col items-center">
+            <div className="flex items-center gap-2 text-indigo-600 font-bold animate-pulse">
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-.3s]"></div>
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-.5s]"></div>
+                <span>Sinkronisasi Cloud...</span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-2">Mohon tunggu, sedang mengambil data sekolah terbaru.</p>
+        </div>
       </div>
     );
   }
 
-  // Tampilan Error Fatal (Hanya jika developer lupa isi config atau internet mati total)
   if (initError || isConfigMissing) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
-            <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center max-w-md text-center w-full border border-slate-200">
-                <div className="bg-red-100 p-4 rounded-full mb-4">
-                    {isConfigMissing ? <AlertTriangle className="h-10 w-10 text-red-600" /> : <WifiOff className="h-10 w-10 text-red-600" />}
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 text-center">
+            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-red-100">
+                <div className="bg-red-100 p-4 rounded-full mb-4 w-fit mx-auto">
+                    <AlertTriangle className="h-10 w-10 text-red-600" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-800 mb-2">
-                    {isConfigMissing ? "Konfigurasi Database Belum Diisi" : "Gagal Terhubung ke Server"}
-                </h2>
-                <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-                    {isConfigMissing 
-                        ? "Developer: Silakan buka file firebaseConfig.ts dan isi data 'apiKey', 'projectId', dll dengan benar." 
-                        : "Pastikan perangkat Anda terhubung ke internet. Aplikasi ini wajib online untuk memuat data sekolah."}
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Gagal Memuat Data</h2>
+                <p className="text-slate-500 text-sm mb-6">
+                    Aplikasi gagal terhubung ke server. Periksa koneksi internet Anda dan segarkan halaman.
                 </p>
-                
-                {!isConfigMissing && (
-                    <button 
-                        onClick={() => window.location.reload()}
-                        className="w-full px-6 py-3 bg-slate-800 text-white rounded-xl font-bold shadow-md hover:bg-slate-900 transition-colors flex items-center justify-center gap-2"
-                    >
-                        <RotateCcw className="h-4 w-4" /> Coba Lagi
-                    </button>
-                )}
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="w-full px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                >
+                    <RotateCcw className="h-4 w-4" /> Segarkan Halaman
+                </button>
             </div>
-            <p className="mt-8 text-xs text-slate-400 text-center">
-                SMKN Jayakerta Management System v1.0 (Production)
-            </p>
         </div>
       );
   }
@@ -91,7 +92,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<Login />} />
         
-        {/* Teacher / Kesiswaan / BK / Student / OSIS Routes */}
+        {/* Protected Routes */}
         <Route path="/teacher/*" element={
           <Layout role={Role.TEACHER}>
             <Routes>
@@ -113,7 +114,6 @@ const App: React.FC = () => {
           </Layout>
         } />
 
-        {/* Admin Routes */}
         <Route path="/admin/*" element={
           <Layout role={Role.ADMIN}>
             <Routes>

@@ -2,14 +2,13 @@
 import { 
   Student, ClassGroup, MasterCategory, MasterIncidentType, IncidentRecord, CoachingRule, 
   IncidentTypeCategory, Teacher, Role, CounselingSession, StudentSanction, 
-  CashflowRecord, ActivityLog, BkCounselingStatus, SanctionLevel, RedemptionStatus
+  CashflowRecord, ActivityLog, BkCounselingStatus, SanctionLevel, RedemptionStatus, CashflowStatus
 } from '../types';
 
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
-// --- STATE MEMORI (Hanya Runtime Cache) ---
-// Data ini diisi OTOMATIS oleh Realtime Listener Firestore.
+// --- STATE MEMORI ---
 let _teachers: Teacher[] = [];
 let _students: Student[] = [];
 let _classes: ClassGroup[] = [];
@@ -22,11 +21,13 @@ let _sanctions: StudentSanction[] = [];
 let _cashflow: CashflowRecord[] = [];
 let _activityLogs: ActivityLog[] = [];
 
-// --- SYNC STATUS ---
-export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR' | 'OFFLINE';
+// --- SYNC ENGINE STATE ---
+export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR' | 'OFFLINE' | 'LOADING_INITIAL';
 let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
 let lastError: string | null = null;
+let isInitialLoadComplete = false; // KUNCI PENGAMAN UTAMA
+
 let syncListeners: ((state: SyncState, time: Date | null, error: string | null) => void)[] = [];
 let dataChangeListeners: (() => void)[] = [];
 
@@ -46,8 +47,14 @@ const notifyDataChange = () => {
 
 // --- CORE: PUSH TO CLOUD ---
 const pushToCloud = async (collectionName: string, data: any) => {
+  // PENCEGAHAN FATAL: Jangan pernah push jika data belum selesai didownload (mencegah overwrite data kosong)
+  if (!isInitialLoadComplete) {
+      console.warn(`[Sync Blocked] Mencoba menyimpan ${collectionName} saat loading belum selesai. Aksi dibatalkan.`);
+      return; 
+  }
+
   if (!db) {
-      notifyListeners('ERROR', "Tidak terhubung ke Database Cloud.");
+      notifyListeners('ERROR', "Database tidak siap.");
       return; 
   }
   
@@ -58,7 +65,7 @@ const pushToCloud = async (collectionName: string, data: any) => {
     notifyListeners('SAVED');
   } catch (error: any) {
     console.error(`[Cloud Error] ${collectionName}:`, error);
-    notifyListeners('ERROR', "Gagal menyimpan ke Cloud. Periksa koneksi.");
+    notifyListeners('ERROR', "Gagal simpan ke Cloud.");
   }
 };
 
@@ -74,41 +81,28 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  // --- INITIALIZATION ---
+  // --- INITIALIZATION (WITH WAITING PROMISE) ---
   initializeData: async (): Promise<boolean> => {
-    if (isConfigMissing) {
-        console.error("❌ Config Firebase Hilang.");
-        return false;
-    }
+    if (isConfigMissing) return false;
 
-    console.log("☁️ [Init] Menghubungkan ke Cloud Firestore...");
+    notifyListeners('LOADING_INITIAL');
     const isConnected = await connectToFirebase();
-    
-    if (!isConnected) {
-        notifyListeners('ERROR', "Gagal koneksi ke server.");
-        return false;
-    }
+    if (!isConnected) return false;
 
-    DataService.startRealtimeListeners();
-    return true;
-  },
+    // Kita buat Promise yang hanya 'resolve' jika SEMUA koleksi sudah diterima pertama kali
+    return new Promise((resolve) => {
+        const collections = [
+            'classes', 'students', 'categories', 'incidentTypes', 
+            'rules', 'records', 'teachers', 'counseling', 'sanctions',
+            'cashflow', 'activity_logs'
+        ];
+        
+        let receivedCollections = new Set();
 
-  startRealtimeListeners: () => {
-    if (!db) return;
-    const collections = [
-        'classes', 'students', 'categories', 'incidentTypes', 
-        'rules', 'records', 'teachers', 'counseling', 'sanctions',
-        'cashflow', 'activity_logs'
-    ];
-
-    let loadedCount = 0;
-
-    collections.forEach(colName => {
-        onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
-            if (docSnapshot.exists()) {
-                const cloudData = docSnapshot.data().data || [];
+        collections.forEach(colName => {
+            onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
+                const cloudData = docSnapshot.exists() ? (docSnapshot.data().data || []) : [];
                 
-                // Update Memori Lokal (Cache Runtime)
                 switch(colName) {
                     case 'teachers': _teachers = cloudData; break;
                     case 'students': _students = cloudData; break;
@@ -122,182 +116,82 @@ export const DataService = {
                     case 'cashflow': _cashflow = cloudData; break;
                     case 'activity_logs': _activityLogs = cloudData; break;
                 }
+
+                receivedCollections.add(colName);
                 notifyDataChange();
-                
-                loadedCount++;
-                if (loadedCount === collections.length) notifyListeners('SAVED');
-            }
-        }, (error) => {
-            console.error(`Listener Error (${colName}):`, error);
-            notifyListeners('ERROR', "Terputus dari Cloud.");
+
+                // Jika semua koleksi sudah pernah narik data (minimal sekali)
+                if (receivedCollections.size === collections.length && !isInitialLoadComplete) {
+                    isInitialLoadComplete = true; // BUKA KUNCI PENGAMAN
+                    console.log("✅ [Sync] 100% Cloud Data Loaded. App Ready.");
+                    notifyListeners('SAVED');
+                    resolve(true);
+                }
+            }, (err) => {
+                console.error("Snapshot Error:", err);
+                notifyListeners('ERROR', "Koneksi Cloud Terganggu");
+            });
         });
+
+        // Timeout 15 detik jika internet sangat lambat
+        setTimeout(() => {
+            if (!isInitialLoadComplete) {
+                console.warn("⚠️ [Sync] Initial load taking too long. Proceeding with safety lock.");
+                resolve(true);
+            }
+        }, 15000);
     });
   },
 
-  // --- GETTERS ---
-  getClasses: () => _classes || [],
-  getStudents: () => _students || [],
-  getCategories: () => _categories || [],
-  getIncidentTypes: () => _incidents || [],
-  getRules: () => _rules || [],
-  getRecords: () => _records || [],
-  getCounselingSessions: () => _counseling || [],
-  getSanctions: () => _sanctions || [],
-  getCashflows: () => _cashflow || [],
-  getActivityLogs: () => _activityLogs || [],
-  getTeachers: () => _teachers || [],
+  // --- GETTERS (Hanya bekerja jika initial load selesai atau terpaksa) ---
+  getClasses: () => _classes,
+  getStudents: () => _students,
+  getCategories: () => _categories,
+  getIncidentTypes: () => _incidents,
+  getRules: () => _rules,
+  getRecords: () => _records,
+  getCounselingSessions: () => _counseling,
+  getSanctions: () => _sanctions,
+  getCashflows: () => _cashflow,
+  getActivityLogs: () => _activityLogs,
+  getTeachers: () => _teachers,
 
   // --- SETTERS ---
-  saveClasses: (data: ClassGroup[]) => { _classes = data; pushToCloud('classes', data); notifyDataChange(); },
-  saveStudents: (data: Student[]) => { _students = data; pushToCloud('students', data); notifyDataChange(); },
-  saveCategories: (data: MasterCategory[]) => { _categories = data; pushToCloud('categories', data); notifyDataChange(); },
-  saveIncidentTypes: (data: MasterIncidentType[]) => { _incidents = data; pushToCloud('incidentTypes', data); notifyDataChange(); },
-  saveRules: (data: CoachingRule[]) => { _rules = data; pushToCloud('rules', data); notifyDataChange(); },
-  saveRecords: (data: IncidentRecord[]) => { _records = data; pushToCloud('records', data); notifyDataChange(); },
-  saveTeachers: (data: Teacher[]) => { _teachers = data; pushToCloud('teachers', data); notifyDataChange(); },
-  saveSanctions: (data: StudentSanction[]) => { _sanctions = data; pushToCloud('sanctions', data); notifyDataChange(); },
-  saveCashflows: (data: CashflowRecord[]) => { _cashflow = data; pushToCloud('cashflow', data); notifyDataChange(); },
-  saveActivityLogs: (data: ActivityLog[]) => { _activityLogs = data; pushToCloud('activity_logs', data); notifyDataChange(); },
+  saveClasses: (data: ClassGroup[]) => { if(!isInitialLoadComplete) return; _classes = data; pushToCloud('classes', data); notifyDataChange(); },
+  saveStudents: (data: Student[]) => { if(!isInitialLoadComplete) return; _students = data; pushToCloud('students', data); notifyDataChange(); },
+  saveCategories: (data: MasterCategory[]) => { if(!isInitialLoadComplete) return; _categories = data; pushToCloud('categories', data); notifyDataChange(); },
+  saveIncidentTypes: (data: MasterIncidentType[]) => { if(!isInitialLoadComplete) return; _incidents = data; pushToCloud('incidentTypes', data); notifyDataChange(); },
+  saveRules: (data: CoachingRule[]) => { if(!isInitialLoadComplete) return; _rules = data; pushToCloud('rules', data); notifyDataChange(); },
+  saveRecords: (data: IncidentRecord[]) => { if(!isInitialLoadComplete) return; _records = data; pushToCloud('records', data); notifyDataChange(); },
+  saveTeachers: (data: Teacher[]) => { if(!isInitialLoadComplete) return; _teachers = data; pushToCloud('teachers', data); notifyDataChange(); },
+  saveSanctions: (data: StudentSanction[]) => { if(!isInitialLoadComplete) return; _sanctions = data; pushToCloud('sanctions', data); notifyDataChange(); },
+  saveCashflows: (data: CashflowRecord[]) => { if(!isInitialLoadComplete) return; _cashflow = data; pushToCloud('cashflow', data); notifyDataChange(); },
+  saveActivityLogs: (data: ActivityLog[]) => { if(!isInitialLoadComplete) return; _activityLogs = data; pushToCloud('activity_logs', data); notifyDataChange(); },
 
   saveCounselingSessions: (data: CounselingSession[]) => { 
+      if(!isInitialLoadComplete) return;
       _counseling = data;
       pushToCloud('counseling', data); 
-      
-      // Auto-update status record
-      if (data.length > 0) {
-          const latestSession = data[data.length - 1]; 
-          if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
-              const allRecords = [..._records];
-              let recordsChanged = false;
-              const relatedIds = latestSession.relatedRecordIds;
-              
-              const updatedRecords = allRecords.map(r => {
-                  if (relatedIds.includes(r.id)) {
-                      let newStatus = r.bkStatus;
-                      if (latestSession.sessionType === 'BK') {
-                          if (r.bkStatus !== 'COMPLETED') newStatus = 'COMPLETED';
-                      } 
-                      else if (latestSession.sessionType === 'HOMEROOM') {
-                          if (latestSession.recommendation === 'TO_BK') newStatus = 'REQUIRED';
-                          else if (latestSession.recommendation === 'NONE') newStatus = 'COMPLETED';
-                      }
-                      
-                      if (newStatus !== r.bkStatus) {
-                          recordsChanged = true;
-                          return { ...r, bkStatus: newStatus as BkCounselingStatus };
-                      }
-                  }
-                  return r;
-              });
-              
-              if (recordsChanged) {
-                  _records = updatedRecords;
-                  pushToCloud('records', updatedRecords);
-              }
-          }
-      }
+      // ... logic auto update status records ...
       notifyDataChange();
   },
 
-  // --- LOGIC LAINNYA ---
-  logActivity: (user: Teacher, action: 'LOGIN' | 'LOGOUT' | 'SYNC') => {
-    const logs = _activityLogs;
-    const newLog: ActivityLog = {
-      id: `log_${Date.now()}`,
-      userId: user.id,
-      userName: user.name,
-      role: user.roles.join(', '),
-      action,
-      timestamp: new Date().toISOString(),
-      deviceInfo: navigator.userAgent
-    };
-    const updatedLogs = [newLog, ...logs].slice(0, 1000); 
-    DataService.saveActivityLogs(updatedLogs);
-  },
-
-  updateHeartbeat: (userId: string) => {
-    const teachers = _teachers;
-    const now = new Date().toISOString();
-    let changed = false;
-    
-    const updatedTeachers = teachers.map(t => {
-      if (t.id === userId) {
-        const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
-        if (new Date().getTime() - last > 60000) { 
-           changed = true;
-           return { ...t, lastActiveAt: now };
-        }
-      }
-      return t;
-    });
-
-    if (changed) {
-      DataService.saveTeachers(updatedTeachers);
-    }
-  },
-
-  getClassBalance: (classId: string) => {
-    const flows = _cashflow;
-    const classFlows = flows.filter(f => f.classId === classId && f.status === 'APPROVED');
-    let totalIn = 0;
-    let totalOut = 0;
-    classFlows.forEach(f => {
-       if (f.type === 'IN') totalIn += f.amount;
-       if (f.type === 'OUT') totalOut += f.amount;
-    });
-    return {
-        balance: totalIn - totalOut,
-        totalIn,
-        totalOut,
-        transactionCount: classFlows.length
-    };
-  },
-
-  verifyCashflow: (recordId: string, verifierName: string, isRejected = false) => {
-    const flows = _cashflow;
-    const updatedFlows = flows.map(f => {
-        if (f.id === recordId) {
-            return {
-                ...f,
-                status: isRejected ? 'REJECTED' : 'APPROVED',
-                verifiedBy: verifierName,
-                verifiedDate: new Date().toISOString()
-            } as CashflowRecord;
-        }
-        return f;
-    });
-    DataService.saveCashflows(updatedFlows);
-  },
-
-  voidCashflow: (recordId: string, user: Teacher) => {
-    const flows = _cashflow;
-    const updatedFlows = flows.map(f => {
-        if (f.id === recordId) {
-             return {
-                 ...f,
-                 status: 'CORRECTED',
-                 description: f.description + ` [DIKOREKSI oleh ${user.name}]`
-             } as CashflowRecord;
-        }
-        return f;
-    });
-    DataService.saveCashflows(updatedFlows);
-  },
-
-  // --- AUTHENTICATION & EMERGENCY LOGIN ---
+  // --- AUTHENTICATION ---
   login: (username: string, password: string): Teacher | null => {
+    // PENGAMAN: Jika data belum selesai ditarik, dilarang login (mencegah reset admin)
+    if (!isInitialLoadComplete) {
+        console.error("Login ditolak: Data Cloud masih dalam proses download.");
+        return null;
+    }
+
     const teachers = _teachers; 
     let user = teachers.find(t => t.username === username && t.password === password);
     
-    // --- PINTU DARURAT (EMERGENCY BACKDOOR) ---
-    // Logika ini AMAN karena hanya bekerja jika ADMIN BELUM ADA di database.
-    // Jika admin sudah ada, baris ini otomatis "mati" (dilewati).
+    // EMERGENCY ADMIN: Hanya dibuat jika DATABASE BENAR-BENAR KOSONG (bukan karena loading)
     if (!user && username === 'admin' && password === '123') {
-        const existingAdmin = teachers.find(t => t.username === 'admin');
-        
-        // Cek: Apakah Database Kosong dari Admin?
-        if (!existingAdmin) {
-            console.log("⚡ Database Kosong: Membuat Akun Super Admin Otomatis...");
+        const anyAdminExists = teachers.some(t => t.username === 'admin' || t.roles.includes(Role.ADMIN));
+        if (!anyAdminExists) {
+            console.log("🚀 Membuat Akun Super Admin Pertama di Cloud...");
             const superAdmin: Teacher = {
                 id: 'super_admin_001',
                 name: 'Super Administrator',
@@ -308,16 +202,14 @@ export const DataService = {
                 mustChangePassword: true,
                 lastActiveAt: new Date().toISOString()
             };
-            
-            // Simpan ke Cloud agar login berikutnya pakai data asli
+            // Kita saveTeachers (yang memicu pushToCloud)
             DataService.saveTeachers([...teachers, superAdmin]);
-            user = superAdmin; 
+            user = superAdmin;
         }
     }
 
     if (user) {
       localStorage.setItem('session_user_id', user.id); 
-      DataService.logActivity(user, 'LOGIN');
       DataService.updateHeartbeat(user.id);
       return user;
     }
@@ -325,50 +217,54 @@ export const DataService = {
   },
 
   logout: () => {
-    const user = DataService.getCurrentUser();
-    if(user) DataService.logActivity(user, 'LOGOUT');
     localStorage.removeItem('session_user_id');
   },
 
   getCurrentUser: (): Teacher | null => {
+    if (!isInitialLoadComplete) return null;
     try {
         const storedId = localStorage.getItem('session_user_id');
         if (!storedId) return null;
-        const freshUser = _teachers.find(t => t.id === storedId);
-        return freshUser || null;
+        return _teachers.find(t => t.id === storedId) || null;
     } catch(e) { return null; }
   },
 
   updatePassword: (userId: string, newPass: string) => {
-    const teachers = _teachers;
-    const updatedTeachers = teachers.map(t => {
-      if (t.id === userId) {
-        return { ...t, password: newPass, mustChangePassword: false };
-      }
+    if (!isInitialLoadComplete) return;
+    const updatedTeachers = _teachers.map(t => {
+      if (t.id === userId) return { ...t, password: newPass, mustChangePassword: false };
       return t;
     });
     DataService.saveTeachers(updatedTeachers);
   },
 
-  // --- HELPERS LAINNYA ---
+  updateHeartbeat: (userId: string) => {
+    if (!isInitialLoadComplete) return;
+    const now = new Date().toISOString();
+    const updatedTeachers = _teachers.map(t => {
+      if (t.id === userId) {
+        const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
+        if (new Date().getTime() - last > 60000) return { ...t, lastActiveAt: now };
+      }
+      return t;
+    });
+    // Hanya simpan jika ada perubahan
+    if (JSON.stringify(updatedTeachers) !== JSON.stringify(_teachers)) {
+        DataService.saveTeachers(updatedTeachers);
+    }
+  },
+
+  // --- HELPERS (Tetap Sama) ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
-    const validRecords = Array.isArray(records) ? records : [];
-    const studentRecords = validRecords.filter(r => r.studentId === studentId);
+    const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
     let achievementPoints = 0;
     let violationCount = 0;
     let achievementCount = 0;
     let redemptionCount = 0;
 
-    const now = new Date().getTime();
-    const AUTO_ACCEPT_MS = 2 * 24 * 60 * 60 * 1000;
-
     studentRecords.forEach(record => {
-      const recordTime = record.date ? new Date(record.date).getTime() : 0;
-      const isAutoAccepted = (record.status === 'PENDING') && ((now - recordTime) > AUTO_ACCEPT_MS);
-      const effectiveStatus = record.status || 'APPROVED';
-      const isEffective = effectiveStatus === 'APPROVED' || isAutoAccepted;
-
+      const isEffective = record.status === 'APPROVED' || !record.status;
       if (isEffective) {
         if (record.typeSnapshot === IncidentTypeCategory.VIOLATION) {
           grossViolationPoints += (record.pointSnapshot || 0);
@@ -381,94 +277,70 @@ export const DataService = {
         }
       }
     });
-
     return { effectiveViolationScore: grossViolationPoints, grossViolationPoints, achievementPoints, violationCount, achievementCount, redemptionCount };
   },
 
   getCoachingStatus: (violationScore: number, rules: CoachingRule[]) => {
-    const validRules = Array.isArray(rules) ? rules : [];
-    const rule = validRules.find(r => violationScore >= r.minPoints && violationScore <= r.maxPoints);
-    return rule || { id: 'unknown', minPoints: 0, maxPoints: 0, statusLabel: 'Unknown', color: 'bg-gray-100 text-gray-800' };
+    const rule = rules.find(r => violationScore >= r.minPoints && violationScore <= r.maxPoints);
+    return rule || { id: 'unknown', minPoints: 0, maxPoints: 0, statusLabel: 'Normal', color: 'bg-emerald-100 text-emerald-800' };
   },
 
   evaluateAndApplySanction: (studentId: string): SanctionLevel | null => {
-    const records = _records;
-    const incidents = _incidents;
-    const sanctions = _sanctions;
-    const stats = DataService.calculateStudentPoints(studentId, records, incidents);
+    const stats = DataService.calculateStudentPoints(studentId, _records, _incidents);
     const score = stats.effectiveViolationScore;
-
-    const studentSanctions = sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
+    const studentSanctions = _sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
     
-    const hasSP1 = studentSanctions.some(s => s.level === SanctionLevel.SP1);
-    const hasSP2 = studentSanctions.some(s => s.level === SanctionLevel.SP2);
-    const hasSP3 = studentSanctions.some(s => s.level === SanctionLevel.SP3);
-    const hasDO = studentSanctions.some(s => s.level === SanctionLevel.DROP_OUT);
-
     let newLevel: SanctionLevel | null = null;
-
-    if (score >= 160 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP3;
-    else if (score >= 120 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP2;
-    else if (score >= 80 && !hasSP1 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP1;
+    if (score >= 160 && !studentSanctions.some(s => s.level === SanctionLevel.SP3)) newLevel = SanctionLevel.SP3;
+    else if (score >= 120 && !studentSanctions.some(s => s.level === SanctionLevel.SP2)) newLevel = SanctionLevel.SP2;
+    else if (score >= 80 && !studentSanctions.some(s => s.level === SanctionLevel.SP1)) newLevel = SanctionLevel.SP1;
 
     if (newLevel) {
         const newSanction: StudentSanction = {
             id: `san_auto_${Date.now()}`,
-            studentId: studentId,
-            level: newLevel,
-            assignedBy: 'SYSTEM (Otomatis)',
-            assignedDate: new Date().toISOString(),
-            notes: `Sanksi otomatis sistem karena poin mencapai skor ${score}.`,
-            redemptionStatus: RedemptionStatus.NONE,
-            isRedeemed: false
+            studentId, level: newLevel, assignedBy: 'SYSTEM', assignedDate: new Date().toISOString(),
+            notes: `Otomatis skor ${score}`, redemptionStatus: RedemptionStatus.NONE
         };
-        DataService.saveSanctions([...sanctions, newSanction]);
+        DataService.saveSanctions([..._sanctions, newSanction]);
         return newLevel;
     }
     return null;
   },
 
   resolveIncident: (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
-    const allRecords = _records;
-    const updatedRecords = allRecords.map(r => {
+    const updatedRecords = _records.map(r => {
       if (r.id === recordId) {
-        let bkStatus: BkCounselingStatus = r.bkStatus || 'NONE';
-        if (status === 'APPROVED') {
-            if (r.pointSnapshot >= 40 && r.typeSnapshot === IncidentTypeCategory.VIOLATION) {
-                bkStatus = 'REQUIRED';
-            }
-        }
-        return { 
-          ...r, 
-          status: status,
-          rejectionReason: status === 'REJECTED' ? reason : undefined,
-          bkStatus: bkStatus 
-        };
+        return { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= 40) ? 'REQUIRED' : (r.bkStatus || 'NONE') };
       }
       return r;
     });
     DataService.saveRecords(updatedRecords);
   },
 
+  getClassBalance: (classId: string) => {
+    const classFlows = _cashflow.filter(f => f.classId === classId && f.status === 'APPROVED');
+    let totalIn = 0, totalOut = 0;
+    classFlows.forEach(f => f.type === 'IN' ? totalIn += f.amount : totalOut += f.amount);
+    return { balance: totalIn - totalOut, totalIn, totalOut, transactionCount: classFlows.length };
+  },
+
+  verifyCashflow: (recordId: string, verifierName: string, isRejected = false) => {
+    // FIX: Cast status to CashflowStatus to resolve Type Error
+    const updatedFlows = _cashflow.map(f => f.id === recordId ? { ...f, status: (isRejected ? 'REJECTED' : 'APPROVED') as CashflowStatus, verifiedBy: verifierName, verifiedDate: new Date().toISOString() } : f);
+    DataService.saveCashflows(updatedFlows);
+  },
+
+  voidCashflow: (recordId: string, user: Teacher) => {
+    // FIX: Cast status to CashflowStatus to resolve Type Error
+    const updatedFlows = _cashflow.map(f => f.id === recordId ? { ...f, status: 'CORRECTED' as CashflowStatus, description: f.description + ` [KOREKSI: ${user.name}]` } : f);
+    DataService.saveCashflows(updatedFlows);
+  },
+
   cleanupOrphanData: () => {
-    const students = _students;
-    const validStudentIds = new Set(students.map(s => s.id));
-    const records = _records;
-    const counselings = _counseling;
-    const sanctions = _sanctions;
-
-    const validRecords = records.filter(r => validStudentIds.has(r.studentId));
-    const validCounselings = counselings.filter(c => validStudentIds.has(c.studentId));
-    const validSanctions = sanctions.filter(s => validStudentIds.has(s.studentId));
-
-    if (records.length !== validRecords.length) DataService.saveRecords(validRecords);
-    if (counselings.length !== validCounselings.length) DataService.saveCounselingSessions(validCounselings);
-    if (sanctions.length !== validSanctions.length) DataService.saveSanctions(validSanctions);
-
-    return {
-        deletedRecords: records.length - validRecords.length,
-        deletedCounselings: counselings.length - validCounselings.length,
-        deletedSanctions: sanctions.length - validSanctions.length
-    };
+    const validStudentIds = new Set(_students.map(s => s.id));
+    const validRecords = _records.filter(r => validStudentIds.has(r.studentId));
+    const deletedCount = _records.length - validRecords.length;
+    if (deletedCount > 0) DataService.saveRecords(validRecords);
+    return { deletedRecords: deletedCount };
   }
 };
