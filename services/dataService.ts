@@ -105,7 +105,7 @@ export const DataService = {
                 notifyListeners('SAVED');
                 resolve(true);
             }
-        }, 15000); // 15 detik batas toleransi download data awal
+        }, 15000); 
 
         collections.forEach(colName => {
             onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
@@ -168,9 +168,8 @@ export const DataService = {
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
 
-    let user = _teachers.find(t => t.username === username && t.password === password);
+    let user: Teacher | undefined = _teachers.find(t => t.username === username && t.password === password);
     
-    // Bypass Admin Fresh Install
     if (!user && username === 'admin' && password === '123' && _teachers.length === 0) {
         const superAdmin: Teacher = {
             id: 'super_admin_001',
@@ -182,7 +181,6 @@ export const DataService = {
             mustChangePassword: false,
             lastActiveAt: new Date().toISOString()
         };
-        // HANYA buat admin baru jika Cloud benar-benar terkonfirmasi kosong
         const cloudRef = doc(db, "school_data", "teachers");
         const cloudSnap = await getDoc(cloudRef);
         if (!cloudSnap.exists()) {
@@ -190,9 +188,8 @@ export const DataService = {
             _teachers = [superAdmin];
             user = superAdmin;
         } else {
-            // Jika ternyata di cloud ada data, maka kita harus ambil data cloud tersebut
             _teachers = cloudSnap.data().data || [];
-            user = _teachers.find(t => t.username === username && t.password === password) || null;
+            user = _teachers.find(t => t.username === username && t.password === password);
         }
     }
 
