@@ -6,7 +6,7 @@ import {
 } from '../types';
 
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
 // --- RAM STORAGE ---
 let _teachers: Teacher[] = [];
@@ -46,16 +46,24 @@ const notifyDataChange = () => {
 };
 
 const pushToCloud = async (collectionName: string, data: any): Promise<void> => {
-  if (!isInitialLoadComplete) return; // Jangan simpan apa pun jika download belum beres
-  if (!db) throw new Error("Koneksi terputus.");
+  if (!isInitialLoadComplete) {
+      console.warn("Mencoba menyimpan sebelum inisialisasi selesai. Dibatalkan.");
+      return;
+  }
+  if (!db) throw new Error("Koneksi Cloud terputus.");
   
   notifyListeners('SYNCING');
   try {
     const cleanData = JSON.parse(JSON.stringify(data)); 
-    await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
+    // MENGGUNAKAN AWAIT: Memastikan fungsi ini menunggu sampai data benar-benar tersimpan di Google Cloud
+    await setDoc(doc(db, "school_data", collectionName), { 
+        data: cleanData,
+        lastUpdated: new Date().toISOString()
+    });
     notifyListeners('SAVED');
   } catch (error: any) {
-    notifyListeners('ERROR', "Gagal simpan.");
+    notifyListeners('ERROR', "Gagal Sinkronisasi Cloud.");
+    console.error("Firebase push error:", error);
     throw error; 
   }
 };
@@ -90,13 +98,14 @@ export const DataService = {
     const loadedCols = new Set<string>();
 
     return new Promise((resolve) => {
-        // Backup timeout jika internet benar-benar mati
+        // Backup timeout jika internet benar-benar lambat
         const timeout = setTimeout(() => {
             if (!isInitialLoadComplete) {
                 isInitialLoadComplete = true;
+                notifyListeners('SAVED');
                 resolve(true);
             }
-        }, 10000);
+        }, 15000); // 15 detik batas toleransi download data awal
 
         collections.forEach(colName => {
             onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
@@ -119,7 +128,6 @@ export const DataService = {
                 loadedCols.add(colName);
                 notifyDataChange();
 
-                // HANYA resolve jika SEMUA koleksi sudah memberikan jawaban (baik isi maupun kosong)
                 if (loadedCols.size === collections.length && !isInitialLoadComplete) {
                     clearTimeout(timeout);
                     isInitialLoadComplete = true;
@@ -128,7 +136,7 @@ export const DataService = {
                 }
             }, (err) => {
                 console.error("Sync Error for", colName, err);
-                loadedCols.add(colName); // Anggap selesai walau error agar tidak stuck
+                loadedCols.add(colName); 
             });
         });
     });
@@ -158,12 +166,11 @@ export const DataService = {
   saveCounselingSessions: async (data: CounselingSession[]) => { _counseling = data; await pushToCloud('counseling', data); notifyDataChange(); },
 
   login: async (username: string, password: string): Promise<Teacher | null> => {
-    // PROTEKSI KETAT: Dilarang login jika download koleksi belum 100% beres
     if (!isInitialLoadComplete) return null;
 
     let user = _teachers.find(t => t.username === username && t.password === password);
     
-    // Jika tidak ketemu, dan Cloud benar-benar terkonfirmasi kosong, baru buat Admin Cadangan
+    // Bypass Admin Fresh Install
     if (!user && username === 'admin' && password === '123' && _teachers.length === 0) {
         const superAdmin: Teacher = {
             id: 'super_admin_001',
@@ -175,10 +182,18 @@ export const DataService = {
             mustChangePassword: false,
             lastActiveAt: new Date().toISOString()
         };
-        // Simpan hanya jika kita yakin Cloud kosong
-        await setDoc(doc(db, "school_data", "teachers"), { data: [superAdmin] });
-        _teachers = [superAdmin];
-        user = superAdmin;
+        // HANYA buat admin baru jika Cloud benar-benar terkonfirmasi kosong
+        const cloudRef = doc(db, "school_data", "teachers");
+        const cloudSnap = await getDoc(cloudRef);
+        if (!cloudSnap.exists()) {
+            await setDoc(cloudRef, { data: [superAdmin] });
+            _teachers = [superAdmin];
+            user = superAdmin;
+        } else {
+            // Jika ternyata di cloud ada data, maka kita harus ambil data cloud tersebut
+            _teachers = cloudSnap.data().data || [];
+            user = _teachers.find(t => t.username === username && t.password === password) || null;
+        }
     }
 
     if (user) {
