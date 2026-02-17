@@ -310,6 +310,30 @@ export const DataService = {
     const teachers = _teachers; 
     let user = teachers.find(t => t.username === username && t.password === password);
     
+    // --- EMERGENCY SUPER ADMIN CREATION (AUTO-SEED) ---
+    // Jika login pakai 'admin' / '123' DAN user admin belum ada di database cloud,
+    // maka buatkan secara otomatis. Ini solusi untuk First Deploy.
+    if (!user && username === 'admin' && password === '123') {
+        const existingAdmin = teachers.find(t => t.username === 'admin');
+        if (!existingAdmin) {
+            console.log("⚡ Auto-Creating Super Admin Account...");
+            const superAdmin: Teacher = {
+                id: 'super_admin_001',
+                name: 'Super Administrator',
+                nip: '000000',
+                roles: [Role.ADMIN, Role.TEACHER, Role.BK, Role.KESISWAAN, Role.WALIKELAS],
+                username: 'admin',
+                password: '123',
+                mustChangePassword: true,
+                lastActiveAt: new Date().toISOString()
+            };
+            
+            // Simpan ke Cloud (State Memory + Cloud Push)
+            DataService.saveTeachers([...teachers, superAdmin]);
+            user = superAdmin; // Login berhasil sebagai user baru
+        }
+    }
+
     if (user) {
       localStorage.setItem('session_user_id', user.id); // Hanya simpan ID
       DataService.logActivity(user, 'LOGIN');

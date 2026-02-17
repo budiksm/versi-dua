@@ -1,5 +1,5 @@
 
-import * as firebaseApp from "firebase/app";
+import { initializeApp } from "firebase/app";
 import { 
   getFirestore, 
   initializeFirestore, 
@@ -37,7 +37,7 @@ const connectToFirebase = async () => {
 
     if (!auth) {
         try {
-            const app = firebaseApp.initializeApp(firebaseConfig);
+            const app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             
             // Menggunakan Cache Persistence Standar Industri
