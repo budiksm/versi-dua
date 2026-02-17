@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { DataService } from '../../services/dataService';
@@ -41,21 +40,18 @@ import {
   User, 
   PenSquare, 
   FileText, 
-  Calendar, 
   Check, 
   Play, 
   Shield, 
   LifeBuoy, 
-  MessageCircle, 
-  Users, 
   Paperclip, 
-  Eye, 
   Link as LinkIcon, 
   Loader2,
   Cloud,
   Zap,
   ArrowDown,
-  ArrowRight
+  ArrowRight,
+  Users
 } from 'lucide-react';
 
 // --- INTERFACE UNTUK TIMELINE STORY ---
@@ -179,14 +175,17 @@ const StudentProfile: React.FC = () => {
     }
   };
 
-  // ... (handleOpenDetail, compressImage, handleFileChange, handleTypeChange, handleSubmitIncident, handleAssignSanction - UNCHANGED)
   const handleOpenDetail = (item: any) => {
-      // Logic same as previous, abbreviated for brevity in this fix focus
-      // ... (Keep existing implementation)
       const story: StoryStep[] = [];
       let relatedIncidentIds: string[] = [];
-      if ('incidentTypeId' in item) relatedIncidentIds = [item.id];
-      else if ('sessionType' in item) relatedIncidentIds = item.relatedRecordIds || [];
+      
+      if ('incidentTypeId' in item) {
+          relatedIncidentIds = [item.id];
+      } else if ('sessionType' in item) {
+          relatedIncidentIds = item.relatedRecordIds || [];
+      } else if ('level' in item) {
+          // Logic for Sanction? Currently no direct link stored
+      }
 
       const relatedIncidents = records.filter(r => relatedIncidentIds.includes(r.id));
       relatedIncidents.forEach(inc => {
@@ -198,13 +197,78 @@ const StudentProfile: React.FC = () => {
               title: 'Pencatatan Pelanggaran',
               actor: `Guru: ${inc.recordedBy}`,
               description: `${incName}. ${inc.notes}`,
-              statusLabel: inc.status === 'PENDING' ? 'Menunggu' : 'Terverifikasi',
-              statusColor: inc.status === 'PENDING' ? 'bg-yellow-100' : 'bg-green-100',
+              statusLabel: inc.status === 'PENDING' ? 'Menunggu Verifikasi' : 'Terverifikasi',
+              statusColor: inc.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700',
               attachmentUrl: inc.proofImage,
               scoreImpact: inc.pointSnapshot
           });
+
+          if (inc.status === 'APPROVED') {
+              story.push({
+                  id: `${inc.id}_approve`,
+                  date: inc.date,
+                  type: 'APPROVAL',
+                  title: 'Persetujuan Wali Kelas',
+                  actor: 'Wali Kelas',
+                  description: 'Laporan diverifikasi valid dan poin dicatat.',
+                  statusLabel: 'Aktif',
+                  statusColor: 'bg-green-100 text-green-700'
+              });
+          }
       });
-      // ... (Assume standard detail logic)
+
+      const relevantSessions = counselingSessions.filter(s => 
+          s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) ||
+          ('id' in item && item.id === s.id)
+      );
+
+      relevantSessions.forEach(sess => {
+          story.push({
+              id: sess.id,
+              date: sess.date,
+              type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS',
+              title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas',
+              actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`,
+              description: sess.notes,
+              statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai',
+              statusColor: 'bg-blue-100 text-blue-700'
+          });
+      });
+
+      if ('level' in item) {
+          const s = item as StudentSanction;
+          story.push({
+              id: s.id,
+              date: s.assignedDate,
+              type: 'SANCTION',
+              title: 'Tindakan Kesiswaan',
+              actor: `Kesiswaan (${s.assignedBy})`,
+              description: `Diterbitkan ${s.level}. Alasan: ${s.notes}`,
+              statusLabel: s.redemptionStatus === 'COMPLETED' ? 'Sanksi Selesai' : 'Sanksi Aktif',
+              statusColor: 'bg-red-100 text-red-700'
+          });
+      }
+
+      story.sort((a,b) => {
+          const dateA = a.date ? new Date(a.date).getTime() : 0;
+          const dateB = b.date ? new Date(b.date).getTime() : 0;
+          return dateA - dateB;
+      });
+      
+      if (story.length === 0 && 'sessionType' in item) {
+          const sess = item as CounselingSession;
+           story.push({
+              id: sess.id,
+              date: sess.date,
+              type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS',
+              title: sess.sessionType === 'BK' ? 'Konseling Preventif BK' : 'Pembinaan Preventif',
+              actor: sess.counselorName,
+              description: sess.notes,
+              statusLabel: 'Preventif',
+              statusColor: 'bg-blue-50 text-blue-600'
+          });
+      }
+
       setStoryLine(story);
       setDetailModalOpen(true);
   };
@@ -223,13 +287,195 @@ const StudentProfile: React.FC = () => {
     setSelectedIncident('');
   };
 
-  const compressImage = (file: File): Promise<string> => { return new Promise((r) => r('')) }; // Placeholder to save space
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {};
-  const handleSubmitIncident = async (e: React.FormEvent) => { e.preventDefault(); };
-  const handleAssignSanction = async (e: React.FormEvent) => { e.preventDefault(); };
-  const startEditSanction = (s: any) => {};
-  const cancelEditSanction = () => {};
-  const updateRedemptionStatus = async (id: string, s: RedemptionStatus) => {};
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const scaleSize = MAX_WIDTH / img.width;
+          if (scaleSize < 1) {
+             canvas.width = MAX_WIDTH;
+             canvas.height = img.height * scaleSize;
+          } else {
+             canvas.width = img.width;
+             canvas.height = img.height;
+          }
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          resolve(compressedDataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIsCompressing(true);
+      try {
+        const compressedBase64 = await compressImage(file);
+        setImageProof(compressedBase64);
+      } catch (error) {
+        alert("Gagal memproses gambar.");
+      } finally {
+        setIsCompressing(false);
+      }
+    }
+  };
+
+  const handleSubmitIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedIncident || !selectedCategory || !student) return;
+    setIsSubmitting(true);
+    try {
+        const incidentDef = incidents.find(i => i.id === selectedIncident);
+        if (!incidentDef) return;
+        
+        // Determine status: If reporter is Homeroom Teacher -> APPROVED, else PENDING
+        const studentClass = classes.find(c => c.id === student.classId);
+        const isHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
+        const initialStatus: IncidentStatus = isHomeroom ? 'APPROVED' : 'PENDING';
+        
+        const newRecord: IncidentRecord = {
+          id: `rec_${Date.now()}`,
+          studentId: student.id,
+          incidentTypeId: selectedIncident,
+          date: new Date().toISOString(),
+          notes: notes,
+          proofImage: imageProof || undefined,
+          recordedBy: currentUser?.name || 'Unknown', 
+          pointSnapshot: incidentDef.points,
+          typeSnapshot: incidentDef.type,
+          status: initialStatus
+        };
+
+        // Logic BK Trigger
+        const bkRule = rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
+        const bkThreshold = bkRule ? bkRule.minPoints : 40;
+        if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= bkThreshold && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) {
+            newRecord.bkStatus = 'REQUIRED';
+        }
+
+        const allRecords = DataService.getRecords();
+        await DataService.saveRecords([...allRecords, newRecord]);
+
+        if (incidentDef.type === IncidentTypeCategory.VIOLATION && initialStatus === 'APPROVED') {
+            await DataService.evaluateAndApplySanction(student.id);
+        }
+
+        setSuccessMsg(`Data berhasil disimpan`);
+        setNotes('');
+        setImageProof(null);
+        setSelectedIncident('');
+        setSelectedCategory('');
+        setRefreshKey(prev => prev + 1);
+        setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (error) {
+        console.error(error);
+        alert("Gagal menyimpan data ke Cloud.");
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+  const handleAssignSanction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if(!student) return;
+    setIsSubmitting(true);
+    try {
+        const allSanctions = DataService.getSanctions();
+        if (editingSanctionId) {
+            const updatedSanctions = allSanctions.map(s => {
+                if (s.id === editingSanctionId) {
+                    return {
+                        ...s,
+                        level: sanctionLevel,
+                        notes: sanctionNotes,
+                        redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : s.redemptionStatus,
+                        redemptionTask: sanctionRedemptionTask,
+                        assignedBy: `${s.assignedBy} & ${currentUser?.name}`
+                    };
+                }
+                return s;
+            });
+            await DataService.saveSanctions(updatedSanctions);
+            setSuccessMsg('Data sanksi berhasil diperbarui!');
+        } else {
+            const newSanction: StudentSanction = {
+              id: `san_${Date.now()}`,
+              studentId: student.id,
+              level: sanctionLevel,
+              assignedBy: currentUser?.name || 'Kesiswaan',
+              assignedDate: new Date().toISOString(),
+              notes: sanctionNotes,
+              redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : RedemptionStatus.NONE,
+              redemptionTask: sanctionRedemptionTask,
+              isRedeemed: false
+            };
+            await DataService.saveSanctions([...allSanctions, newSanction]);
+            setSuccessMsg('Sanksi baru ditetapkan!');
+        }
+        setSanctionNotes('');
+        setSanctionRedemptionTask('');
+        setEditingSanctionId(null);
+        setRefreshKey(prev => prev + 1);
+        setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) {
+        alert("Gagal menyimpan sanksi.");
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+  const startEditSanction = (sanction: StudentSanction) => {
+      setEditingSanctionId(sanction.id);
+      setSanctionLevel(sanction.level);
+      setSanctionNotes(sanction.notes);
+      setSanctionRedemptionTask(sanction.redemptionTask || '');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditSanction = () => {
+      setEditingSanctionId(null);
+      setSanctionNotes('');
+      setSanctionRedemptionTask('');
+      setSanctionLevel(SanctionLevel.SP1);
+  };
+
+  const updateRedemptionStatus = async (sanctionId: string, status: RedemptionStatus) => {
+    setIsSubmitting(true);
+    try {
+        const allSanctions = DataService.getSanctions();
+        const updatedSanctions = allSanctions.map(s => {
+          if (s.id === sanctionId) {
+            return { 
+              ...s, 
+              redemptionStatus: status,
+              redemptionDate: status === RedemptionStatus.COMPLETED ? new Date().toISOString() : s.redemptionDate,
+              isRedeemed: status === RedemptionStatus.COMPLETED
+            };
+          }
+          return s;
+        });
+        await DataService.saveSanctions(updatedSanctions);
+        setRefreshKey(prev => prev + 1);
+        if (status === RedemptionStatus.IN_PROGRESS) setSuccessMsg('Penebusan dimulai!');
+        else if (status === RedemptionStatus.COMPLETED) setSuccessMsg('Sanksi diselesaikan!');
+        setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err) {
+        alert("Gagal update status.");
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
 
   // --- REVISI LOGIKA UTAMA: HANDLING SUBMIT COUNSELING ---
   const handleSubmitCounseling = async (e: React.FormEvent, type: 'BK' | 'HOMEROOM') => {
@@ -274,7 +520,6 @@ const StudentProfile: React.FC = () => {
                     // 1. Jika Wali Kelas merujuk ke BK -> Status jadi REQUIRED (Wajib BK)
                     // 2. Jika Wali Kelas menyelesaikan (NONE) -> Status jadi COMPLETED
                     // 3. Jika BK menyelesaikan (NONE) -> Status jadi COMPLETED
-                    // 4. Jika BK merujuk ke Kesiswaan -> Status tetap REQUIRED/COMPLETED (Tergantung SOP, disini kita assume COMPLETED di level BK, tapi eskalasi di Kesiswaan)
                     
                     if (type === 'HOMEROOM') {
                         if (counselingRec === 'TO_BK') {
@@ -282,10 +527,7 @@ const StudentProfile: React.FC = () => {
                         } else if (counselingRec === 'NONE') {
                             newBkStatus = 'COMPLETED'; // SELESAI: Wali kelas berhasil membina
                         }
-                        // Jika Parent Call, status tetap seperti sebelumnya (biasanya masih butuh pantauan) atau bisa dianggap pending.
                     } else if (type === 'BK') {
-                        // Jika BK menangani, biasanya kasus pelanggaran dianggap "handled" oleh BK
-                        // Kecuali jika BK merujuk lagi? Biasanya BK adalah terminal untuk status 'konseling'
                         newBkStatus = 'COMPLETED';
                     }
 
@@ -344,7 +586,6 @@ const StudentProfile: React.FC = () => {
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');
   const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED');
 
-  // Dynamic BK Check
   const bkRule = rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
   const bkThreshold = bkRule ? bkRule.minPoints : 40;
 
@@ -368,26 +609,22 @@ const StudentProfile: React.FC = () => {
   const filteredCategories = categories.filter(c => c.targetType === formType);
   const filteredIncidents = incidents.filter(i => i.isActive && i.type === formType && i.categoryId === selectedCategory);
 
-  // DETECT ACTIVE HOMEROOM REFERRAL
   const activeHomeroomReferral = homeroomSessions.find(s => {
       if (s.recommendation !== 'TO_BK') return false;
       const relatedIds = s.relatedRecordIds || [];
-      // Jika merujuk ID spesifik, cek apakah ID itu masih aktif (REQUIRED/NONE) bukan COMPLETED
       if (relatedIds.length > 0) {
           const hasActiveIncident = relatedIds.some(id => {
               const rec = records.find(r => r.id === id);
-              return rec && rec.bkStatus !== 'COMPLETED'; // If ANY is not completed, referral is active
+              return rec && rec.bkStatus !== 'COMPLETED'; 
           });
           return hasActiveIncident;
       }
-      // If general preventive referral, check if handled by newer BK session
       const newerBK = bkSessions.find(bk => new Date(bk.date) > new Date(s.date));
       return !newerBK;
   });
 
   return (
     <div className="space-y-8 pb-12 animate-fade-in relative">
-      {/* ... (Existing Header and Stats Cards - No Changes) ... */}
       <div className="flex flex-col md:flex-row md:items-center gap-4">
         {isAdmin && !isEducator ? (<Link to="/admin/students" className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 self-start"><ArrowLeft className="h-6 w-6" /></Link>) : (<button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 self-start"><ArrowLeft className="h-6 w-6" /></button>)}
         <div><h1 className="text-3xl font-bold text-slate-900">{student.name}</h1><p className="text-slate-500">NIS: {student.nis} • {className}</p></div>
@@ -410,13 +647,10 @@ const StudentProfile: React.FC = () => {
          </nav>
       </div>
 
-      {/* --- CONTENT AREA --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* TAB INCIDENTS & HOMEROOM */}
         {activeTab === 'INCIDENTS' && (
            <>
-              {/* ... (Existing Incident Form & History - Unchanged) ... */}
               <div className="lg:col-span-2 space-y-6">
                 {canRecord ? (
                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -457,7 +691,6 @@ const StudentProfile: React.FC = () => {
            <>
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   {/* ... (Header and Mode Selection - Unchanged) ... */}
                    <div className="p-6 border-b flex justify-between items-center bg-orange-50 border-orange-100"><h2 className="font-bold flex items-center gap-2 text-orange-800"><User className="h-5 w-5" /> Catat Pembinaan Wali Kelas</h2></div>
                    <div className="px-6 pt-6"><div className="flex p-1 bg-slate-100 rounded-lg"><button onClick={() => setHomeroomMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${homeroomMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Pembinaan Kasus (Disiplin)</button><button onClick={() => setHomeroomMode('PREVENTIVE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${homeroomMode === 'PREVENTIVE' ? 'bg-white text-yellow-600 shadow-sm ring-1 ring-yellow-200' : 'text-slate-500 hover:text-slate-700'}`}><Users className="h-4 w-4" /> Pembinaan Preventif (Personal)</button></div></div>
                    <form onSubmit={(e) => handleSubmitCounseling(e, 'HOMEROOM')} className="p-6 space-y-6">
@@ -494,7 +727,6 @@ const StudentProfile: React.FC = () => {
                     homeroomSessions.map(session => {
                       const isCaseSession = session.relatedRecordIds && session.relatedRecordIds.length > 0;
                       let isCaseResolved = false;
-                      // Logic check if ALL related records are COMPLETED
                       if (isCaseSession) {
                           const relatedRecs = records.filter(r => session.relatedRecordIds?.includes(r.id));
                           if (relatedRecs.length > 0 && relatedRecs.every(r => r.bkStatus === 'COMPLETED')) { isCaseResolved = true; }
@@ -527,7 +759,6 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* ... (BK Tab and Sanction Tab - Unchanged) ... */}
         {/* BK TAB with ENHANCED VISUAL INDICATORS */}
         {activeTab === 'BK_COUNSELING' && showBkTab && (
            <>
