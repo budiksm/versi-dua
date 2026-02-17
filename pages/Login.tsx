@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, User, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { DataService } from '../services/dataService';
 import { Role, Teacher } from '../types';
 import WaterLogoLoader from '../components/WaterLogoLoader';
@@ -17,6 +17,7 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loginSuccess, setLoginSuccess] = useState(''); // New state for success message
   const [isLoading, setIsLoading] = useState(false);
 
   // Auto-redirect if already logged in
@@ -48,22 +49,31 @@ const Login: React.FC = () => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setIsLoading(true);
-
-    // Simulate network delay & aesthetic loading
-    setTimeout(() => {
-      const user = DataService.login(username, password);
+    setLoginSuccess('');
+    
+    // 1. Cek Kredensial Langsung (Tanpa Loading Screen dulu)
+    const user = DataService.login(username, password);
+    
+    if (user) {
+      // 2. Jika Sukses: Tampilkan Notifikasi "Login berhasil"
+      setLoginSuccess('Login berhasil! Memuat data...');
       
-      if (user) {
-        // Beri sedikit waktu lagi untuk user menikmati animasi sukses sebelum redirect
-        setTimeout(() => {
-            redirectUser(user);
-        }, 1500);
-      } else {
-        setError('Username atau password salah.');
-        setIsLoading(false);
-      }
-    }, 1000);
+      // 3. Tunggu sebentar agar user membaca notifikasi
+      setTimeout(() => {
+          // 4. Baru Tampilkan Animasi Loading Logo
+          setIsLoading(true);
+          
+          // 5. Redirect setelah animasi selesai
+          setTimeout(() => {
+              redirectUser(user);
+          }, 2000);
+      }, 1000);
+
+    } else {
+      // 2. Jika Gagal: Tampilkan Error TANPA Loading Screen
+      setError('Username atau password salah.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -149,12 +159,19 @@ const Login: React.FC = () => {
               </div>
             )}
 
+            {loginSuccess && (
+              <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-50 p-3 rounded-lg border border-emerald-100 animate-fade-in">
+                <CheckCircle2 className="h-4 w-4" />
+                {loginSuccess}
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !!loginSuccess}
               className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-indigo-800 hover:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5"
             >
-              {isLoading ? 'Memproses...' : 'Masuk Aplikasi'}
+              {isLoading || loginSuccess ? 'Memproses...' : 'Masuk Aplikasi'}
             </button>
           </form>
 

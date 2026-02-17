@@ -80,6 +80,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isSavingPass, setIsSavingPass] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
+  // Logout Confirmation State
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   useEffect(() => {
     // Network Listeners
     const handleOnline = () => setIsOnline(true);
@@ -123,7 +126,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     };
   }, [currentUser?.id, successMessage]); 
 
-  const handleLogout = () => {
+  // Handlers for Logout Flow
+  const handleLogoutClick = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleConfirmLogout = () => {
     DataService.logout();
     navigate('/');
   };
@@ -281,6 +289,39 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex h-screen bg-slate-50">
       
+      {/* LOGOUT CONFIRMATION MODAL */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
+           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+              <div className="p-6 text-center">
+                 <div className="bg-red-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <LogOut className="h-8 w-8 text-red-600 ml-1" />
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-800 mb-2">Konfirmasi Keluar</h3>
+                 <p className="text-slate-600 text-sm">
+                    Apakah Anda yakin ingin keluar dari akun ini? <br/>
+                    Anda perlu masuk kembali untuk mengakses fitur aplikasi.
+                 </p>
+                 
+                 <div className="flex gap-3 justify-center mt-6">
+                    <button 
+                      onClick={() => setShowLogoutModal(false)}
+                      className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors"
+                    >
+                       Batal
+                    </button>
+                    <button 
+                      onClick={handleConfirmLogout}
+                      className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-md transition-colors flex items-center gap-2"
+                    >
+                       Ya, Keluar
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* PASSWORD CHANGE MODAL */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/95 backdrop-blur-sm p-4">
@@ -370,7 +411,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </nav>
 
         <div className="absolute bottom-0 w-full border-t border-slate-100 p-4 bg-white">
-          <button onClick={handleLogout} className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+          <button onClick={handleLogoutClick} className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 rounded-lg hover:bg-red-50 transition-colors">
             <LogOut className="h-5 w-5" /> Keluar
           </button>
         </div>
