@@ -8,7 +8,7 @@ import {
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// --- STATE MEMORI (RUNTIME CACHE) ---
+// --- PENYIMPANAN SEMENTARA DI RAM ---
 let _teachers: Teacher[] = [];
 let _students: Student[] = [];
 let _classes: ClassGroup[] = [];
@@ -21,7 +21,7 @@ let _sanctions: StudentSanction[] = [];
 let _cashflow: CashflowRecord[] = [];
 let _activityLogs: ActivityLog[] = [];
 
-// --- SYNC ENGINE STATE ---
+// --- STATUS SINKRONISASI ---
 export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR' | 'OFFLINE' | 'LOADING_INITIAL';
 let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
@@ -45,30 +45,30 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- CORE: PUSH TO CLOUD (DENGAN ASYNC AWAIT NYATA) ---
+// --- FUNGSI UTAMA: KIRIM KE GOOGLE CLOUD (ANTI-GIMIK) ---
 const pushToCloud = async (collectionName: string, data: any): Promise<void> => {
-  // JANGAN PERNAH SIMPAN JIKA LOADING AWAL BELUM SELESAI (PENCEGAHAN OVERWRITE DATA KOSONG)
+  // Jika data awal belum selesai di-download, dilarang menulis (mencegah data terhapus)
   if (!isInitialLoadComplete) {
-      console.error(`[SYNC DENIED] Menolak push ${collectionName} karena sinkronisasi awal belum selesai.`);
-      throw new Error("Sistem belum siap. Mohon tunggu sinkronisasi awal.");
+      console.error(`[BLOCK] Gagal simpan ${collectionName}. Data belum sinkron.`);
+      throw new Error("Sistem sedang memuat data...");
   }
 
   if (!db) {
-      notifyListeners('ERROR', "Database tidak terdeteksi.");
-      throw new Error("Koneksi database terputus.");
+      notifyListeners('ERROR', "Koneksi terputus.");
+      throw new Error("Koneksi internet bermasalah.");
   }
   
   notifyListeners('SYNCING');
   try {
     const cleanData = JSON.parse(JSON.stringify(data)); 
-    // KUNCI UTAMA: Kita 'await' sampai Firebase benar-benar menyimpan data
+    // PERINTAH AWAIT: Tunggu sampai Google Cloud menjawab 'OK'
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
-    console.log(`[Cloud Sync Success] ${collectionName} tersimpan.`);
     notifyListeners('SAVED');
+    console.log(`[OK] ${collectionName} tersimpan di Cloud.`);
   } catch (error: any) {
-    console.error(`[Cloud Sync Failed] ${collectionName}:`, error);
-    notifyListeners('ERROR', "Gagal menyimpan ke Cloud.");
-    throw error; // Teruskan error agar UI bisa menangani (misal membatalkan loading)
+    console.error(`[ERROR] Gagal simpan ke Cloud:`, error);
+    notifyListeners('ERROR', "Gagal simpan ke Cloud.");
+    throw error; 
   }
 };
 
@@ -84,11 +84,11 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  // --- INITIALIZATION (STRICT CLOUD FETCH) ---
+  // --- INISIALISASI AWAL (DOWNLOAD SEMUA DATA SEKOLAH) ---
   initializeData: async (): Promise<boolean> => {
     if (isConfigMissing) return false;
-
     notifyListeners('LOADING_INITIAL');
+    
     const isConnected = await connectToFirebase();
     if (!isConnected) return false;
 
@@ -124,20 +124,17 @@ export const DataService = {
 
                 if (receivedCollections.size === collections.length && !isInitialLoadComplete) {
                     isInitialLoadComplete = true; 
-                    console.log("✅ [Sync Engine] 100% Cloud Data Arrived.");
                     notifyListeners('SAVED');
                     resolve(true);
                 }
             }, (err) => {
-                console.error("Snapshot Error:", err);
-                notifyListeners('ERROR', "Koneksi Cloud Gagal.");
+                notifyListeners('ERROR', "Koneksi Cloud bermasalah.");
             });
         });
 
-        // Timeout diperpanjang untuk kestabilan
+        // Batas waktu tunggu 20 detik
         setTimeout(() => {
             if (!isInitialLoadComplete) {
-                console.warn("⚠️ [Sync Engine] Menunggu Cloud terlalu lama. Mengaktifkan paksa.");
                 isInitialLoadComplete = true; 
                 resolve(true);
             }
@@ -145,7 +142,7 @@ export const DataService = {
     });
   },
 
-  // --- GETTERS ---
+  // --- FUNGSI AMBIL DATA ---
   getClasses: () => _classes,
   getStudents: () => _students,
   getCategories: () => _categories,
@@ -158,7 +155,7 @@ export const DataService = {
   getActivityLogs: () => _activityLogs,
   getTeachers: () => _teachers,
 
-  // --- ASYNC SETTERS (REAL WAITING) ---
+  // --- FUNGSI SIMPAN DATA (WAJIB TUNGGU KONFIRMASI) ---
   saveClasses: async (data: ClassGroup[]) => { _classes = data; await pushToCloud('classes', data); notifyDataChange(); },
   saveStudents: async (data: Student[]) => { _students = data; await pushToCloud('students', data); notifyDataChange(); },
   saveCategories: async (data: MasterCategory[]) => { _categories = data; await pushToCloud('categories', data); notifyDataChange(); },
@@ -176,13 +173,13 @@ export const DataService = {
       notifyDataChange();
   },
 
-  // --- AUTHENTICATION (STRICT) ---
+  // --- SISTEM LOGIN ---
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
 
     let user = _teachers.find(t => t.username === username && t.password === password);
     
-    // Emergency Admin check
+    // Login Admin Darurat jika cloud kosong
     if (!user && username === 'admin' && password === '123') {
         const anyAdminExists = _teachers.some(t => t.roles.includes(Role.ADMIN));
         if (!anyAdminExists) {
@@ -240,7 +237,7 @@ export const DataService = {
     }
   },
 
-  // --- HELPERS ---
+  // --- HITUNG POIN SISWA ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
