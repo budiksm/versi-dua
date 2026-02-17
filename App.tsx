@@ -21,7 +21,7 @@ import OsisInput from './pages/osis/OsisInput';
 import StudentInput from './pages/student/StudentInput';
 import { Role } from './types';
 import { DataService } from './services/dataService';
-import { WifiOff, AlertTriangle, RotateCcw } from 'lucide-react';
+import { AlertTriangle, RotateCcw } from 'lucide-react';
 import WaterLogoLoader from './components/WaterLogoLoader';
 import { isConfigMissing } from './firebaseConfig';
 
@@ -31,14 +31,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initApp = async () => {
-      console.log("☁️ Aplikasi memulai sinkronisasi cloud...");
-      // initializeData sekarang me-return Promise yang menunggu data Cloud masuk semua
+      console.log("☁️ Memulai Sinkronisasi Cloud...");
+      // DataService.initializeData sekarang adalah Promise yang menunggu data Cloud selesai didownload
       const success = await DataService.initializeData();
       
       if (success) {
-          console.log("✅ Sinkronisasi Berhasil. Membuka aplikasi.");
-          // Tambahkan sedikit delay estetika
-          setTimeout(() => setIsInitializing(false), 1000);
+          console.log("✅ Sinkronisasi Selesai.");
+          // Delay sedikit untuk transisi halus
+          setTimeout(() => setIsInitializing(false), 1200);
       } else {
           setInitError(true);
           setIsInitializing(false);
@@ -49,17 +49,16 @@ const App: React.FC = () => {
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 pointer-events-none"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white">
         <WaterLogoLoader />
         <div className="mt-4 flex flex-col items-center">
             <div className="flex items-center gap-2 text-indigo-600 font-bold animate-pulse">
                 <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
                 <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-.3s]"></div>
                 <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-.5s]"></div>
-                <span>Sinkronisasi Cloud...</span>
+                <span>Menghubungkan ke Cloud...</span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-2">Mohon tunggu, sedang mengambil data sekolah terbaru.</p>
+            <p className="text-[10px] text-slate-400 mt-2">Sedang mengambil data sekolah terbaru agar aman.</p>
         </div>
       </div>
     );
@@ -73,14 +72,12 @@ const App: React.FC = () => {
                     <AlertTriangle className="h-10 w-10 text-red-600" />
                 </div>
                 <h2 className="text-xl font-bold text-slate-800 mb-2">Gagal Memuat Data</h2>
-                <p className="text-slate-500 text-sm mb-6">
-                    Aplikasi gagal terhubung ke server. Periksa koneksi internet Anda dan segarkan halaman.
-                </p>
+                <p className="text-slate-500 text-sm mb-6">Aplikasi gagal terhubung ke Cloud. Periksa internet Anda.</p>
                 <button 
                     onClick={() => window.location.reload()}
-                    className="w-full px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                    className="w-full px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
                 >
-                    <RotateCcw className="h-4 w-4" /> Segarkan Halaman
+                    <RotateCcw className="h-4 w-4" /> Coba Lagi
                 </button>
             </div>
         </div>
