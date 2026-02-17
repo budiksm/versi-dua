@@ -1,5 +1,5 @@
 
-import { initializeApp } from "firebase/app";
+import * as firebaseApp from "firebase/app";
 import { 
   getFirestore, 
   initializeFirestore, 
@@ -8,75 +8,62 @@ import {
 } from "firebase/firestore";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
-// --- KONFIGURASI FIREBASE ---
-// Kita menghapus hardcoded config DEMO.
-// Anda WAJIB memasukkan config Anda sendiri melalui Menu Admin > Koneksi Database
-// atau melalui Environment Variables.
+// --- KONFIGURASI PROFESIONAL (HARDCODED) ---
+// Bagian ini TIDAK AKAN HILANG walau browser di-reset.
+// Data ini aman karena Firebase API Key memang didesain untuk publik (Client Side).
+// Keamanan data dijaga oleh Firestore Security Rules di console Google, bukan disembunyikan di sini.
 
-const getStoredConfig = () => {
-  try {
-    const stored = localStorage.getItem('firebase_manual_config');
-    if (stored) return JSON.parse(stored);
-  } catch (e) {
-    console.error("Gagal membaca konfigurasi:", e);
-  }
-  return null;
+const firebaseConfig = {
+  apiKey: "AIzaSyAycrr3a5Hg5IgWdSxRNcSbuqY_rROeY3w",
+  authDomain: "versi-dua.firebaseapp.com",
+  projectId: "versi-dua",
+  storageBucket: "versi-dua.firebasestorage.app",
+  messagingSenderId: "281459589879",
+  appId: "1:281459589879:web:635863542ba731bbe849f2"
 };
 
-let firebaseConfig = getStoredConfig();
-
-// Fallback ke Environment Variables (Best Practice untuk Production Deployment)
-if (!firebaseConfig) {
-  const env = (import.meta as any).env || {};
-  if (env.VITE_FIREBASE_API_KEY) {
-    firebaseConfig = {
-      apiKey: env.VITE_FIREBASE_API_KEY,
-      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: env.VITE_FIREBASE_APP_ID
-    };
-  }
-}
-
-// Export status untuk UI
-export const isConfigMissing = !firebaseConfig;
+// Validasi agar tidak error blank screen jika lupa isi config
+// Cek jika API Key masih default atau kosong (sekarang sudah diisi)
+export const isConfigMissing = !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY_HERE";
 
 let db: any = null;
 let auth: any = null;
 
 const connectToFirebase = async () => {
-    if (!firebaseConfig) return false;
+    if (isConfigMissing) {
+        console.error("CRITICAL: Firebase Config belum diisi di file firebaseConfig.ts dengan benar.");
+        return false;
+    }
 
     if (!auth) {
         try {
-            const app = initializeApp(firebaseConfig);
+            const app = firebaseApp.initializeApp(firebaseConfig);
             auth = getAuth(app);
-            // Menggunakan Cache Firestore Native (Lebih aman & cepat daripada localStorage manual)
+            
+            // Menggunakan Cache Persistence Standar Industri
+            // Data akan disimpan di IndexedDB browser agar cepat,
+            // tapi Source of Truth tetap Cloud.
             db = initializeFirestore(app, {
                 localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
             });
+            console.log("🔥 Firebase Initialized (Hardcoded Mode)");
         } catch (e) {
             console.error("Firebase Init Error:", e);
             return false;
         }
     }
 
+    // Auto-Login Anonymous untuk akses baca/tulis database
     return new Promise((resolve) => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             unsubscribe();
             if (user) {
-                console.log("☁️ Terhubung ke Cloud:", user.uid);
                 resolve(true);
             } else {
                 signInAnonymously(auth)
-                    .then(() => {
-                        console.log("☁️ Login Cloud Berhasil");
-                        resolve(true);
-                    })
+                    .then(() => resolve(true))
                     .catch((error) => {
-                        console.error("❌ Gagal Login Cloud:", error);
+                        console.error("Auth Failed:", error);
                         resolve(false);
                     });
             }
