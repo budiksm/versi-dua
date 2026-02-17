@@ -363,7 +363,13 @@ const StudentProfile: React.FC = () => {
           status: initialStatus
         };
 
-        if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= 40 && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) {
+        // DYNAMIC BK TRIGGER
+        // Mencari aturan yang memiliki kata 'BK' untuk menentukan threshold
+        // Jika tidak ada, fallback ke 40
+        const bkRule = rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
+        const bkThreshold = bkRule ? bkRule.minPoints : 40;
+
+        if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= bkThreshold && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) {
             newRecord.bkStatus = 'REQUIRED';
         }
 
@@ -605,7 +611,11 @@ const StudentProfile: React.FC = () => {
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');
   const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED');
 
-  const hasMandatoryBKCondition = stats.effectiveViolationScore >= 40 || 
+  // Dynamic BK Check
+  const bkRule = rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
+  const bkThreshold = bkRule ? bkRule.minPoints : 40;
+
+  const hasMandatoryBKCondition = stats.effectiveViolationScore >= bkThreshold || 
         counselingSessions.some(s => s.sessionType === 'HOMEROOM' && s.recommendation === 'TO_BK') ||
         records.some(r => r.bkStatus === 'REQUIRED');
 

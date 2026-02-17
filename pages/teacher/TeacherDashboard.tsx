@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
-import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction } from '../../types';
+import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction, CoachingRule } from '../../types';
 import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar, LayoutGrid, UserPlus, Activity, MessageSquare, FileText, Paperclip, Link as LinkIcon } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -100,6 +100,21 @@ const TeacherDashboard: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // --- HELPER UNTUK MENDAPATKAN AMBANG BATAS DINAMIS ---
+  const getDynamicThresholds = (rules: CoachingRule[]) => {
+      const getRuleMin = (keyword: string, defaultVal: number) => {
+          const r = rules.find(x => x.statusLabel.toUpperCase().includes(keyword));
+          return r ? r.minPoints : defaultVal;
+      };
+      
+      return {
+          bk: getRuleMin('BK', 40),
+          sp1: getRuleMin('SP 1', 80),
+          sp2: getRuleMin('SP 2', 120),
+          sp3: getRuleMin('SP 3', 160)
+      };
+  };
+
   const refreshDashboard = () => {
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
@@ -149,8 +164,10 @@ const TeacherDashboard: React.FC = () => {
          setPendingApprovals(pendings);
       }
 
-      // --- LOGIKA DASHBOARD BK ---
+      // --- LOGIKA DASHBOARD BK (DINAMIS) ---
       if (user.roles.includes(Role.BK)) {
+        const thresholds = getDynamicThresholds(rules);
+        
         let activeCount = 0;
         let mandatoryCount = 0;
         let referralCount = 0;
@@ -179,7 +196,7 @@ const TeacherDashboard: React.FC = () => {
             const latestViolation = recs.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
             
             let unhandledHighScore = false;
-            if (stats.effectiveViolationScore >= 40) {
+            if (stats.effectiveViolationScore >= thresholds.bk) {
                if (!latestBKSession) {
                   unhandledHighScore = true;
                } else if (latestViolation && new Date(latestViolation.date).getTime() > new Date(latestBKSession.date).getTime()) {
@@ -200,7 +217,7 @@ const TeacherDashboard: React.FC = () => {
                         topIncident: incs.find(i => i.id === topViolation.incidentTypeId)?.name || 'Akumulasi Poin',
                         incidentDate: topViolation.date
                     });
-                } else if (stats.effectiveViolationScore >= 40) {
+                } else if (stats.effectiveViolationScore >= thresholds.bk) {
                     mandatoryListTemp.push({
                         student: s,
                         score: stats.effectiveViolationScore,
@@ -227,11 +244,8 @@ const TeacherDashboard: React.FC = () => {
             }
 
             // High Risk Students (Mendekati SP1, SP2, atau SP3)
-            // SP1: >80, SP2: >120, SP3: >160
-            // Risk SP1: 50-79
-            // Risk SP2: 80-119
-            // Risk SP3: 120-159
-            if (stats.effectiveViolationScore >= 50 && stats.effectiveViolationScore < 160) {
+            // Logika: Poin di atas Threshold BK tapi belum sampai SP3 (kecuali sudah dihandle)
+            if (stats.effectiveViolationScore >= (thresholds.sp1 * 0.7) && stats.effectiveViolationScore < thresholds.sp3) {
                 highRiskCount++;
             }
         });
@@ -409,6 +423,7 @@ const TeacherDashboard: React.FC = () => {
       // 1. Logic BK
       if (selectedStatType.startsWith('BK_')) {
           const allCounselings = DataService.getCounselingSessions();
+          const thresholds = getDynamicThresholds(allRules);
           
           students.forEach(s => {
               const stats = DataService.calculateStudentPoints(s.id, records, incidents);
@@ -428,7 +443,7 @@ const TeacherDashboard: React.FC = () => {
                   const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
                   const latestViolation = records.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
                   let unhandledHighScore = false;
-                  if (stats.effectiveViolationScore >= 40) {
+                  if (stats.effectiveViolationScore >= thresholds.bk) {
                      if (!latestBKSession) unhandledHighScore = true;
                      else if (latestViolation && new Date(latestViolation.date).getTime() > new Date(latestBKSession.date).getTime()) unhandledHighScore = true;
                   }
@@ -447,31 +462,32 @@ const TeacherDashboard: React.FC = () => {
                   }
               } else if (selectedStatType === 'BK_HIGH_RISK') {
                   const score = stats.effectiveViolationScore;
-                  if (score >= 50 && score < 160) {
+                  
+                  // Gunakan threshold dinamis
+                  if (score >= (thresholds.sp1 * 0.7) && score < thresholds.sp3) {
                       include = true;
                       
                       let nextLabel = '';
                       let nextThreshold = 0;
                       
-                      if (score < 80) {
+                      if (score < thresholds.sp1) {
                           riskBadge = 'YELLOW';
                           nextLabel = 'SP 1';
-                          nextThreshold = 80;
-                      } else if (score < 120) {
+                          nextThreshold = thresholds.sp1;
+                      } else if (score < thresholds.sp2) {
                           riskBadge = 'ORANGE';
                           nextLabel = 'SP 2';
-                          nextThreshold = 120;
+                          nextThreshold = thresholds.sp2;
                       } else {
                           riskBadge = 'RED';
                           nextLabel = 'SP 3';
-                          nextThreshold = 160;
+                          nextThreshold = thresholds.sp3;
                       }
 
                       const coachingStatusRule = DataService.getCoachingStatus(score, allRules);
                       const coachingStatus = coachingStatusRule?.statusLabel || 'Tidak Diketahui';
                       
-                      // Format Detail: “70 Poin – Mendekati SP 1 (Ambang 80 Poin). Status: Dalam Pembinaan Wali Kelas. Rekomendasi: Monitoring dan Konseling Preventif.”
-                      note = `${score} Poin – Mendekati ${nextLabel} (Ambang ${nextThreshold} Poin). Status: ${coachingStatus}. Rekomendasi: Monitoring dan Konseling Preventif.`;
+                      note = `${score} Poin – Mendekati ${nextLabel} (Ambang ${nextThreshold} Poin). Status: ${coachingStatus}.`;
                   }
               }
 
@@ -864,6 +880,10 @@ const TeacherDashboard: React.FC = () => {
             let highestStudentId = '';
             let highestStudentName = '-';
 
+            // Get Dynamic Thresholds for Walikelas View
+            const rules = DataService.getRules();
+            const thresholds = getDynamicThresholds(rules);
+
             classStudents.forEach(s => {
                const stats = DataService.calculateStudentPoints(s.id, records, incidents);
                const score = stats.effectiveViolationScore;
@@ -874,10 +894,10 @@ const TeacherDashboard: React.FC = () => {
                if (score === 0) listCleanStudents.push(studentData);
                if (score >= 20) listStudentsInCoaching.push(studentData);
                
-               if (score >= 40 && score < 80) listRangeBK.push(studentData);
-               if (score >= 80 && score < 120) listRangeSP1.push(studentData);
-               if (score >= 120 && score < 160) listRangeSP2.push(studentData);
-               if (score >= 160) listRangeSP3.push(studentData);
+               if (score >= thresholds.bk && score < thresholds.sp1) listRangeBK.push(studentData);
+               if (score >= thresholds.sp1 && score < thresholds.sp2) listRangeSP1.push(studentData);
+               if (score >= thresholds.sp2 && score < thresholds.sp3) listRangeSP2.push(studentData);
+               if (score >= thresholds.sp3) listRangeSP3.push(studentData);
 
                if (score > highestScore) {
                   highestScore = score;
@@ -935,7 +955,7 @@ const TeacherDashboard: React.FC = () => {
                        <div className="p-6 space-y-4 relative">
                           <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><AlertTriangle className="h-4 w-4" /> Status Perhatian</h3>
                           <div className="space-y-2">
-                             <div onClick={() => handleOpenClassDetail('Perlu Konseling BK (40-79 Poin)', 'STUDENTS', listRangeBK)} className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeBK.length > 0 ? 'bg-orange-500/20 border-orange-400/30 hover:bg-orange-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}><div><p className={`font-bold text-xs ${listRangeBK.length > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{listRangeBK.length} Siswa</p><p className="text-[10px] text-blue-200">Perlu BK (40-79)</p></div>{listRangeBK.length > 0 && <AlertCircle className="h-4 w-4 text-orange-300" />}</div>
+                             <div onClick={() => handleOpenClassDetail(`Perlu Konseling BK (${thresholds.bk}-${thresholds.sp1-1} Poin)`, 'STUDENTS', listRangeBK)} className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeBK.length > 0 ? 'bg-orange-500/20 border-orange-400/30 hover:bg-orange-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}><div><p className={`font-bold text-xs ${listRangeBK.length > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{listRangeBK.length} Siswa</p><p className="text-[10px] text-blue-200">Perlu BK ({thresholds.bk}+)</p></div>{listRangeBK.length > 0 && <AlertCircle className="h-4 w-4 text-orange-300" />}</div>
                              {/* ... Other ranges ... */}
                           </div>
                        </div>
