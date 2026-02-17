@@ -45,6 +45,9 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
+// Helper untuk memberikan jeda minimal (mencegah klik terlalu cepat)
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const pushToCloud = async (collectionName: string, data: any): Promise<void> => {
   if (!isInitialLoadComplete) {
       console.warn("Mencoba menyimpan sebelum inisialisasi selesai. Dibatalkan.");
@@ -53,13 +56,23 @@ const pushToCloud = async (collectionName: string, data: any): Promise<void> => 
   if (!db) throw new Error("Koneksi Cloud terputus.");
   
   notifyListeners('SYNCING');
+  const startTime = Date.now();
+  
   try {
     const cleanData = JSON.parse(JSON.stringify(data)); 
-    // MENGGUNAKAN AWAIT: Memastikan fungsi ini menunggu sampai data benar-benar tersimpan di Google Cloud
+    // Menunggu respon asli dari server Google
     await setDoc(doc(db, "school_data", collectionName), { 
         data: cleanData,
         lastUpdated: new Date().toISOString()
     });
+
+    // FORCE WAIT: Jika proses sangat cepat (misal 100ms), paksa tunggu sampai total 2 detik
+    // agar data benar-benar stabil di tunnel koneksi.
+    const elapsedTime = Date.now() - startTime;
+    if (elapsedTime < 2000) {
+        await wait(2000 - elapsedTime);
+    }
+
     notifyListeners('SAVED');
   } catch (error: any) {
     notifyListeners('ERROR', "Gagal Sinkronisasi Cloud.");
@@ -98,7 +111,6 @@ export const DataService = {
     const loadedCols = new Set<string>();
 
     return new Promise((resolve) => {
-        // Backup timeout jika internet benar-benar lambat
         const timeout = setTimeout(() => {
             if (!isInitialLoadComplete) {
                 isInitialLoadComplete = true;
@@ -168,7 +180,9 @@ export const DataService = {
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
 
-    let user: Teacher | undefined = _teachers.find(t => t.username === username && t.password === password);
+    // Perbaikan error build TS2322: Pastikan pencarian menghasilkan Teacher atau null eksplisit
+    const foundUser = _teachers.find(t => t.username === username && t.password === password);
+    let user: Teacher | null = foundUser || null;
     
     if (!user && username === 'admin' && password === '123' && _teachers.length === 0) {
         const superAdmin: Teacher = {
@@ -189,7 +203,8 @@ export const DataService = {
             user = superAdmin;
         } else {
             _teachers = cloudSnap.data().data || [];
-            user = _teachers.find(t => t.username === username && t.password === password);
+            const retryFound = _teachers.find(t => t.username === username && t.password === password);
+            user = retryFound || null;
         }
     }
 

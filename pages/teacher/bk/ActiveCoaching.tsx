@@ -141,7 +141,7 @@ const ActiveCoaching: React.FC = () => {
       if (selectedRecordIds.includes(recordId)) {
           setSelectedRecordIds(prev => prev.filter(id => id !== recordId));
       } else {
-          // Fix: Use 'recordId' instead of undefined 'id'
+          // Perbaikan bug variabel 'id' yang undefined
           setSelectedRecordIds(prev => [...prev, recordId]);
       }
   };
@@ -168,7 +168,7 @@ const ActiveCoaching: React.FC = () => {
           relatedRecordIds: selectedRecordIds
         };
 
-        // WAJIB AWAIT: Tunggu sampai cloud membalas
+        // Menunggu konfirmasi cloud
         await DataService.saveCounselingSessions([...allSessions, newSession]);
         
         setShowModal(false);
@@ -185,13 +185,13 @@ const ActiveCoaching: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* OVERLAY SINKRONISASI */}
+      {/* LAYAR PENGUNCI INTERAKSI (BLOCKING UI) */}
       {isSubmitting && (
         <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-white">
             <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-slate-800">
                 <Cloud className="h-16 w-16 text-blue-600 mb-4 animate-pulse" />
-                <h3 className="text-xl font-bold">Sinkronisasi Cloud...</h3>
-                <p className="text-sm text-slate-500 mt-2 text-center">Menyimpan hasil konseling ke database sekolah.</p>
+                <h3 className="text-xl font-bold">Mengirim Hasil Konseling...</h3>
+                <p className="text-sm text-slate-500 mt-2 text-center">Sedang mengamankan data di server Google Cloud.</p>
                 <div className="w-48 h-1.5 bg-slate-100 rounded-full mt-6 overflow-hidden">
                     <div className="h-full bg-blue-600 animate-progress-indeterminate"></div>
                 </div>
@@ -239,7 +239,7 @@ const ActiveCoaching: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in"><div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"><div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white shrink-0"><h2 className="font-bold text-lg flex items-center gap-2"><HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling</h2><button onClick={() => setShowModal(false)} className="text-blue-100 hover:text-white"><X className="h-5 w-5" /></button></div>
           <div className="overflow-y-auto p-6 flex-1"><form id="counselingForm" onSubmit={handleSubmit} className="space-y-4"><div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-900 mb-2">Mencatat untuk: <b>{selectedStudent.name}</b> ({selectedStudent.nis})</div>
             <div><label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-orange-500" /> Pilih Kasus / Pelanggaran Aktif</label><div className="bg-slate-50 border border-slate-200 rounded-lg max-h-40 overflow-y-auto p-2 space-y-1">{studentViolations.length === 0 ? (<p className="text-xs text-slate-400 italic p-2 text-center">Tidak ada pelanggaran aktif/baru.</p>) : (studentViolations.map(record => (<div key={record.id} onClick={() => toggleRecordSelection(record.id)} className={`p-2 rounded border cursor-pointer text-xs flex items-center gap-2 transition-all ${selectedRecordIds.includes(record.id) ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-white border-slate-200 hover:bg-slate-100'}`}><div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedRecordIds.includes(record.id) ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>{selectedRecordIds.includes(record.id) && <CheckCircle2 className="h-3 w-3 text-white" />}</div><div className="flex-1"><span className="font-bold">{incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown'}</span> <span className="text-red-600">({record.pointSnapshot} Pt)</span>{record.bkStatus === 'REQUIRED' && <span className="ml-2 bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}<div className="text-slate-500">{new Date(record.date).toLocaleDateString()}</div></div></div>)))}</div><p className="text-[10px] text-slate-500 mt-1">*Kasus yang dicentang akan ditandai sebagai <b>SELESAI</b> dan dihapus dari daftar aktif.</p></div>
-            <div><label className="block text-sm font-semibold text-slate-700 mb-1">Catatan / Hasil Konseling</label><textarea required className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none h-32 bg-white text-slate-900" placeholder="Deskripsikan masalah, solusi, and komitmen siswa..." value={notes} onChange={e => setNotes(e.target.value)} /></div>
+            <div><label className="block text-sm font-semibold text-slate-700 mb-1">Catatan / Hasil Konseling</label><textarea required className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none h-32 bg-white text-slate-900" placeholder="Deskripsikan masalah, solusi, dan komitmen siswa..." value={notes} onChange={e => setNotes(e.target.value)} /></div>
             <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-semibold text-slate-700 mb-1">Status Sesi</label><select className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900" value={sessionStatus} onChange={e => setSessionStatus(e.target.value as any)}><option value="OPEN">OPEN (Masih Dipantau)</option><option value="CLOSED">CLOSED (Selesai)</option></select></div><div><label className="block text-sm font-semibold text-slate-700 mb-1">Rekomendasi</label><select className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900" value={recommendation} onChange={e => setRecommendation(e.target.value as any)}><option value="NONE">Tidak Ada (Cukup Pembinaan)</option><option value="PARENT_CALL">Panggil Orang Tua</option><option value="TO_KESISWAAN">Rujuk ke Kesiswaan</option><option value="SUSPENSION_REVIEW">Tinjau Skorsing</option></select></div></div></form></div>
           <div className="p-4 border-t border-slate-100 flex justify-end gap-2 shrink-0"><button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Batal</button><button form="counselingForm" type="submit" disabled={isSubmitting || !notes} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"><Save className="h-4 w-4" /> Simpan</button></div>
         </div></div>
