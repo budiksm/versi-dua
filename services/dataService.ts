@@ -180,7 +180,6 @@ export const DataService = {
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
 
-    // Perbaikan error build TS2322: Pastikan pencarian menghasilkan Teacher atau null eksplisit
     const foundUser = _teachers.find(t => t.username === username && t.password === password);
     let user: Teacher | null = foundUser || null;
     
@@ -209,19 +208,23 @@ export const DataService = {
     }
 
     if (user) {
-      localStorage.setItem('session_user_id', user.id); 
+      // PERUBAHAN PENTING: Menggunakan sessionStorage alih-alih localStorage
+      // SessionStorage akan hilang otomatis saat tab/browser ditutup
+      sessionStorage.setItem('session_user_id', user.id); 
       return user;
     }
     return null;
   },
 
   getCurrentUser: (): Teacher | null => {
-    const storedId = localStorage.getItem('session_user_id');
+    // PERUBAHAN PENTING: Baca dari sessionStorage
+    const storedId = sessionStorage.getItem('session_user_id');
     return _teachers.find(t => t.id === storedId) || null;
   },
 
   logout: () => {
-    localStorage.removeItem('session_user_id');
+    // PERUBAHAN PENTING: Hapus dari sessionStorage
+    sessionStorage.removeItem('session_user_id');
   },
 
   updatePassword: async (userId: string, newPass: string) => {
@@ -306,3 +309,4 @@ export const DataService = {
     return { deletedRecords: _records.length - validRecords.length };
   }
 };
+    
