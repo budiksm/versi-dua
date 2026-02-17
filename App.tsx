@@ -21,7 +21,8 @@ import OsisInput from './pages/osis/OsisInput';
 import StudentInput from './pages/student/StudentInput';
 import { Role } from './types';
 import { DataService } from './services/dataService';
-import { Cloud, Loader2, WifiOff } from 'lucide-react';
+import { WifiOff } from 'lucide-react';
+import WaterLogoLoader from './components/WaterLogoLoader';
 
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -33,7 +34,10 @@ const App: React.FC = () => {
       // Kita tidak merender aplikasi sampai data cloud terunduh.
       const success = await DataService.initializeData();
       if (success) {
-          setIsInitializing(false);
+          // Tambahkan sedikit delay buatan agar animasi logo terlihat estetik (min 2 detik)
+          setTimeout(() => {
+             setIsInitializing(false);
+          }, 2000);
       } else {
           setInitError(true);
           setIsInitializing(false);
@@ -44,19 +48,13 @@ const App: React.FC = () => {
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-        <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center max-w-sm text-center animate-fade-in">
-           <div className="relative mb-6">
-             <Cloud className="h-20 w-20 text-indigo-100" />
-             <div className="absolute inset-0 flex items-center justify-center">
-               <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
-             </div>
-           </div>
-           <h2 className="text-xl font-bold text-slate-800 mb-2">Menghubungkan Database</h2>
-           <p className="text-slate-500 text-sm">
-             Sedang mengunduh data terbaru dari cloud untuk memastikan integritas data. Mohon tunggu...
-           </p>
-        </div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 relative overflow-hidden">
+        {/* Background Decoration */}
+        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30 pointer-events-none"></div>
+        <div className="absolute -top-24 -right-24 w-96 h-96 bg-indigo-100 rounded-full blur-3xl opacity-50"></div>
+        <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-blue-100 rounded-full blur-3xl opacity-50"></div>
+        
+        <WaterLogoLoader />
       </div>
     );
   }

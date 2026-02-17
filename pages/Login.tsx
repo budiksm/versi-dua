@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { DataService } from '../services/dataService';
 import { Role, Teacher } from '../types';
+import WaterLogoLoader from '../components/WaterLogoLoader';
 
 // --- KONFIGURASI GAMBAR (GANTI LINK DI SINI) ---
 const SCHOOL_LOGO_URL = "https://i.ibb.co.com/HkW9d0t/512.png";
@@ -49,17 +50,20 @@ const Login: React.FC = () => {
     setError('');
     setIsLoading(true);
 
-    // Simulate network delay
+    // Simulate network delay & aesthetic loading
     setTimeout(() => {
       const user = DataService.login(username, password);
       
       if (user) {
-        redirectUser(user);
+        // Beri sedikit waktu lagi untuk user menikmati animasi sukses sebelum redirect
+        setTimeout(() => {
+            redirectUser(user);
+        }, 1500);
       } else {
         setError('Username atau password salah.');
         setIsLoading(false);
       }
-    }, 800);
+    }, 1000);
   };
 
   return (
@@ -67,6 +71,13 @@ const Login: React.FC = () => {
       className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 bg-cover bg-center bg-no-repeat bg-blend-overlay"
       style={{ backgroundImage: `url('${LOGIN_BACKGROUND_URL}')` }}
     >
+      {/* FULL SCREEN LOADER OVERLAY */}
+      {isLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/90 backdrop-blur-md animate-fade-in">
+            <WaterLogoLoader />
+        </div>
+      )}
+
       <div className="w-full max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-white/50 relative">
         
         <div className="bg-indigo-900 p-8 text-center relative overflow-hidden">
