@@ -49,7 +49,7 @@ const StudentProfile: React.FC = () => {
   const [bkMode, setBkMode] = useState<'CASE' | 'PREVENTIVE'>('CASE');
   const [homeroomMode, setHomeroomMode] = useState<'CASE' | 'PREVENTIVE'>('CASE');
 
-  // Form State
+  // Form State (Incident)
   const [formType, setFormType] = useState<IncidentTypeCategory>(IncidentTypeCategory.VIOLATION);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedIncident, setSelectedIncident] = useState<string>('');
@@ -57,15 +57,18 @@ const StudentProfile: React.FC = () => {
   const [imageProof, setImageProof] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   
+  // Form State (Counseling)
   const [counselingNotes, setCounselingNotes] = useState('');
   const [counselingRec, setCounselingRec] = useState<'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK'>('NONE');
   const [selectedCounselingRecords, setSelectedCounselingRecords] = useState<string[]>([]);
 
+  // Form State (Sanction)
   const [sanctionLevel, setSanctionLevel] = useState<SanctionLevel>(SanctionLevel.SP1);
   const [sanctionNotes, setSanctionNotes] = useState('');
   const [sanctionRedemptionTask, setSanctionRedemptionTask] = useState('');
   const [editingSanctionId, setEditingSanctionId] = useState<string | null>(null);
 
+  // Detail Modal State
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [storyLine, setStoryLine] = useState<StoryStep[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -77,6 +80,8 @@ const StudentProfile: React.FC = () => {
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
     loadStudentData();
+    const unsubscribe = DataService.subscribeToDataChanges(() => loadStudentData());
+    return () => unsubscribe();
   }, [studentId, refreshKey]);
 
   const loadStudentData = () => {
@@ -94,6 +99,16 @@ const StudentProfile: React.FC = () => {
       setSanctions(DataService.getSanctions().filter(s => s.studentId === studentId).sort((a,b) => new Date(b.assignedDate).getTime() - new Date(a.assignedDate).getTime()));
     }
     setIsLoading(false);
+  };
+
+  const translateRecommendation = (rec: string) => {
+    switch(rec) {
+      case 'PARENT_CALL': return 'Panggilan Orang Tua';
+      case 'TO_KESISWAAN': return 'Rujuk ke Kesiswaan';
+      case 'SUSPENSION_REVIEW': return 'Tinjauan Skorsing';
+      case 'TO_BK': return 'Rujuk ke BK';
+      default: return '-';
+    }
   };
 
   const handleOpenDetail = (item: any) => {
@@ -157,16 +172,6 @@ const StudentProfile: React.FC = () => {
       setDetailModalOpen(true);
   };
 
-  const translateRecommendation = (rec: string) => {
-    switch(rec) {
-      case 'PARENT_CALL': return 'Panggilan Orang Tua';
-      case 'TO_KESISWAAN': return 'Rujuk ke Kesiswaan';
-      case 'SUSPENSION_REVIEW': return 'Tinjauan Skorsing';
-      case 'TO_BK': return 'Rujuk ke BK';
-      default: return '-';
-    }
-  };
-
   const handleSubmitIncident = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedIncident || !student) return;
@@ -211,7 +216,22 @@ const StudentProfile: React.FC = () => {
           sessionType: type, relatedRecordIds: finalRelatedRecords
         };
         if (counselingRec !== 'NONE') newSession.status = 'OPEN';
-        await DataService.saveCounselingSessions([...DataService.getCounselingSessions(), newSession]);
+        
+        const allSessions = DataService.getCounselingSessions();
+        await DataService.saveCounselingSessions([...allSessions, newSession]);
+
+        // Jika mode CASE, update status BK di record pelanggaran yang dipilih
+        if (finalRelatedRecords.length > 0) {
+            const allRecords = DataService.getRecords();
+            const updatedRecords = allRecords.map(r => {
+                if (finalRelatedRecords.includes(r.id)) {
+                    return { ...r, bkStatus: 'COMPLETED' as const };
+                }
+                return r;
+            });
+            await DataService.saveRecords(updatedRecords);
+        }
+
         setSuccessMsg('Catatan konseling disimpan!');
         setCounselingNotes(''); setCounselingRec('NONE'); setSelectedCounselingRecords([]);
         setRefreshKey(k => k + 1);
@@ -246,12 +266,9 @@ const StudentProfile: React.FC = () => {
     } catch (err) { alert("Gagal simpan sanksi."); } finally { setIsSubmitting(false); }
   };
 
-  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-indigo-600" /></div>;
-  if (!student) return <div className="p-8 text-center font-bold">Siswa Tidak Ditemukan.</div>;
-
-  const stats = DataService.calculateStudentPoints(student.id, records, incidents);
+  const stats = DataService.calculateStudentPoints(student?.id || '', records, incidents);
   const recommendedStatus = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
-  const studentClass = classes.find(c => c.id === student.classId);
+  const studentClass = classes.find(c => c.id === student?.classId);
   const isReporterHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
   const isBK = currentUser?.roles.includes(Role.BK);
   const isKesiswaan = currentUser?.roles.includes(Role.KESISWAAN);
@@ -261,6 +278,9 @@ const StudentProfile: React.FC = () => {
   const activeSanction = sanctions.find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
   const homeroomViolationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION' && r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED');
   const activeViolationRecordsForForm = records.filter(r => r.typeSnapshot === 'VIOLATION' && r.bkStatus !== 'COMPLETED');
+
+  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-indigo-600" /></div>;
+  if (!student) return <div className="p-8 text-center font-bold text-slate-500">Siswa Tidak Ditemukan.</div>;
 
   return (
     <div className="space-y-8 pb-12 animate-fade-in relative">
@@ -287,7 +307,7 @@ const StudentProfile: React.FC = () => {
           <h1 className="text-3xl font-black text-slate-900">{student.name}</h1>
           <p className="text-slate-500 font-bold">NIS: {student.nis} • Kelas {studentClass?.name}</p>
         </div>
-        <div className={`md:ml-auto px-4 py-2 rounded-lg border font-black text-xs uppercase tracking-widest flex items-center gap-2 ${activeSanction ? 'bg-red-600 text-white border-red-700' : recommendedStatus.color}`}>
+        <div className={`md:ml-auto px-4 py-2 rounded-lg border font-black text-[10px] uppercase tracking-widest flex items-center gap-2 ${activeSanction ? 'bg-red-600 text-white border-red-700' : recommendedStatus.color}`}>
            <AlertTriangle className="h-4 w-4" />
            {activeSanction ? `Sanksi Aktif: ${activeSanction.level}` : `Status: ${recommendedStatus.statusLabel}`}
         </div>
@@ -394,12 +414,16 @@ const StudentProfile: React.FC = () => {
                           <div className="space-y-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pilih Pelanggaran Terkait</label>
                                 <div className="bg-slate-50 border-2 border-slate-100 rounded-2xl max-h-48 overflow-y-auto p-3 space-y-2">
-                                    {homeroomViolationRecords.map(record => (
-                                        <div key={record.id} onClick={() => setSelectedCounselingRecords(prev => prev.includes(record.id) ? prev.filter(id => id !== record.id) : [...prev, record.id])} className={`p-3 rounded-xl border-2 cursor-pointer text-xs font-bold flex items-center gap-3 transition-all ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-50 border-orange-400 text-orange-900' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
-                                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-600 border-orange-600' : 'bg-slate-100'}`}>{selectedCounselingRecords.includes(record.id) && <Check className="h-3 w-3 text-white" />}</div>
-                                            <div className="flex-1"><p>{incidents.find(i => i.id === record.incidentTypeId)?.name}</p><p className="text-[10px] text-slate-400 mt-1">{new Date(record.date).toLocaleDateString()}</p></div>
-                                        </div>
-                                    ))}
+                                    {homeroomViolationRecords.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif.</p>
+                                    ) : (
+                                        homeroomViolationRecords.map(record => (
+                                            <div key={record.id} onClick={() => setSelectedCounselingRecords(prev => prev.includes(record.id) ? prev.filter(id => id !== record.id) : [...prev, record.id])} className={`p-3 rounded-xl border-2 cursor-pointer text-xs font-bold flex items-center gap-3 transition-all ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-50 border-orange-400 text-orange-900' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
+                                                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-600 border-orange-600' : 'bg-slate-100'}`}>{selectedCounselingRecords.includes(record.id) && <Check className="h-3 w-3 text-white" />}</div>
+                                                <div className="flex-1"><p>{incidents.find(i => i.id === record.incidentTypeId)?.name}</p><p className="text-[10px] text-slate-400 mt-1">{new Date(record.date).toLocaleDateString()}</p></div>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                           </div>
                       )}
@@ -412,7 +436,6 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* --- RIWAYAT KONSELING BK TAB (Versi User) --- */}
         {activeTab === 'BK_COUNSELING' && showBkTab && (
             <>
                 <div className="lg:col-span-2 space-y-6">
@@ -431,12 +454,16 @@ const StudentProfile: React.FC = () => {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pilih Kasus Disiplin Terkait</label>
                                     <div className="bg-slate-50 border-2 border-slate-100 rounded-2xl max-h-48 overflow-y-auto p-3 space-y-2">
-                                        {activeViolationRecordsForForm.map(record => (
-                                            <div key={record.id} onClick={() => setSelectedCounselingRecords(prev => prev.includes(record.id) ? prev.filter(id => id !== record.id) : [...prev, record.id])} className={`p-3 rounded-xl border-2 cursor-pointer text-xs font-bold flex items-center gap-3 transition-all ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-50 border-orange-400 text-orange-900' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
-                                                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-600 border-orange-600' : 'bg-slate-100'}`}>{selectedCounselingRecords.includes(record.id) && <Check className="h-3 w-3 text-white" />}</div>
-                                                <div className="flex-1"><p>{incidents.find(i => i.id === record.incidentTypeId)?.name}</p><p className="text-[10px] text-red-500 uppercase font-black mt-1">Skor: {record.pointSnapshot} Poin</p></div>
-                                            </div>
-                                        ))}
+                                        {activeViolationRecordsForForm.length === 0 ? (
+                                            <p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif.</p>
+                                        ) : (
+                                            activeViolationRecordsForForm.map(record => (
+                                                <div key={record.id} onClick={() => setSelectedCounselingRecords(prev => prev.includes(record.id) ? prev.filter(id => id !== record.id) : [...prev, record.id])} className={`p-3 rounded-xl border-2 cursor-pointer text-xs font-bold flex items-center gap-3 transition-all ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-50 border-orange-400 text-orange-900' : 'bg-white border-slate-100 hover:border-orange-200'}`}>
+                                                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${selectedCounselingRecords.includes(record.id) ? 'bg-orange-600 border-orange-600' : 'bg-slate-100'}`}>{selectedCounselingRecords.includes(record.id) && <Check className="h-3 w-3 text-white" />}</div>
+                                                    <div className="flex-1"><p>{incidents.find(i => i.id === record.incidentTypeId)?.name}</p><p className="text-[10px] text-red-500 uppercase font-black mt-1">Skor: {record.pointSnapshot} Poin</p></div>
+                                                </div>
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                             )}
