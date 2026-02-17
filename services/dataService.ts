@@ -6,7 +6,7 @@ import {
 } from '../types';
 
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 
 // --- PENYIMPANAN SEMENTARA DI RAM ---
 let _teachers: Teacher[] = [];
@@ -45,29 +45,19 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- FUNGSI UTAMA: KIRIM KE GOOGLE CLOUD (ANTI-GIMIK) ---
 const pushToCloud = async (collectionName: string, data: any): Promise<void> => {
-  // Jika data awal belum selesai di-download, dilarang menulis (mencegah data terhapus)
   if (!isInitialLoadComplete) {
-      console.error(`[BLOCK] Gagal simpan ${collectionName}. Data belum sinkron.`);
-      throw new Error("Sistem sedang memuat data...");
+      throw new Error("Tunggu sebentar, data sedang disinkronkan...");
   }
-
-  if (!db) {
-      notifyListeners('ERROR', "Koneksi terputus.");
-      throw new Error("Koneksi internet bermasalah.");
-  }
+  if (!db) throw new Error("Koneksi terputus.");
   
   notifyListeners('SYNCING');
   try {
     const cleanData = JSON.parse(JSON.stringify(data)); 
-    // PERINTAH AWAIT: Tunggu sampai Google Cloud menjawab 'OK'
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
     notifyListeners('SAVED');
-    console.log(`[OK] ${collectionName} tersimpan di Cloud.`);
   } catch (error: any) {
-    console.error(`[ERROR] Gagal simpan ke Cloud:`, error);
-    notifyListeners('ERROR', "Gagal simpan ke Cloud.");
+    notifyListeners('ERROR', "Gagal simpan.");
     throw error; 
   }
 };
@@ -84,7 +74,7 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  // --- INISIALISASI AWAL (DOWNLOAD SEMUA DATA SEKOLAH) ---
+  // --- DOWNLOAD DATA DARI GOOGLE CLOUD ---
   initializeData: async (): Promise<boolean> => {
     if (isConfigMissing) return false;
     notifyListeners('LOADING_INITIAL');
@@ -92,15 +82,14 @@ export const DataService = {
     const isConnected = await connectToFirebase();
     if (!isConnected) return false;
 
-    return new Promise((resolve) => {
-        const collections = [
-            'classes', 'students', 'categories', 'incidentTypes', 
-            'rules', 'records', 'teachers', 'counseling', 'sanctions',
-            'cashflow', 'activity_logs'
-        ];
-        
-        let receivedCollections = new Set();
+    const collections = [
+        'classes', 'students', 'categories', 'incidentTypes', 
+        'rules', 'records', 'teachers', 'counseling', 'sanctions',
+        'cashflow', 'activity_logs'
+    ];
 
+    return new Promise((resolve) => {
+        let count = 0;
         collections.forEach(colName => {
             onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
                 const cloudData = docSnapshot.exists() ? (docSnapshot.data().data || []) : [];
@@ -118,126 +107,98 @@ export const DataService = {
                     case 'cashflow': _cashflow = cloudData; break;
                     case 'activity_logs': _activityLogs = cloudData; break;
                 }
-
-                receivedCollections.add(colName);
-                notifyDataChange();
-
-                if (receivedCollections.size === collections.length && !isInitialLoadComplete) {
-                    isInitialLoadComplete = true; 
+                
+                count++;
+                if (count >= collections.length && !isInitialLoadComplete) {
+                    isInitialLoadComplete = true;
                     notifyListeners('SAVED');
                     resolve(true);
                 }
-            }, (err) => {
-                notifyListeners('ERROR', "Koneksi Cloud bermasalah.");
+                notifyDataChange();
             });
         });
-
-        // Batas waktu tunggu 20 detik
-        setTimeout(() => {
-            if (!isInitialLoadComplete) {
-                isInitialLoadComplete = true; 
-                resolve(true);
-            }
-        }, 20000);
     });
   },
 
-  // --- FUNGSI AMBIL DATA ---
-  getClasses: () => _classes,
+  // Ambil data dari RAM (Sangat Cepat)
+  getTeachers: () => _teachers,
   getStudents: () => _students,
+  getClasses: () => _classes,
+  getRecords: () => _records,
+  getCashflows: () => _cashflow,
   getCategories: () => _categories,
   getIncidentTypes: () => _incidents,
   getRules: () => _rules,
-  getRecords: () => _records,
-  getCounselingSessions: () => _counseling,
   getSanctions: () => _sanctions,
-  getCashflows: () => _cashflow,
+  getCounselingSessions: () => _counseling,
   getActivityLogs: () => _activityLogs,
-  getTeachers: () => _teachers,
 
-  // --- FUNGSI SIMPAN DATA (WAJIB TUNGGU KONFIRMASI) ---
-  saveClasses: async (data: ClassGroup[]) => { _classes = data; await pushToCloud('classes', data); notifyDataChange(); },
+  // Simpan data (Wajib kirim ke Google Cloud)
+  saveTeachers: async (data: Teacher[]) => { _teachers = data; await pushToCloud('teachers', data); notifyDataChange(); },
   saveStudents: async (data: Student[]) => { _students = data; await pushToCloud('students', data); notifyDataChange(); },
+  saveClasses: async (data: ClassGroup[]) => { _classes = data; await pushToCloud('classes', data); notifyDataChange(); },
+  saveRecords: async (data: IncidentRecord[]) => { _records = data; await pushToCloud('records', data); notifyDataChange(); },
+  saveCashflows: async (data: CashflowRecord[]) => { _cashflow = data; await pushToCloud('cashflow', data); notifyDataChange(); },
   saveCategories: async (data: MasterCategory[]) => { _categories = data; await pushToCloud('categories', data); notifyDataChange(); },
   saveIncidentTypes: async (data: MasterIncidentType[]) => { _incidents = data; await pushToCloud('incidentTypes', data); notifyDataChange(); },
   saveRules: async (data: CoachingRule[]) => { _rules = data; await pushToCloud('rules', data); notifyDataChange(); },
-  saveRecords: async (data: IncidentRecord[]) => { _records = data; await pushToCloud('records', data); notifyDataChange(); },
-  saveTeachers: async (data: Teacher[]) => { _teachers = data; await pushToCloud('teachers', data); notifyDataChange(); },
   saveSanctions: async (data: StudentSanction[]) => { _sanctions = data; await pushToCloud('sanctions', data); notifyDataChange(); },
-  saveCashflows: async (data: CashflowRecord[]) => { _cashflow = data; await pushToCloud('cashflow', data); notifyDataChange(); },
-  saveActivityLogs: async (data: ActivityLog[]) => { _activityLogs = data; await pushToCloud('activity_logs', data); notifyDataChange(); },
+  saveCounselingSessions: async (data: CounselingSession[]) => { _counseling = data; await pushToCloud('counseling', data); notifyDataChange(); },
 
-  saveCounselingSessions: async (data: CounselingSession[]) => { 
-      _counseling = data;
-      await pushToCloud('counseling', data); 
-      notifyDataChange();
-  },
-
-  // --- SISTEM LOGIN ---
   login: async (username: string, password: string): Promise<Teacher | null> => {
-    if (!isInitialLoadComplete) return null;
+    // PROTEKSI: Jangan ijinkan login kalau Cloud belum siap
+    if (!isInitialLoadComplete) {
+        console.log("Menunggu sinkronisasi cloud sebelum login...");
+        return null;
+    }
 
     let user = _teachers.find(t => t.username === username && t.password === password);
     
-    // Login Admin Darurat jika cloud kosong
-    if (!user && username === 'admin' && password === '123') {
-        const anyAdminExists = _teachers.some(t => t.roles.includes(Role.ADMIN));
-        if (!anyAdminExists) {
-            const superAdmin: Teacher = {
-                id: 'super_admin_001',
-                name: 'Super Administrator',
-                nip: '000000',
-                roles: [Role.ADMIN, Role.TEACHER, Role.BK, Role.KESISWAAN, Role.WALIKELAS],
-                username: 'admin',
-                password: '123',
-                mustChangePassword: true,
-                lastActiveAt: new Date().toISOString()
-            };
-            await DataService.saveTeachers([..._teachers, superAdmin]);
-            user = superAdmin;
-        }
+    // Jika tidak ketemu, dan Cloud benar-benar kosong, baru buat Admin cadangan
+    if (!user && username === 'admin' && password === '123' && _teachers.length === 0) {
+        const superAdmin: Teacher = {
+            id: 'super_admin_001',
+            name: 'Super Administrator',
+            nip: '000000',
+            roles: [Role.ADMIN, Role.TEACHER, Role.BK, Role.KESISWAAN, Role.WALIKELAS],
+            username: 'admin',
+            password: '123',
+            mustChangePassword: true,
+            lastActiveAt: new Date().toISOString()
+        };
+        await DataService.saveTeachers([superAdmin]);
+        user = superAdmin;
     }
 
     if (user) {
       localStorage.setItem('session_user_id', user.id); 
-      await DataService.updateHeartbeat(user.id);
       return user;
     }
     return null;
+  },
+
+  getCurrentUser: (): Teacher | null => {
+    const storedId = localStorage.getItem('session_user_id');
+    return _teachers.find(t => t.id === storedId) || null;
   },
 
   logout: () => {
     localStorage.removeItem('session_user_id');
   },
 
-  getCurrentUser: (): Teacher | null => {
-    if (!isInitialLoadComplete) return null;
-    const storedId = localStorage.getItem('session_user_id');
-    return _teachers.find(t => t.id === storedId) || null;
-  },
-
   updatePassword: async (userId: string, newPass: string) => {
-    if (!isInitialLoadComplete) return;
-    const updatedTeachers = _teachers.map(t => t.id === userId ? { ...t, password: newPass, mustChangePassword: false } : t);
-    await DataService.saveTeachers(updatedTeachers);
+    const updated = _teachers.map(t => t.id === userId ? { ...t, password: newPass, mustChangePassword: false } : t);
+    await DataService.saveTeachers(updated);
   },
 
   updateHeartbeat: async (userId: string) => {
-    if (!isInitialLoadComplete) return;
     const now = new Date().toISOString();
-    const updatedTeachers = _teachers.map(t => {
-      if (t.id === userId) {
-        const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
-        if (new Date().getTime() - last > 60000) return { ...t, lastActiveAt: now };
-      }
-      return t;
-    });
-    if (JSON.stringify(updatedTeachers) !== JSON.stringify(_teachers)) {
-        await DataService.saveTeachers(updatedTeachers);
-    }
+    const updated = _teachers.map(t => t.id === userId ? { ...t, lastActiveAt: now } : t);
+    // Silent update, don't trigger full reload unless necessary
+    setDoc(doc(db, "school_data", "teachers"), { data: updated });
   },
 
-  // --- HITUNG POIN SISWA ---
+  // Helper hitung-hitungan
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
@@ -291,13 +252,8 @@ export const DataService = {
   },
 
   resolveIncident: async (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
-    const updatedRecords = _records.map(r => {
-      if (r.id === recordId) {
-        return { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= 40) ? 'REQUIRED' : (r.bkStatus || 'NONE') };
-      }
-      return r;
-    });
-    await DataService.saveRecords(updatedRecords);
+    const updated = _records.map(r => r.id === recordId ? { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= 40) ? 'REQUIRED' : (r.bkStatus || 'NONE') } : r);
+    await DataService.saveRecords(updated);
   },
 
   getClassBalance: (classId: string) => {
@@ -305,16 +261,6 @@ export const DataService = {
     let totalIn = 0, totalOut = 0;
     classFlows.forEach(f => f.type === 'IN' ? totalIn += f.amount : totalOut += f.amount);
     return { balance: totalIn - totalOut, totalIn, totalOut, transactionCount: classFlows.length };
-  },
-
-  verifyCashflow: async (recordId: string, verifierName: string, isRejected = false) => {
-    const updatedFlows = _cashflow.map(f => f.id === recordId ? { ...f, status: (isRejected ? 'REJECTED' : 'APPROVED') as CashflowStatus, verifiedBy: verifierName, verifiedDate: new Date().toISOString() } : f);
-    await DataService.saveCashflows(updatedFlows);
-  },
-
-  voidCashflow: async (recordId: string, user: Teacher) => {
-    const updatedFlows = _cashflow.map(f => f.id === recordId ? { ...f, status: 'CORRECTED' as CashflowStatus, description: f.description + ` [KOREKSI: ${user.name}]` } : f);
-    await DataService.saveCashflows(updatedFlows);
   },
 
   cleanupOrphanData: async () => {
