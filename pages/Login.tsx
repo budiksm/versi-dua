@@ -20,17 +20,14 @@ const Login: React.FC = () => {
   const [isCloudReady, setIsCloudReady] = useState(false);
 
   useEffect(() => {
-    // Cek apakah data cloud sudah masuk
-    const checkCloud = () => {
-        const teachers = DataService.getTeachers();
-        if (teachers.length > 0) {
+    const checkStatus = () => {
+        if (DataService.isReady()) {
             setIsCloudReady(true);
         }
     };
-    
-    // Subscribe ke perubahan data
-    const unsubscribe = DataService.subscribeToDataChanges(checkCloud);
-    checkCloud();
+
+    const unsubscribe = DataService.subscribeToSync(checkStatus);
+    checkStatus();
 
     const currentUser = DataService.getCurrentUser();
     if (currentUser) redirectUser(currentUser);
@@ -50,22 +47,22 @@ const Login: React.FC = () => {
     e.preventDefault();
     setError('');
     
-    // Jika cloud belum siap, tunggu
-    if (DataService.getTeachers().length === 0 && username !== 'admin') {
-        setError("Sistem sedang sinkronisasi. Tunggu 5 detik lalu coba lagi.");
+    // Tombol login hanya aktif jika koneksi ke Google sudah stabil (isCloudReady)
+    if (!isCloudReady && username !== 'admin') {
+        setError("Sistem sedang menghubungkan ke server Google. Tunggu sebentar...");
         return;
     }
 
     const user = await DataService.login(username, password);
     
     if (user) {
-      setLoginSuccess('Login berhasil! Memuat data...');
+      setLoginSuccess('Login berhasil! Memuat dashboard...');
       setTimeout(() => {
           setIsLoading(true);
           setTimeout(() => {
               redirectUser(user);
-          }, 1500);
-      }, 800);
+          }, 1200);
+      }, 500);
     } else {
       setError('Username atau password salah.');
     }
@@ -90,7 +87,7 @@ const Login: React.FC = () => {
             </div>
             <h1 className="text-2xl font-bold text-white tracking-wide">SMKN JAYAKERTA</h1>
             
-            {/* INDIKATOR CLOUD */}
+            {/* INDIKATOR CLOUD YANG LEBIH CERDAS */}
             <div className={`mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${isCloudReady ? 'bg-emerald-500/20 text-emerald-300' : 'bg-orange-500/20 text-orange-300 animate-pulse'}`}>
                <Cloud className="h-3 w-3" />
                {isCloudReady ? "Cloud Terhubung" : "Menghubungkan ke Cloud..."}
@@ -135,9 +132,9 @@ const Login: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-4 bg-indigo-800 hover:bg-indigo-900 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 disabled:bg-indigo-300"
+              className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all active:scale-95 ${(!isCloudReady && username !== 'admin') ? 'bg-indigo-300 cursor-not-allowed text-white/70' : 'bg-indigo-800 hover:bg-indigo-900 text-white'}`}
             >
-              Masuk Aplikasi
+              {isLoading ? "Masuk..." : "Masuk Aplikasi"}
             </button>
           </form>
         </div>

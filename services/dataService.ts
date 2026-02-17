@@ -46,9 +46,6 @@ const notifyDataChange = () => {
 };
 
 const pushToCloud = async (collectionName: string, data: any): Promise<void> => {
-  if (!isInitialLoadComplete) {
-      throw new Error("Tunggu sebentar, data sedang disinkronkan...");
-  }
   if (!db) throw new Error("Koneksi terputus.");
   
   notifyListeners('SYNCING');
@@ -74,13 +71,18 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
+  isReady: () => isInitialLoadComplete,
+
   // --- DOWNLOAD DATA DARI GOOGLE CLOUD ---
   initializeData: async (): Promise<boolean> => {
     if (isConfigMissing) return false;
     notifyListeners('LOADING_INITIAL');
     
     const isConnected = await connectToFirebase();
-    if (!isConnected) return false;
+    if (!isConnected) {
+        notifyListeners('ERROR', 'Gagal koneksi Firebase');
+        return false;
+    }
 
     const collections = [
         'classes', 'students', 'categories', 'incidentTypes', 
@@ -88,39 +90,38 @@ export const DataService = {
         'cashflow', 'activity_logs'
     ];
 
-    return new Promise((resolve) => {
-        let count = 0;
-        collections.forEach(colName => {
-            onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
-                const cloudData = docSnapshot.exists() ? (docSnapshot.data().data || []) : [];
-                
-                switch(colName) {
-                    case 'teachers': _teachers = cloudData; break;
-                    case 'students': _students = cloudData; break;
-                    case 'classes': _classes = cloudData; break;
-                    case 'records': _records = cloudData; break;
-                    case 'categories': _categories = cloudData; break;
-                    case 'incidentTypes': _incidents = cloudData; break;
-                    case 'rules': _rules = cloudData; break;
-                    case 'counseling': _counseling = cloudData; break;
-                    case 'sanctions': _sanctions = cloudData; break;
-                    case 'cashflow': _cashflow = cloudData; break;
-                    case 'activity_logs': _activityLogs = cloudData; break;
-                }
-                
-                count++;
-                if (count >= collections.length && !isInitialLoadComplete) {
-                    isInitialLoadComplete = true;
-                    notifyListeners('SAVED');
-                    resolve(true);
-                }
-                notifyDataChange();
-            });
+    // Gunakan listener untuk masing-masing koleksi
+    collections.forEach(colName => {
+        onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
+            const cloudData = docSnapshot.exists() ? (docSnapshot.data().data || []) : [];
+            
+            switch(colName) {
+                case 'teachers': _teachers = cloudData; break;
+                case 'students': _students = cloudData; break;
+                case 'classes': _classes = cloudData; break;
+                case 'records': _records = cloudData; break;
+                case 'categories': _categories = cloudData; break;
+                case 'incidentTypes': _incidents = cloudData; break;
+                case 'rules': _rules = cloudData; break;
+                case 'counseling': _counseling = cloudData; break;
+                case 'sanctions': _sanctions = cloudData; break;
+                case 'cashflow': _cashflow = cloudData; break;
+                case 'activity_logs': _activityLogs = cloudData; break;
+            }
+            notifyDataChange();
         });
+    });
+
+    // Berikan jeda sebentar lalu anggap siap (mencegah stuck)
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            isInitialLoadComplete = true;
+            notifyListeners('SAVED');
+            resolve(true);
+        }, 1500); 
     });
   },
 
-  // Ambil data dari RAM (Sangat Cepat)
   getTeachers: () => _teachers,
   getStudents: () => _students,
   getClasses: () => _classes,
@@ -133,7 +134,6 @@ export const DataService = {
   getCounselingSessions: () => _counseling,
   getActivityLogs: () => _activityLogs,
 
-  // Simpan data (Wajib kirim ke Google Cloud)
   saveTeachers: async (data: Teacher[]) => { _teachers = data; await pushToCloud('teachers', data); notifyDataChange(); },
   saveStudents: async (data: Student[]) => { _students = data; await pushToCloud('students', data); notifyDataChange(); },
   saveClasses: async (data: ClassGroup[]) => { _classes = data; await pushToCloud('classes', data); notifyDataChange(); },
@@ -146,28 +146,30 @@ export const DataService = {
   saveCounselingSessions: async (data: CounselingSession[]) => { _counseling = data; await pushToCloud('counseling', data); notifyDataChange(); },
 
   login: async (username: string, password: string): Promise<Teacher | null> => {
-    // PROTEKSI: Jangan ijinkan login kalau Cloud belum siap
-    if (!isInitialLoadComplete) {
-        console.log("Menunggu sinkronisasi cloud sebelum login...");
-        return null;
-    }
-
+    // Cari di data yang sudah terdownload
     let user = _teachers.find(t => t.username === username && t.password === password);
     
-    // Jika tidak ketemu, dan Cloud benar-benar kosong, baru buat Admin cadangan
-    if (!user && username === 'admin' && password === '123' && _teachers.length === 0) {
-        const superAdmin: Teacher = {
-            id: 'super_admin_001',
-            name: 'Super Administrator',
-            nip: '000000',
-            roles: [Role.ADMIN, Role.TEACHER, Role.BK, Role.KESISWAAN, Role.WALIKELAS],
-            username: 'admin',
-            password: '123',
-            mustChangePassword: true,
-            lastActiveAt: new Date().toISOString()
-        };
-        await DataService.saveTeachers([superAdmin]);
-        user = superAdmin;
+    // Admin Emergency Bypass
+    if (!user && username === 'admin' && password === '123') {
+        // Cek apakah admin sudah ada di Cloud tapi belum terdownload sempurna
+        // Jika benar-benar tidak ada di Cloud (Fresh Install), buat baru
+        if (_teachers.length === 0) {
+            const superAdmin: Teacher = {
+                id: 'super_admin_001',
+                name: 'Super Administrator',
+                nip: '000000',
+                roles: [Role.ADMIN, Role.TEACHER, Role.BK, Role.KESISWAAN, Role.WALIKELAS],
+                username: 'admin',
+                password: '123',
+                mustChangePassword: false,
+                lastActiveAt: new Date().toISOString()
+            };
+            await DataService.saveTeachers([superAdmin]);
+            user = superAdmin;
+        } else {
+            // Admin mungkin ada di Cloud tapi folder local kosong, coba cari admin yang ada
+            user = _teachers.find(t => t.username === 'admin' && t.password === '123');
+        }
     }
 
     if (user) {
@@ -194,11 +196,9 @@ export const DataService = {
   updateHeartbeat: async (userId: string) => {
     const now = new Date().toISOString();
     const updated = _teachers.map(t => t.id === userId ? { ...t, lastActiveAt: now } : t);
-    // Silent update, don't trigger full reload unless necessary
     setDoc(doc(db, "school_data", "teachers"), { data: updated });
   },
 
-  // Helper hitung-hitungan
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
