@@ -871,6 +871,7 @@ const TeacherDashboard: React.FC = () => {
             const listStudentsInCoaching: any[] = [];
             const listCleanStudents: any[] = [];
             
+            // Perbaikan Logika Kategori (Inclusive Check)
             const listRangeBK: any[] = [];
             const listRangeSP1: any[] = [];
             const listRangeSP2: any[] = [];
@@ -894,9 +895,17 @@ const TeacherDashboard: React.FC = () => {
                if (score === 0) listCleanStudents.push(studentData);
                if (score >= 20) listStudentsInCoaching.push(studentData);
                
+               // Fix Logic: Pastikan rentang poin tertangkap dengan benar
+               // BK: score >= BK (40) dan belum SP1
                if (score >= thresholds.bk && score < thresholds.sp1) listRangeBK.push(studentData);
+               
+               // SP1: score >= SP1 (80) dan belum SP2
                if (score >= thresholds.sp1 && score < thresholds.sp2) listRangeSP1.push(studentData);
+               
+               // SP2: score >= SP2 (120) dan belum SP3
                if (score >= thresholds.sp2 && score < thresholds.sp3) listRangeSP2.push(studentData);
+               
+               // SP3: score >= SP3 (160)
                if (score >= thresholds.sp3) listRangeSP3.push(studentData);
 
                if (score > highestScore) {
@@ -955,8 +964,17 @@ const TeacherDashboard: React.FC = () => {
                        <div className="p-6 space-y-4 relative">
                           <h3 className="font-bold text-blue-100 flex items-center gap-2 text-sm border-b border-white/20 pb-2 mb-3"><AlertTriangle className="h-4 w-4" /> Status Perhatian</h3>
                           <div className="space-y-2">
+                             {/* BK */}
                              <div onClick={() => handleOpenClassDetail(`Perlu Konseling BK (${thresholds.bk}-${thresholds.sp1-1} Poin)`, 'STUDENTS', listRangeBK)} className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeBK.length > 0 ? 'bg-orange-500/20 border-orange-400/30 hover:bg-orange-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}><div><p className={`font-bold text-xs ${listRangeBK.length > 0 ? 'text-orange-200' : 'text-slate-300'}`}>{listRangeBK.length} Siswa</p><p className="text-[10px] text-blue-200">Perlu BK ({thresholds.bk}+)</p></div>{listRangeBK.length > 0 && <AlertCircle className="h-4 w-4 text-orange-300" />}</div>
-                             {/* ... Other ranges ... */}
+                             
+                             {/* SP 1 */}
+                             <div onClick={() => handleOpenClassDetail(`Status SP 1 (${thresholds.sp1}-${thresholds.sp2-1} Poin)`, 'STUDENTS', listRangeSP1)} className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeSP1.length > 0 ? 'bg-yellow-500/20 border-yellow-400/30 hover:bg-yellow-500/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}><div><p className={`font-bold text-xs ${listRangeSP1.length > 0 ? 'text-yellow-200' : 'text-slate-300'}`}>{listRangeSP1.length} Siswa</p><p className="text-[10px] text-blue-200">SP 1 ({thresholds.sp1}+)</p></div>{listRangeSP1.length > 0 && <AlertTriangle className="h-4 w-4 text-yellow-300" />}</div>
+
+                             {/* SP 2 */}
+                             <div onClick={() => handleOpenClassDetail(`Status SP 2 (${thresholds.sp2}-${thresholds.sp3-1} Poin)`, 'STUDENTS', listRangeSP2)} className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeSP2.length > 0 ? 'bg-orange-600/30 border-orange-500/40 hover:bg-orange-600/40' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}><div><p className={`font-bold text-xs ${listRangeSP2.length > 0 ? 'text-orange-100' : 'text-slate-300'}`}>{listRangeSP2.length} Siswa</p><p className="text-[10px] text-blue-200">SP 2 ({thresholds.sp2}+)</p></div>{listRangeSP2.length > 0 && <AlertTriangle className="h-4 w-4 text-orange-300" />}</div>
+
+                             {/* SP 3 */}
+                             <div onClick={() => handleOpenClassDetail(`Status SP 3 (${thresholds.sp3}+ Poin)`, 'STUDENTS', listRangeSP3)} className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all hover:scale-[1.02] ${listRangeSP3.length > 0 ? 'bg-red-600/30 border-red-500/40 hover:bg-red-600/40' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}><div><p className={`font-bold text-xs ${listRangeSP3.length > 0 ? 'text-red-200' : 'text-slate-300'}`}>{listRangeSP3.length} Siswa</p><p className="text-[10px] text-blue-200">SP 3 ({thresholds.sp3}+)</p></div>{listRangeSP3.length > 0 && <Skull className="h-4 w-4 text-red-300" />}</div>
                           </div>
                        </div>
                     </div>

@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../../services/dataService';
 import { MasterCategory, MasterIncidentType, CoachingRule, IncidentTypeCategory } from '../../types';
-import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, CheckSquare, Pencil, Brush, ChevronUp, ChevronDown, ArrowUpDown, Square, Cloud, Gavel, Scale } from 'lucide-react';
+import { Save, Plus, Trash2, List, Shield, AlertTriangle, X, Upload, FileSpreadsheet, Download, CheckSquare, Pencil, Brush, ChevronUp, ChevronDown, ArrowUpDown, Square, Cloud, Gavel, Scale, Check, AlertCircle } from 'lucide-react';
 
 type SortKey = 'name' | 'type' | 'category' | 'points' | 'severity';
 type SortDirection = 'asc' | 'desc';
@@ -19,6 +18,7 @@ const PointConfiguration: React.FC = () => {
   const [showCatModal, setShowCatModal] = useState(false);
   const [showIncModal, setShowIncModal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false); // NEW IMPORT MODAL STATE
   
   // Category Form
   const [isEditingCategory, setIsEditingCategory] = useState(false);
@@ -33,7 +33,7 @@ const PointConfiguration: React.FC = () => {
   const [newIncPoints, setNewIncPoints] = useState(0);
   const [newIncSeverity, setNewIncSeverity] = useState<'LOW'|'MEDIUM'|'HIGH'|'CRITICAL'>('LOW');
 
-  // Rule Form (New)
+  // Rule Form
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [ruleForm, setRuleForm] = useState<Partial<CoachingRule>>({
       minPoints: 0,
@@ -41,6 +41,11 @@ const PointConfiguration: React.FC = () => {
       statusLabel: '',
       color: 'bg-slate-100 text-slate-800'
   });
+
+  // Import State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState('');
+  const [importSuccess, setImportSuccess] = useState('');
 
   const [selectedIncidentIds, setSelectedIncidentIds] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
@@ -144,6 +149,98 @@ const PointConfiguration: React.FC = () => {
       }
   }
 
+  // --- IMPORT LOGIC ---
+  const downloadTemplate = () => {
+    const csvContent = "Nama Kejadian,Poin,Nama Kategori,Tipe (PELANGGARAN/PENGHARGAAN)\nTerlambat Sekolah,5,Kedisiplinan,PELANGGARAN\nJuara Lomba,50,Prestasi,PENGHARGAAN";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "template_kejadian.csv";
+    link.click();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setImportError('');
+    setImportSuccess('');
+
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const rows = text.split('\n').filter(r => r.trim() !== '');
+        if (rows.length < 2) { setImportError('File kosong atau format salah.'); return; }
+
+        setIsSaving(true);
+        const newIncidents: MasterIncidentType[] = [];
+        const newCategories: MasterCategory[] = [...categories];
+        let successCount = 0;
+
+        for (let i = 1; i < rows.length; i++) {
+          // Format: Nama Kejadian, Poin, Nama Kategori, Tipe
+          const cols = rows[i].split(/,|;/).map(c => c.trim().replace(/^"|"$/g, ''));
+          
+          if (cols.length >= 3 && cols[0] && cols[1] && cols[2]) {
+             const incName = cols[0];
+             const points = Number(cols[1]);
+             const catName = cols[2];
+             const typeStr = cols[3]?.toUpperCase() === 'PENGHARGAAN' ? 'ACHIEVEMENT' : 'VIOLATION';
+             
+             // 1. Find or Create Category
+             let category = newCategories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+             if (!category) {
+                 category = {
+                     id: `cat_imp_${Date.now()}_${i}`,
+                     name: catName,
+                     targetType: typeStr as IncidentTypeCategory
+                 };
+                 newCategories.push(category);
+             }
+
+             // 2. Create Incident
+             if (!incidents.some(inc => inc.name.toLowerCase() === incName.toLowerCase() && inc.categoryId === category!.id)) {
+                 newIncidents.push({
+                     id: `inc_imp_${Date.now()}_${i}`,
+                     name: incName,
+                     points: points,
+                     categoryId: category.id,
+                     type: typeStr as IncidentTypeCategory,
+                     isActive: true,
+                     severity: points >= 50 ? 'HIGH' : points >= 20 ? 'MEDIUM' : 'LOW'
+                 });
+                 successCount++;
+             }
+          }
+        }
+
+        if (successCount > 0) {
+            // Save Categories first if any new
+            if (newCategories.length > categories.length) {
+                await DataService.saveCategories(newCategories);
+                setCategories(newCategories);
+            }
+            // Save Incidents
+            const updatedIncidents = [...incidents, ...newIncidents];
+            await DataService.saveIncidentTypes(updatedIncidents);
+            setIncidents(updatedIncidents);
+            
+            setImportSuccess(`Berhasil mengimpor ${successCount} kejadian.`);
+            setTimeout(() => { setIsImportModalOpen(false); setImportSuccess(''); }, 1500);
+        } else {
+            setImportError('Tidak ada data valid yang bisa diimpor.');
+        }
+
+      } catch (err) {
+        setImportError('Gagal membaca file CSV.');
+      } finally {
+        setIsSaving(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // --- RULE MANAGEMENT ---
   const handleEditRule = (rule: CoachingRule) => {
       setEditingRuleId(rule.id);
@@ -174,7 +271,6 @@ const PointConfiguration: React.FC = () => {
               };
               updatedRules = [...rules, newRule];
           }
-          // Sort rules to ensure consistency
           updatedRules.sort((a,b) => a.minPoints - b.minPoints);
           
           await DataService.saveRules(updatedRules);
@@ -253,7 +349,10 @@ const PointConfiguration: React.FC = () => {
                       <List className="h-4 w-4" />
                       Total Item: {incidents.length}
                    </div>
-                   <button onClick={() => setShowIncModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-sm"><Plus className="h-4 w-4" /> Tambah Kejadian</button>
+                   <div className="flex gap-2">
+                       <button onClick={() => setIsImportModalOpen(true)} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 shadow-sm"><Upload className="h-4 w-4" /> Import CSV</button>
+                       <button onClick={() => setShowIncModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-sm"><Plus className="h-4 w-4" /> Tambah Kejadian</button>
+                   </div>
                </div>
                <div className="overflow-hidden rounded-xl border border-slate-200">
                    <table className="w-full text-sm text-left">
@@ -394,6 +493,38 @@ const PointConfiguration: React.FC = () => {
                   </form>
               </div>
           </div>
+      )}
+
+      {/* IMPORT MODAL */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto p-4 backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-xl w-full max-w-lg shadow-2xl animate-fade-in">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-green-600" /> Import Kejadian (CSV)</h2>
+                    <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-red-500"><X className="h-5 w-5" /></button>
+                </div>
+                <div className="space-y-4">
+                    <div className="p-4 bg-slate-50 rounded-lg border text-sm text-slate-600">
+                        <p className="font-semibold mb-2">Kolom Wajib:</p>
+                        <ul className="list-disc list-inside space-y-1 text-xs">
+                            <li>Nama Kejadian (Contoh: Membolos)</li>
+                            <li>Poin (Contoh: 10)</li>
+                            <li>Nama Kategori (Contoh: Kedisiplinan)</li>
+                            <li>Tipe (PELANGGARAN / PENGHARGAAN)</li>
+                        </ul>
+                    </div>
+                    <button onClick={downloadTemplate} className="w-full py-2 px-4 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-lg hover:bg-indigo-100 flex items-center justify-center gap-2 font-medium">
+                        <Download className="h-4 w-4" /> Download Template CSV
+                    </button>
+                    <div className="pt-2">
+                        <label className="block text-sm font-medium mb-2">Upload File CSV</label>
+                        <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+                    </div>
+                    {importError && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><AlertCircle className="h-4 w-4" /> {importError}</div>}
+                    {importSuccess && <div className="p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2"><Check className="h-4 w-4" /> {importSuccess}</div>}
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );
