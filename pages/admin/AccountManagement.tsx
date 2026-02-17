@@ -12,8 +12,6 @@ const AccountManagement: React.FC = () => {
   const [classes, setClasses] = useState<ClassGroup[]>([]);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -21,10 +19,6 @@ const AccountManagement: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Teacher>>({
     name: '', nip: '', roles: [Role.TEACHER], username: '', password: '', assignedClassId: ''
   });
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importError, setImportError] = useState('');
-  const [importSuccess, setImportSuccess] = useState('');
 
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'name',
@@ -65,7 +59,7 @@ const AccountManagement: React.FC = () => {
         }
         setIsModalOpen(false);
     } catch (err) {
-        alert("Gagal simpan.");
+        alert("Gagal simpan data akun.");
     } finally {
         setIsSaving(false);
     }
@@ -93,7 +87,7 @@ const AccountManagement: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       {isSaving && (
         <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-white">
-            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-slate-800 animate-bounce-slow">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-slate-800">
                 <Cloud className="h-16 w-16 text-indigo-600 mb-4 animate-pulse" />
                 <h3 className="text-xl font-bold">Sinkronisasi Cloud...</h3>
                 <p className="text-sm text-slate-500 mt-2">Menyimpan data akun ke database sekolah.</p>
@@ -106,10 +100,7 @@ const AccountManagement: React.FC = () => {
 
       <div className="flex justify-between items-end">
         <div><h1 className="text-2xl font-bold text-slate-800">Manajemen Akun Pengguna</h1><p className="text-slate-500">Kelola akses guru, wali kelas, BK, dan kesiswaan.</p></div>
-        <div className="flex gap-2">
-          <button onClick={() => setIsImportModalOpen(true)} className="bg-white border text-slate-700 px-4 py-2 rounded-xl flex items-center gap-2 font-bold text-sm hover:bg-slate-50"><Upload className="h-4 w-4" /> Import</button>
-          <button onClick={() => { setIsEditMode(false); setFormData({name:'', nip:'', username:'', password:'123', roles:[Role.TEACHER]}); setIsModalOpen(true); }} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus className="h-5 w-5" /> Tambah Akun</button>
-        </div>
+        <button onClick={() => { setIsEditMode(false); setFormData({name:'', nip:'', username:'', password:'123', roles:[Role.TEACHER]}); setIsModalOpen(true); }} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus className="h-5 w-5" /> Tambah Akun</button>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -172,6 +163,9 @@ const AccountManagement: React.FC = () => {
                       <div key={r} onClick={() => toggleRole(r)} className={`p-2 border rounded-xl cursor-pointer text-[10px] font-bold text-center transition-all ${formData.roles?.includes(r) ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-indigo-300'}`}>{r}</div>
                     ))}
                  </div></div>
+                 {formData.roles?.includes(Role.STUDENT) && (
+                    <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tugaskan ke Kelas (Khusus Bendahara)</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={formData.assignedClassId} onChange={e => setFormData({...formData, assignedClassId: e.target.value})}><option value="">-- Pilih Kelas --</option>{classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                 )}
                  <button type="submit" disabled={isSaving} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:bg-slate-300"><Save className="h-5 w-5" /> Simpan Perubahan</button>
               </form>
            </div>
