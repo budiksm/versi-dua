@@ -208,8 +208,6 @@ export const DataService = {
     }
 
     if (user) {
-      // PERUBAHAN UTAMA DI SINI:
-      // Menggunakan sessionStorage agar sesi hilang saat browser/tab ditutup.
       sessionStorage.setItem('session_user_id', user.id); 
       return user;
     }
@@ -217,13 +215,11 @@ export const DataService = {
   },
 
   getCurrentUser: (): Teacher | null => {
-    // Membaca dari sessionStorage
     const storedId = sessionStorage.getItem('session_user_id');
     return _teachers.find(t => t.id === storedId) || null;
   },
 
   logout: () => {
-    // Menghapus sesi
     sessionStorage.removeItem('session_user_id');
   },
 
@@ -273,16 +269,34 @@ export const DataService = {
     const score = stats.effectiveViolationScore;
     const studentSanctions = _sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
     
+    // --- LOGIKA DINAMIS BERDASARKAN RULES ---
+    // Mencari aturan yang mengandung kata "SP 1", "SP 2", "SP 3" di labelnya
+    const getThreshold = (keyword: string, defaultVal: number) => {
+       const rule = _rules.find(r => r.statusLabel.toUpperCase().replace(/\s/g, '').includes(keyword.replace(/\s/g, '')));
+       return rule ? rule.minPoints : defaultVal;
+    }
+
+    const limitSP3 = getThreshold('SP3', 160); // Default 160 jika rule tidak ditemukan
+    const limitSP2 = getThreshold('SP2', 120); // Default 120
+    const limitSP1 = getThreshold('SP1', 80);  // Default 80
+
     let newLevel: SanctionLevel | null = null;
-    if (score >= 160 && !studentSanctions.some(s => s.level === SanctionLevel.SP3)) newLevel = SanctionLevel.SP3;
-    else if (score >= 120 && !studentSanctions.some(s => s.level === SanctionLevel.SP2)) newLevel = SanctionLevel.SP2;
-    else if (score >= 80 && !studentSanctions.some(s => s.level === SanctionLevel.SP1)) newLevel = SanctionLevel.SP1;
+    
+    // Evaluasi dari yang terberat
+    if (score >= limitSP3 && !studentSanctions.some(s => s.level === SanctionLevel.SP3)) {
+       newLevel = SanctionLevel.SP3;
+    } else if (score >= limitSP2 && !studentSanctions.some(s => s.level === SanctionLevel.SP2)) {
+       newLevel = SanctionLevel.SP2;
+    } else if (score >= limitSP1 && !studentSanctions.some(s => s.level === SanctionLevel.SP1)) {
+       newLevel = SanctionLevel.SP1;
+    }
 
     if (newLevel) {
         const newSanction: StudentSanction = {
             id: `san_auto_${Date.now()}`,
             studentId, level: newLevel, assignedBy: 'SYSTEM', assignedDate: new Date().toISOString(),
-            notes: `Otomatis skor ${score}`, redemptionStatus: RedemptionStatus.NONE
+            notes: `Otomatis skor ${score} (Melewati batas ${newLevel})`, 
+            redemptionStatus: RedemptionStatus.NONE
         };
         await DataService.saveSanctions([..._sanctions, newSanction]);
         return newLevel;
@@ -291,7 +305,13 @@ export const DataService = {
   },
 
   resolveIncident: async (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
-    const updated = _records.map(r => r.id === recordId ? { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= 40) ? 'REQUIRED' : (r.bkStatus || 'NONE') } : r);
+    // Logic BK Trigger juga perlu dinamis (default 40)
+    let bkThreshold = 40;
+    // Cari rule yang mengandung "BK" jika ada, untuk menentukan batas minimal konseling
+    const bkRule = _rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
+    if (bkRule) bkThreshold = bkRule.minPoints;
+
+    const updated = _records.map(r => r.id === recordId ? { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= bkThreshold) ? 'REQUIRED' : (r.bkStatus || 'NONE') } : r);
     await DataService.saveRecords(updated);
   },
 
@@ -309,3 +329,4 @@ export const DataService = {
     return { deletedRecords: _records.length - validRecords.length };
   }
 };
+    
