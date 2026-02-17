@@ -21,7 +21,7 @@ import OsisInput from './pages/osis/OsisInput';
 import StudentInput from './pages/student/StudentInput';
 import { Role } from './types';
 import { DataService } from './services/dataService';
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { AlertTriangle, RotateCcw, Cloud } from 'lucide-react';
 import WaterLogoLoader from './components/WaterLogoLoader';
 import { isConfigMissing } from './firebaseConfig';
 
@@ -31,15 +31,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initApp = async () => {
-      console.log("☁️ Memulai Sinkronisasi Cloud...");
-      // DataService.initializeData sekarang adalah Promise yang menunggu data Cloud selesai didownload
-      const success = await DataService.initializeData();
-      
-      if (success) {
-          console.log("✅ Sinkronisasi Selesai.");
-          // Delay sedikit untuk transisi halus
-          setTimeout(() => setIsInitializing(false), 1200);
-      } else {
+      try {
+          const success = await DataService.initializeData();
+          if (success) {
+              setTimeout(() => setIsInitializing(false), 2000);
+          } else {
+              setInitError(true);
+              setIsInitializing(false);
+          }
+      } catch (e) {
           setInitError(true);
           setIsInitializing(false);
       }
@@ -49,16 +49,19 @@ const App: React.FC = () => {
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6">
         <WaterLogoLoader />
-        <div className="mt-4 flex flex-col items-center">
-            <div className="flex items-center gap-2 text-indigo-600 font-bold animate-pulse">
-                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-.3s]"></div>
-                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-.5s]"></div>
-                <span>Menghubungkan ke Cloud...</span>
+        <div className="mt-8 max-w-xs w-full">
+            <div className="flex items-center justify-center gap-3 text-indigo-600 font-bold mb-2">
+                <Cloud className="h-5 w-5 animate-pulse" />
+                <span>Sinkronisasi Google Cloud</span>
             </div>
-            <p className="text-[10px] text-slate-400 mt-2">Sedang mengambil data sekolah terbaru agar aman.</p>
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-600 animate-progress-indeterminate"></div>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-3 text-center leading-relaxed">
+                Mohon tunggu. Kami sedang mengunduh basis data sekolah agar perubahan Anda tidak hilang.
+            </p>
         </div>
       </div>
     );
@@ -71,13 +74,13 @@ const App: React.FC = () => {
                 <div className="bg-red-100 p-4 rounded-full mb-4 w-fit mx-auto">
                     <AlertTriangle className="h-10 w-10 text-red-600" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-800 mb-2">Gagal Memuat Data</h2>
-                <p className="text-slate-500 text-sm mb-6">Aplikasi gagal terhubung ke Cloud. Periksa internet Anda.</p>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Sinkronisasi Gagal</h2>
+                <p className="text-slate-500 text-sm mb-6">Aplikasi tidak bisa menghubungi server Google. Pastikan internet Anda aktif dan stabil.</p>
                 <button 
                     onClick={() => window.location.reload()}
                     className="w-full px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
                 >
-                    <RotateCcw className="h-4 w-4" /> Coba Lagi
+                    <RotateCcw className="h-4 w-4" /> Coba Hubungkan Lagi
                 </button>
             </div>
         </div>
