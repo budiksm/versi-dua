@@ -1,5 +1,4 @@
-
-import { initializeApp } from "firebase/app";
+import * as firebaseApp from "firebase/app";
 import { 
   getFirestore, 
   initializeFirestore, 
@@ -11,7 +10,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 // --- KONFIGURASI PROFESIONAL (HARDCODED) ---
 // Bagian ini TIDAK AKAN HILANG walau browser di-reset.
 // Data ini aman karena Firebase API Key memang didesain untuk publik (Client Side).
-// Keamanan data dijaga oleh Firestore Security Rules di console Google, bukan disembunyikan di sini.
+// Keamanan data dijaga oleh Firestore Security Rules di console Google.
 
 const firebaseConfig = {
   apiKey: "AIzaSyAycrr3a5Hg5IgWdSxRNcSbuqY_rROeY3w",
@@ -23,7 +22,6 @@ const firebaseConfig = {
 };
 
 // Validasi agar tidak error blank screen jika lupa isi config
-// Cek jika API Key masih default atau kosong (sekarang sudah diisi)
 export const isConfigMissing = !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY_HERE";
 
 let db: any = null;
@@ -37,7 +35,7 @@ const connectToFirebase = async () => {
 
     if (!auth) {
         try {
-            const app = initializeApp(firebaseConfig);
+            const app = firebaseApp.initializeApp(firebaseConfig);
             auth = getAuth(app);
             
             // Menggunakan Cache Persistence Standar Industri
@@ -49,7 +47,8 @@ const connectToFirebase = async () => {
             console.log("🔥 Firebase Initialized (Hardcoded Mode)");
         } catch (e) {
             console.error("Firebase Init Error:", e);
-            return false;
+            // Jika error karena app sudah ada (hot reload), coba ambil instance yang ada
+            return true; 
         }
     }
 

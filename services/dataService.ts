@@ -10,7 +10,6 @@ import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- STATE MEMORI (Hanya Runtime Cache) ---
 // Data ini diisi OTOMATIS oleh Realtime Listener Firestore.
-// Tidak ada load/save manual ke localStorage.
 let _teachers: Teacher[] = [];
 let _students: Student[] = [];
 let _classes: ClassGroup[] = [];
@@ -46,8 +45,6 @@ const notifyDataChange = () => {
 };
 
 // --- CORE: PUSH TO CLOUD ---
-// Fungsi ini langsung menembak Firestore. Jika gagal (offline), Firestore SDK
-// akan mengantrekannya otomatis, tapi kita menganggapnya 'PENDING'.
 const pushToCloud = async (collectionName: string, data: any) => {
   if (!db) {
       notifyListeners('ERROR', "Tidak terhubung ke Database Cloud.");
@@ -56,12 +53,8 @@ const pushToCloud = async (collectionName: string, data: any) => {
   
   notifyListeners('SYNCING');
   try {
-    // Kita menyimpan seluruh array sebagai satu dokumen 'data' untuk kesederhanaan
-    // Dalam skala enterprise besar, ini harusnya sub-collection, tapi untuk sekolah
-    // dengan < 2000 siswa, metode ini jauh lebih cepat dan hemat biaya read.
     const cleanData = JSON.parse(JSON.stringify(data)); 
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
-    
     notifyListeners('SAVED');
   } catch (error: any) {
     console.error(`[Cloud Error] ${collectionName}:`, error);
@@ -96,8 +89,6 @@ export const DataService = {
         return false;
     }
 
-    // Aktifkan Realtime Listeners
-    // Ini adalah JANTUNG aplikasi. Data di UI akan selalu sama dengan Cloud.
     DataService.startRealtimeListeners();
     return true;
   },
@@ -133,12 +124,8 @@ export const DataService = {
                 }
                 notifyDataChange();
                 
-                // Indikator visual sync pertama kali
                 loadedCount++;
                 if (loadedCount === collections.length) notifyListeners('SAVED');
-            } else {
-                // Dokumen belum ada di cloud (Fresh Install), biarkan array kosong
-                // Nanti akan terisi saat user melakukan input
             }
         }, (error) => {
             console.error(`Listener Error (${colName}):`, error);
@@ -147,7 +134,7 @@ export const DataService = {
     });
   },
 
-  // --- GETTERS (Read from Memory Cache) ---
+  // --- GETTERS ---
   getClasses: () => _classes || [],
   getStudents: () => _students || [],
   getCategories: () => _categories || [],
@@ -160,9 +147,7 @@ export const DataService = {
   getActivityLogs: () => _activityLogs || [],
   getTeachers: () => _teachers || [],
 
-  // --- SETTERS (Write to Cloud) ---
-  // Kita update memory dulu (Optimistic UI) lalu push ke cloud
-  
+  // --- SETTERS ---
   saveClasses: (data: ClassGroup[]) => { _classes = data; pushToCloud('classes', data); notifyDataChange(); },
   saveStudents: (data: Student[]) => { _students = data; pushToCloud('students', data); notifyDataChange(); },
   saveCategories: (data: MasterCategory[]) => { _categories = data; pushToCloud('categories', data); notifyDataChange(); },
@@ -178,7 +163,7 @@ export const DataService = {
       _counseling = data;
       pushToCloud('counseling', data); 
       
-      // Update status record terkait secara otomatis jika konseling selesai
+      // Auto-update status record
       if (data.length > 0) {
           const latestSession = data[data.length - 1]; 
           if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
@@ -189,7 +174,6 @@ export const DataService = {
               const updatedRecords = allRecords.map(r => {
                   if (relatedIds.includes(r.id)) {
                       let newStatus = r.bkStatus;
-                      // Logic status update
                       if (latestSession.sessionType === 'BK') {
                           if (r.bkStatus !== 'COMPLETED') newStatus = 'COMPLETED';
                       } 
@@ -216,7 +200,6 @@ export const DataService = {
   },
 
   // --- LOGIC LAINNYA ---
-  
   logActivity: (user: Teacher, action: 'LOGIN' | 'LOGOUT' | 'SYNC') => {
     const logs = _activityLogs;
     const newLog: ActivityLog = {
@@ -228,7 +211,6 @@ export const DataService = {
       timestamp: new Date().toISOString(),
       deviceInfo: navigator.userAgent
     };
-    // Keep logs manageable in single doc (max 1000)
     const updatedLogs = [newLog, ...logs].slice(0, 1000); 
     DataService.saveActivityLogs(updatedLogs);
   },
@@ -241,7 +223,7 @@ export const DataService = {
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
         const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
-        if (new Date().getTime() - last > 60000) { // Update tiap 1 menit
+        if (new Date().getTime() - last > 60000) { 
            changed = true;
            return { ...t, lastActiveAt: now };
         }
@@ -302,21 +284,20 @@ export const DataService = {
     DataService.saveCashflows(updatedFlows);
   },
 
-  // --- AUTHENTICATION ---
-  // Login tetap memerlukan validasi terhadap data Cloud (_teachers).
-  // localStorage hanya menyimpan sesi ID agar tidak perlu login ulang saat refresh.
-
+  // --- AUTHENTICATION & EMERGENCY LOGIN ---
   login: (username: string, password: string): Teacher | null => {
     const teachers = _teachers; 
     let user = teachers.find(t => t.username === username && t.password === password);
     
-    // --- EMERGENCY SUPER ADMIN CREATION (AUTO-SEED) ---
-    // Jika login pakai 'admin' / '123' DAN user admin belum ada di database cloud,
-    // maka buatkan secara otomatis. Ini solusi untuk First Deploy.
+    // --- PINTU DARURAT (EMERGENCY BACKDOOR) ---
+    // Logika ini AMAN karena hanya bekerja jika ADMIN BELUM ADA di database.
+    // Jika admin sudah ada, baris ini otomatis "mati" (dilewati).
     if (!user && username === 'admin' && password === '123') {
         const existingAdmin = teachers.find(t => t.username === 'admin');
+        
+        // Cek: Apakah Database Kosong dari Admin?
         if (!existingAdmin) {
-            console.log("⚡ Auto-Creating Super Admin Account...");
+            console.log("⚡ Database Kosong: Membuat Akun Super Admin Otomatis...");
             const superAdmin: Teacher = {
                 id: 'super_admin_001',
                 name: 'Super Administrator',
@@ -328,14 +309,14 @@ export const DataService = {
                 lastActiveAt: new Date().toISOString()
             };
             
-            // Simpan ke Cloud (State Memory + Cloud Push)
+            // Simpan ke Cloud agar login berikutnya pakai data asli
             DataService.saveTeachers([...teachers, superAdmin]);
-            user = superAdmin; // Login berhasil sebagai user baru
+            user = superAdmin; 
         }
     }
 
     if (user) {
-      localStorage.setItem('session_user_id', user.id); // Hanya simpan ID
+      localStorage.setItem('session_user_id', user.id); 
       DataService.logActivity(user, 'LOGIN');
       DataService.updateHeartbeat(user.id);
       return user;
@@ -353,8 +334,6 @@ export const DataService = {
     try {
         const storedId = localStorage.getItem('session_user_id');
         if (!storedId) return null;
-        
-        // Cari user segar dari data cloud
         const freshUser = _teachers.find(t => t.id === storedId);
         return freshUser || null;
     } catch(e) { return null; }
@@ -371,7 +350,7 @@ export const DataService = {
     DataService.saveTeachers(updatedTeachers);
   },
 
-  // --- HELPERS (Sama seperti sebelumnya) ---
+  // --- HELPERS LAINNYA ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const validRecords = Array.isArray(records) ? records : [];
     const studentRecords = validRecords.filter(r => r.studentId === studentId);
