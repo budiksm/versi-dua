@@ -46,13 +46,15 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Add async to the handleLogin function to await DataService.login
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoginSuccess('');
     
     // 1. Cek Kredensial Langsung (Tanpa Loading Screen dulu)
-    const user = DataService.login(username, password);
+    // Always await the async login method
+    const user = await DataService.login(username, password);
     
     if (user) {
       // 2. Jika Sukses: Tampilkan Notifikasi "Login berhasil"

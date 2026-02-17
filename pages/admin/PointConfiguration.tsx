@@ -115,9 +115,10 @@ const PointConfiguration: React.FC = () => {
   };
 
   // --- MAINTENANCE HANDLER ---
-  const handleCleanupData = () => {
+  // Await the async cleanupOrphanData method
+  const handleCleanupData = async () => {
     if (confirm("Fitur ini akan menghapus semua data pelanggaran yang ID siswanya sudah tidak ada. Lanjutkan?")) {
-        const result = DataService.cleanupOrphanData();
+        const result = await DataService.cleanupOrphanData();
         alert(`Pembersihan Selesai!\n\n${result.deletedRecords} Kejadian Dihapus.`);
         refreshData();
     }

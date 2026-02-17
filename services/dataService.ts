@@ -26,7 +26,7 @@ export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR' | 'OFFLINE' | 'LO
 let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
 let lastError: string | null = null;
-let isInitialLoadComplete = false; // KUNCI PENGAMAN: TRUE JIKA DATA CLOUD SUDAH MASUK
+let isInitialLoadComplete = false; 
 
 let syncListeners: ((state: SyncState, time: Date | null, error: string | null) => void)[] = [];
 let dataChangeListeners: (() => void)[] = [];
@@ -45,27 +45,30 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- CORE: PUSH TO CLOUD (DENGAN PENGAMAN OVERWRITE) ---
-const pushToCloud = async (collectionName: string, data: any) => {
-  // PENCEGAHAN FATAL: Jangan pernah kirim data jika loading awal belum selesai
+// --- CORE: PUSH TO CLOUD (DENGAN ASYNC AWAIT NYATA) ---
+const pushToCloud = async (collectionName: string, data: any): Promise<void> => {
+  // JANGAN PERNAH SIMPAN JIKA LOADING AWAL BELUM SELESAI (PENCEGAHAN OVERWRITE DATA KOSONG)
   if (!isInitialLoadComplete) {
-      console.warn(`[Sync Blocked] Percobaan overwrite ${collectionName} dibatalkan karena data Cloud belum selesai dimuat.`);
-      return; 
+      console.error(`[SYNC DENIED] Menolak push ${collectionName} karena sinkronisasi awal belum selesai.`);
+      throw new Error("Sistem belum siap. Mohon tunggu sinkronisasi awal.");
   }
 
   if (!db) {
-      notifyListeners('ERROR', "Tidak terhubung ke Database.");
-      return; 
+      notifyListeners('ERROR', "Database tidak terdeteksi.");
+      throw new Error("Koneksi database terputus.");
   }
   
   notifyListeners('SYNCING');
   try {
     const cleanData = JSON.parse(JSON.stringify(data)); 
+    // KUNCI UTAMA: Kita 'await' sampai Firebase benar-benar menyimpan data
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
+    console.log(`[Cloud Sync Success] ${collectionName} tersimpan.`);
     notifyListeners('SAVED');
   } catch (error: any) {
-    console.error(`[Cloud Error] ${collectionName}:`, error);
+    console.error(`[Cloud Sync Failed] ${collectionName}:`, error);
     notifyListeners('ERROR', "Gagal menyimpan ke Cloud.");
+    throw error; // Teruskan error agar UI bisa menangani (misal membatalkan loading)
   }
 };
 
@@ -81,7 +84,7 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  // --- INITIALIZATION (MENUNGGU DATA CLOUD) ---
+  // --- INITIALIZATION (STRICT CLOUD FETCH) ---
   initializeData: async (): Promise<boolean> => {
     if (isConfigMissing) return false;
 
@@ -119,27 +122,26 @@ export const DataService = {
                 receivedCollections.add(colName);
                 notifyDataChange();
 
-                // Hanya buka kunci jika SEMUA koleksi sudah merespon (sekalipun datanya [] kosong)
                 if (receivedCollections.size === collections.length && !isInitialLoadComplete) {
-                    isInitialLoadComplete = true; // BUKA KUNCI PENGAMAN
-                    console.log("✅ [Sync] 100% Cloud Data Loaded.");
+                    isInitialLoadComplete = true; 
+                    console.log("✅ [Sync Engine] 100% Cloud Data Arrived.");
                     notifyListeners('SAVED');
                     resolve(true);
                 }
             }, (err) => {
                 console.error("Snapshot Error:", err);
-                notifyListeners('ERROR', "Terputus dari server");
+                notifyListeners('ERROR', "Koneksi Cloud Gagal.");
             });
         });
 
-        // Timeout 15 detik untuk internet lambat
+        // Timeout diperpanjang untuk kestabilan
         setTimeout(() => {
             if (!isInitialLoadComplete) {
-                console.warn("⚠️ [Sync] Koneksi lambat, mencoba melanjutkan...");
+                console.warn("⚠️ [Sync Engine] Menunggu Cloud terlalu lama. Mengaktifkan paksa.");
                 isInitialLoadComplete = true; 
                 resolve(true);
             }
-        }, 15000);
+        }, 20000);
     });
   },
 
@@ -156,34 +158,33 @@ export const DataService = {
   getActivityLogs: () => _activityLogs,
   getTeachers: () => _teachers,
 
-  // --- SETTERS (DILINDUNGI LOCK) ---
-  saveClasses: (data: ClassGroup[]) => { if(!isInitialLoadComplete) return; _classes = data; pushToCloud('classes', data); notifyDataChange(); },
-  saveStudents: (data: Student[]) => { if(!isInitialLoadComplete) return; _students = data; pushToCloud('students', data); notifyDataChange(); },
-  saveCategories: (data: MasterCategory[]) => { if(!isInitialLoadComplete) return; _categories = data; pushToCloud('categories', data); notifyDataChange(); },
-  saveIncidentTypes: (data: MasterIncidentType[]) => { if(!isInitialLoadComplete) return; _incidents = data; pushToCloud('incidentTypes', data); notifyDataChange(); },
-  saveRules: (data: CoachingRule[]) => { if(!isInitialLoadComplete) return; _rules = data; pushToCloud('rules', data); notifyDataChange(); },
-  saveRecords: (data: IncidentRecord[]) => { if(!isInitialLoadComplete) return; _records = data; pushToCloud('records', data); notifyDataChange(); },
-  saveTeachers: (data: Teacher[]) => { if(!isInitialLoadComplete) return; _teachers = data; pushToCloud('teachers', data); notifyDataChange(); },
-  saveSanctions: (data: StudentSanction[]) => { if(!isInitialLoadComplete) return; _sanctions = data; pushToCloud('sanctions', data); notifyDataChange(); },
-  saveCashflows: (data: CashflowRecord[]) => { if(!isInitialLoadComplete) return; _cashflow = data; pushToCloud('cashflow', data); notifyDataChange(); },
-  saveActivityLogs: (data: ActivityLog[]) => { if(!isInitialLoadComplete) return; _activityLogs = data; pushToCloud('activity_logs', data); notifyDataChange(); },
+  // --- ASYNC SETTERS (REAL WAITING) ---
+  saveClasses: async (data: ClassGroup[]) => { _classes = data; await pushToCloud('classes', data); notifyDataChange(); },
+  saveStudents: async (data: Student[]) => { _students = data; await pushToCloud('students', data); notifyDataChange(); },
+  saveCategories: async (data: MasterCategory[]) => { _categories = data; await pushToCloud('categories', data); notifyDataChange(); },
+  saveIncidentTypes: async (data: MasterIncidentType[]) => { _incidents = data; await pushToCloud('incidentTypes', data); notifyDataChange(); },
+  saveRules: async (data: CoachingRule[]) => { _rules = data; await pushToCloud('rules', data); notifyDataChange(); },
+  saveRecords: async (data: IncidentRecord[]) => { _records = data; await pushToCloud('records', data); notifyDataChange(); },
+  saveTeachers: async (data: Teacher[]) => { _teachers = data; await pushToCloud('teachers', data); notifyDataChange(); },
+  saveSanctions: async (data: StudentSanction[]) => { _sanctions = data; await pushToCloud('sanctions', data); notifyDataChange(); },
+  saveCashflows: async (data: CashflowRecord[]) => { _cashflow = data; await pushToCloud('cashflow', data); notifyDataChange(); },
+  saveActivityLogs: async (data: ActivityLog[]) => { _activityLogs = data; await pushToCloud('activity_logs', data); notifyDataChange(); },
 
-  saveCounselingSessions: (data: CounselingSession[]) => { 
-      if(!isInitialLoadComplete) return;
+  saveCounselingSessions: async (data: CounselingSession[]) => { 
       _counseling = data;
-      pushToCloud('counseling', data); 
+      await pushToCloud('counseling', data); 
       notifyDataChange();
   },
 
-  // --- AUTHENTICATION ---
-  login: (username: string, password: string): Teacher | null => {
+  // --- AUTHENTICATION (STRICT) ---
+  login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
 
     let user = _teachers.find(t => t.username === username && t.password === password);
     
-    // EMERGENCY ADMIN: Hanya dibuat jika DATABASE BENAR-BENAR KOSONG di Cloud
+    // Emergency Admin check
     if (!user && username === 'admin' && password === '123') {
-        const anyAdminExists = _teachers.some(t => t.username === 'admin' || t.roles.includes(Role.ADMIN));
+        const anyAdminExists = _teachers.some(t => t.roles.includes(Role.ADMIN));
         if (!anyAdminExists) {
             const superAdmin: Teacher = {
                 id: 'super_admin_001',
@@ -195,14 +196,14 @@ export const DataService = {
                 mustChangePassword: true,
                 lastActiveAt: new Date().toISOString()
             };
-            DataService.saveTeachers([..._teachers, superAdmin]);
+            await DataService.saveTeachers([..._teachers, superAdmin]);
             user = superAdmin;
         }
     }
 
     if (user) {
       localStorage.setItem('session_user_id', user.id); 
-      DataService.updateHeartbeat(user.id);
+      await DataService.updateHeartbeat(user.id);
       return user;
     }
     return null;
@@ -218,13 +219,13 @@ export const DataService = {
     return _teachers.find(t => t.id === storedId) || null;
   },
 
-  updatePassword: (userId: string, newPass: string) => {
+  updatePassword: async (userId: string, newPass: string) => {
     if (!isInitialLoadComplete) return;
     const updatedTeachers = _teachers.map(t => t.id === userId ? { ...t, password: newPass, mustChangePassword: false } : t);
-    DataService.saveTeachers(updatedTeachers);
+    await DataService.saveTeachers(updatedTeachers);
   },
 
-  updateHeartbeat: (userId: string) => {
+  updateHeartbeat: async (userId: string) => {
     if (!isInitialLoadComplete) return;
     const now = new Date().toISOString();
     const updatedTeachers = _teachers.map(t => {
@@ -235,11 +236,11 @@ export const DataService = {
       return t;
     });
     if (JSON.stringify(updatedTeachers) !== JSON.stringify(_teachers)) {
-        DataService.saveTeachers(updatedTeachers);
+        await DataService.saveTeachers(updatedTeachers);
     }
   },
 
-  // --- HELPERS (POINT CALCULATION) ---
+  // --- HELPERS ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
@@ -270,7 +271,7 @@ export const DataService = {
     return rule || { id: 'unknown', minPoints: 0, maxPoints: 0, statusLabel: 'Normal', color: 'bg-emerald-100 text-emerald-800' };
   },
 
-  evaluateAndApplySanction: (studentId: string): SanctionLevel | null => {
+  evaluateAndApplySanction: async (studentId: string): Promise<SanctionLevel | null> => {
     const stats = DataService.calculateStudentPoints(studentId, _records, _incidents);
     const score = stats.effectiveViolationScore;
     const studentSanctions = _sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
@@ -286,20 +287,20 @@ export const DataService = {
             studentId, level: newLevel, assignedBy: 'SYSTEM', assignedDate: new Date().toISOString(),
             notes: `Otomatis skor ${score}`, redemptionStatus: RedemptionStatus.NONE
         };
-        DataService.saveSanctions([..._sanctions, newSanction]);
+        await DataService.saveSanctions([..._sanctions, newSanction]);
         return newLevel;
     }
     return null;
   },
 
-  resolveIncident: (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
+  resolveIncident: async (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
     const updatedRecords = _records.map(r => {
       if (r.id === recordId) {
         return { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= 40) ? 'REQUIRED' : (r.bkStatus || 'NONE') };
       }
       return r;
     });
-    DataService.saveRecords(updatedRecords);
+    await DataService.saveRecords(updatedRecords);
   },
 
   getClassBalance: (classId: string) => {
@@ -309,20 +310,20 @@ export const DataService = {
     return { balance: totalIn - totalOut, totalIn, totalOut, transactionCount: classFlows.length };
   },
 
-  verifyCashflow: (recordId: string, verifierName: string, isRejected = false) => {
+  verifyCashflow: async (recordId: string, verifierName: string, isRejected = false) => {
     const updatedFlows = _cashflow.map(f => f.id === recordId ? { ...f, status: (isRejected ? 'REJECTED' : 'APPROVED') as CashflowStatus, verifiedBy: verifierName, verifiedDate: new Date().toISOString() } : f);
-    DataService.saveCashflows(updatedFlows);
+    await DataService.saveCashflows(updatedFlows);
   },
 
-  voidCashflow: (recordId: string, user: Teacher) => {
+  voidCashflow: async (recordId: string, user: Teacher) => {
     const updatedFlows = _cashflow.map(f => f.id === recordId ? { ...f, status: 'CORRECTED' as CashflowStatus, description: f.description + ` [KOREKSI: ${user.name}]` } : f);
-    DataService.saveCashflows(updatedFlows);
+    await DataService.saveCashflows(updatedFlows);
   },
 
-  cleanupOrphanData: () => {
+  cleanupOrphanData: async () => {
     const validStudentIds = new Set(_students.map(s => s.id));
     const validRecords = _records.filter(r => validStudentIds.has(r.studentId));
-    if (_records.length !== validRecords.length) DataService.saveRecords(validRecords);
+    if (_records.length !== validRecords.length) await DataService.saveRecords(validRecords);
     return { deletedRecords: _records.length - validRecords.length };
   }
 };
