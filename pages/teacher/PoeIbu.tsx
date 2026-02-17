@@ -11,7 +11,7 @@ import {
   History, 
   Save, 
   Ban,
-  CloudUpload,
+  Cloud,
   Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -72,7 +72,6 @@ const PoeIbu: React.FC = () => {
     e.preventDefault();
     if (!currentClassId || !currentUser) return;
 
-    // 1. KUNCI LAYAR
     setIsSubmitting(true);
     try {
         const isWalikelas = currentUser.roles.includes(Role.WALIKELAS);
@@ -90,7 +89,6 @@ const PoeIbu: React.FC = () => {
           status: isWalikelas ? 'APPROVED' : 'PENDING'
         };
 
-        // 2. TUNGGU RESPON CLOUD
         await DataService.saveCashflows([...DataService.getCashflows(), newRecord]);
         
         setSuccessMsg('Tersimpan di Cloud!');
@@ -101,7 +99,6 @@ const PoeIbu: React.FC = () => {
     } catch (err) { 
         alert("Gagal mengirim dana. Periksa internet."); 
     } finally {
-        // 3. BUKA KUNCI LAYAR
         setIsSubmitting(false);
     }
   };
@@ -115,7 +112,7 @@ const PoeIbu: React.FC = () => {
       {isSubmitting && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex flex-col items-center justify-center text-white">
             <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-slate-800 animate-bounce-slow">
-                <CloudUpload className="h-16 w-16 text-emerald-600 mb-4 animate-pulse" />
+                <Cloud className="h-16 w-16 text-emerald-600 mb-4 animate-pulse" />
                 <h3 className="text-xl font-bold">Sinkronisasi Kas...</h3>
                 <p className="text-sm text-slate-500 mt-2">Menunggu konfirmasi server Google.</p>
                 <div className="w-48 h-1.5 bg-slate-100 rounded-full mt-6 overflow-hidden">

@@ -51,7 +51,7 @@ import {
   Eye,
   Link as LinkIcon,
   Loader2,
-  CloudUpload
+  Cloud
 } from 'lucide-react';
 
 interface StoryStep {
@@ -94,7 +94,6 @@ const StudentProfile: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedIncident, setSelectedIncident] = useState<string>('');
   const [notes, setNotes] = useState('');
-  const [imageProof, setImageProof] = useState<string | null>(null);
 
   useEffect(() => {
     const user = DataService.getCurrentUser();
@@ -124,7 +123,6 @@ const StudentProfile: React.FC = () => {
     e.preventDefault();
     if (!selectedIncident || !selectedCategory || !student) return;
     
-    // 1. AKTIFKAN PENGUNCI LAYAR
     setIsSubmitting(true);
     
     try {
@@ -144,15 +142,12 @@ const StudentProfile: React.FC = () => {
           status: initialStatus
         };
 
-        // 2. TUNGGU RESPON DARI GOOGLE CLOUD
         await DataService.saveRecords([...DataService.getRecords(), newRecord]);
         
-        // Cek jika butuh sanksi otomatis
         if (incidentDef.type === IncidentTypeCategory.VIOLATION && initialStatus === 'APPROVED') {
             await DataService.evaluateAndApplySanction(student.id);
         }
 
-        // 3. JIKA BERHASIL: BERI NOTIFIKASI & RESET FORM
         setSuccessMsg(`Berhasil! Data tersimpan di Cloud.`);
         setNotes('');
         setSelectedIncident('');
@@ -162,18 +157,15 @@ const StudentProfile: React.FC = () => {
     } catch (e) {
         alert("Gagal sinkronisasi. Periksa internet Anda.");
     } finally {
-        // 4. BUKA KUNCI LAYAR
         setIsSubmitting(false);
     }
   };
 
-  // --- HELPERS ---
   const stats = DataService.calculateStudentPoints(student?.id || '', records, incidents);
   const recommendedStatus = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
   const activeSanction = sanctions.find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
   const studentClass = classes.find(c => c.id === student?.classId);
   const isReporterHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
-  const isKesiswaan = currentUser?.roles.includes(Role.KESISWAAN);
 
   if (isLoading) return <div className="flex flex-col items-center justify-center min-h-[60vh]"><Loader2 className="h-12 w-12 animate-spin text-indigo-600 mb-4" /><p>Memuat profil...</p></div>;
   if (!student) return <div className="p-8 text-center"><h2 className="text-xl font-bold">Siswa Tidak Ditemukan</h2></div>;
@@ -185,7 +177,7 @@ const StudentProfile: React.FC = () => {
       {isSubmitting && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-white">
             <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-slate-800 animate-bounce-slow">
-                <CloudUpload className="h-16 w-16 text-indigo-600 mb-4 animate-pulse" />
+                <Cloud className="h-16 w-16 text-indigo-600 mb-4 animate-pulse" />
                 <h3 className="text-xl font-bold">Sinkronisasi Cloud...</h3>
                 <p className="text-sm text-slate-500 mt-2">Sedang memastikan data aman di server Google.</p>
                 <div className="w-48 h-1.5 bg-slate-100 rounded-full mt-6 overflow-hidden">
@@ -210,7 +202,7 @@ const StudentProfile: React.FC = () => {
         <div className="bg-white p-6 rounded-xl border border-slate-200"><p className="text-sm font-medium text-slate-500">Status Sanksi</p><div className="mt-2">{activeSanction ? <span className="text-2xl font-bold text-red-600">{activeSanction.level}</span> : <span className="text-2xl font-bold text-emerald-600">Aman</span>}</div></div>
       </div>
 
-      {/* TABS & FORM */}
+      {/* FORM */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="p-6 border-b bg-slate-50"><h2 className="font-bold text-slate-800 flex items-center gap-2"><ClipboardList className="h-5 w-5 text-indigo-600" /> Input Kejadian Baru</h2></div>
           <form onSubmit={handleSubmitIncident} className="p-6 space-y-4">
@@ -238,7 +230,7 @@ const StudentProfile: React.FC = () => {
                           <p className="text-xs text-slate-400 mt-1">{new Date(r.date).toLocaleDateString()} • Oleh: {r.recordedBy}</p>
                           <p className="text-xs text-slate-600 mt-2 italic">"{r.notes || '-'}"</p>
                       </div>
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${r.typeSnapshot === 'VIOLATION' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${r.typeSnapshot === 'VIOLATION' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                           {r.typeSnapshot === 'VIOLATION' ? '+' : '-'}{r.pointSnapshot} Pt
                       </span>
                   </div>
