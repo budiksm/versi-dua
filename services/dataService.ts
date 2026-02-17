@@ -208,8 +208,8 @@ export const DataService = {
     }
 
     if (user) {
-      // PERUBAHAN PENTING: Menggunakan sessionStorage alih-alih localStorage
-      // SessionStorage akan hilang otomatis saat tab/browser ditutup
+      // PERUBAHAN UTAMA DI SINI:
+      // Menggunakan sessionStorage agar sesi hilang saat browser/tab ditutup.
       sessionStorage.setItem('session_user_id', user.id); 
       return user;
     }
@@ -217,13 +217,13 @@ export const DataService = {
   },
 
   getCurrentUser: (): Teacher | null => {
-    // PERUBAHAN PENTING: Baca dari sessionStorage
+    // Membaca dari sessionStorage
     const storedId = sessionStorage.getItem('session_user_id');
     return _teachers.find(t => t.id === storedId) || null;
   },
 
   logout: () => {
-    // PERUBAHAN PENTING: Hapus dari sessionStorage
+    // Menghapus sesi
     sessionStorage.removeItem('session_user_id');
   },
 
@@ -309,4 +309,3 @@ export const DataService = {
     return { deletedRecords: _records.length - validRecords.length };
   }
 };
-    
