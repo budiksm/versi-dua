@@ -1,30 +1,16 @@
 
 import { 
-  Student, 
-  ClassGroup, 
-  MasterCategory, 
-  MasterIncidentType, 
-  IncidentRecord, 
-  CoachingRule, 
-  IncidentTypeCategory, 
-  Teacher, 
-  Role, 
-  CounselingSession, 
-  StudentSanction, 
-  RedemptionStatus, 
-  SanctionLevel, 
-  IncidentStatus, 
-  CashflowRecord, 
-  ActivityLog, 
-  BkCounselingStatus 
+  Student, ClassGroup, MasterCategory, MasterIncidentType, IncidentRecord, CoachingRule, 
+  IncidentTypeCategory, Teacher, Role, CounselingSession, StudentSanction, 
+  CashflowRecord, ActivityLog, BkCounselingStatus, SanctionLevel, RedemptionStatus
 } from '../types';
 
-import { db, connectToFirebase } from '../firebaseConfig';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// --- IN-MEMORY STATE (Runtime Only) ---
-// Data ini akan hilang saat refresh, dan DIPAKSA ambil ulang dari Cloud.
-// Ini menjamin user selalu melihat data terbaru.
+// --- STATE MEMORI (Hanya Runtime Cache) ---
+// Data ini diisi OTOMATIS oleh Realtime Listener Firestore.
+// Tidak ada load/save manual ke localStorage.
 let _teachers: Teacher[] = [];
 let _students: Student[] = [];
 let _classes: ClassGroup[] = [];
@@ -37,8 +23,8 @@ let _sanctions: StudentSanction[] = [];
 let _cashflow: CashflowRecord[] = [];
 let _activityLogs: ActivityLog[] = [];
 
-// --- SYNC STATUS MANAGEMENT ---
-export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR';
+// --- SYNC STATUS ---
+export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR' | 'OFFLINE';
 let currentSyncState: SyncState = 'IDLE';
 let lastSyncTime: Date | null = null;
 let lastError: string | null = null;
@@ -59,37 +45,27 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- DATA SEEDING (Hanya Manual Trigger via Admin, TIDAK OTOMATIS) ---
-const SEED_DATA = {
-    categories: [
-        { id: 'cat1', name: 'Kedisiplinan', targetType: IncidentTypeCategory.VIOLATION },
-        { id: 'cat5', name: 'Prestasi', targetType: IncidentTypeCategory.ACHIEVEMENT },
-        { id: 'cat6', name: 'Penebusan', targetType: IncidentTypeCategory.REDEMPTION },
-    ],
-    rules: [
-        { id: 'r1', minPoints: 0, maxPoints: 19, statusLabel: 'Normal', color: 'bg-green-100 text-green-800' },
-        { id: 'r2', minPoints: 20, maxPoints: 39, statusLabel: 'Pembinaan Wali Kelas', color: 'bg-yellow-100 text-yellow-800' },
-        { id: 'r3', minPoints: 40, maxPoints: 79, statusLabel: 'Pembinaan BK + Ortu', color: 'bg-orange-100 text-orange-800' },
-        { id: 'r4', minPoints: 80, maxPoints: 119, statusLabel: 'SP 1', color: 'bg-red-100 text-red-800' },
-        { id: 'r5', minPoints: 120, maxPoints: 159, statusLabel: 'SP 2', color: 'bg-red-200 text-red-900' },
-        { id: 'r6', minPoints: 160, maxPoints: 200, statusLabel: 'SP 3 (Perjanjian Terakhir)', color: 'bg-red-600 text-white' },
-        { id: 'r7', minPoints: 201, maxPoints: 9999, statusLabel: 'DO (Dikembalikan ke Ortu)', color: 'bg-slate-900 text-white border-2 border-red-500' },
-    ],
-    admin: { id: 'admin1', name: 'Administrator', nip: '000000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false }
-};
-
-// --- FIRESTORE SYNC HELPER ---
-const syncToCloud = async (collectionName: string, data: any) => {
-  if (!db) return; 
+// --- CORE: PUSH TO CLOUD ---
+// Fungsi ini langsung menembak Firestore. Jika gagal (offline), Firestore SDK
+// akan mengantrekannya otomatis, tapi kita menganggapnya 'PENDING'.
+const pushToCloud = async (collectionName: string, data: any) => {
+  if (!db) {
+      notifyListeners('ERROR', "Tidak terhubung ke Database Cloud.");
+      return; 
+  }
   
   notifyListeners('SYNCING');
   try {
-    const cleanData = JSON.parse(JSON.stringify(data)); // Remove undefined
+    // Kita menyimpan seluruh array sebagai satu dokumen 'data' untuk kesederhanaan
+    // Dalam skala enterprise besar, ini harusnya sub-collection, tapi untuk sekolah
+    // dengan < 2000 siswa, metode ini jauh lebih cepat dan hemat biaya read.
+    const cleanData = JSON.parse(JSON.stringify(data)); 
     await setDoc(doc(db, "school_data", collectionName), { data: cleanData });
+    
     notifyListeners('SAVED');
   } catch (error: any) {
-    console.error(`[Cloud] Failed to sync ${collectionName}:`, error);
-    notifyListeners('ERROR', error.message || "Gagal simpan ke cloud");
+    console.error(`[Cloud Error] ${collectionName}:`, error);
+    notifyListeners('ERROR', "Gagal menyimpan ke Cloud. Periksa koneksi.");
   }
 };
 
@@ -105,88 +81,25 @@ export const DataService = {
     return () => { syncListeners = syncListeners.filter(l => l !== callback); };
   },
 
-  // --- INITIALIZATION (STRICT CLOUD FETCH) ---
+  // --- INITIALIZATION ---
   initializeData: async (): Promise<boolean> => {
-    console.log("☁️ [Init] Menghubungkan ke Infrastruktur Cloud...");
+    if (isConfigMissing) {
+        console.error("❌ Config Firebase Hilang.");
+        return false;
+    }
+
+    console.log("☁️ [Init] Menghubungkan ke Cloud Firestore...");
+    const isConnected = await connectToFirebase();
     
-    if (!db) {
-        console.warn("⚠️ Database belum dikonfigurasi.");
+    if (!isConnected) {
+        notifyListeners('ERROR', "Gagal koneksi ke server.");
         return false;
     }
 
-    // 1. Connect Auth (Wajib Tunggu)
-    const isAuth = await connectToFirebase();
-    if (!isAuth) {
-        notifyListeners('ERROR', "Gagal Autentikasi Cloud.");
-        return false;
-    }
-
-    // 2. Fetch All Data (Parallel)
-    const collections = [
-        'teachers', 'students', 'classes', 'records', 'counseling', 
-        'sanctions', 'categories', 'incidentTypes', 'rules', 'cashflow', 'activity_logs'
-    ];
-
-    try {
-        const promises = collections.map(col => getDoc(doc(db, "school_data", col)));
-        const snapshots = await Promise.all(promises);
-
-        // 3. Process Data into Memory
-        snapshots.forEach((snap, index) => {
-            const colName = collections[index];
-            let data: any[] = [];
-
-            if (snap.exists()) {
-                data = snap.data().data || [];
-                console.log(`✅ [Cloud] Loaded ${colName}: ${data.length} items`);
-            } else {
-                console.log(`ℹ️ [Cloud] ${colName} kosong atau belum dibuat.`);
-            }
-
-            // Assign to memory ONLY (No localStorage backup)
-            switch(colName) {
-                case 'teachers': _teachers = data; break;
-                case 'students': _students = data; break;
-                case 'classes': _classes = data; break;
-                case 'records': _records = data; break;
-                case 'categories': _categories = data; break;
-                case 'incidentTypes': _incidents = data; break;
-                case 'rules': _rules = data; break;
-                case 'counseling': _counseling = data; break;
-                case 'sanctions': _sanctions = data; break;
-                case 'cashflow': _cashflow = data; break;
-                case 'activity_logs': _activityLogs = data; break;
-            }
-        });
-
-        // 4. Safe Seeding (ONLY IF REALLY EMPTY & NO ADMIN)
-        // Kita hanya seed Admin jika tabel guru benar-benar kosong di Cloud.
-        if (_teachers.length === 0) {
-            console.log("✨ [Init] Database kosong. Membuat Admin Default di Cloud...");
-            _teachers = [SEED_DATA.admin];
-            await syncToCloud('teachers', _teachers);
-            
-            // Seed basic rules & categories if empty
-            if (_categories.length === 0) {
-               _categories = SEED_DATA.categories;
-               await syncToCloud('categories', _categories);
-            }
-            if (_rules.length === 0) {
-               _rules = SEED_DATA.rules;
-               await syncToCloud('rules', _rules);
-            }
-        }
-
-        // 5. Start Realtime Listeners
-        DataService.startRealtimeListeners();
-        
-        return true;
-
-    } catch (e) {
-        console.error("❌ [Init] Fatal Cloud Error:", e);
-        notifyListeners('ERROR', "Koneksi Cloud Gagal.");
-        return false;
-    }
+    // Aktifkan Realtime Listeners
+    // Ini adalah JANTUNG aplikasi. Data di UI akan selalu sama dengan Cloud.
+    DataService.startRealtimeListeners();
+    return true;
   },
 
   startRealtimeListeners: () => {
@@ -197,39 +110,44 @@ export const DataService = {
         'cashflow', 'activity_logs'
     ];
 
+    let loadedCount = 0;
+
     collections.forEach(colName => {
         onSnapshot(doc(db, "school_data", colName), (docSnapshot) => {
             if (docSnapshot.exists()) {
-                const cloudData = docSnapshot.data().data;
+                const cloudData = docSnapshot.data().data || [];
                 
-                // Compare with current memory to detect external changes
-                // Note: We skip complex diffing for performance, just update memory & notify UI
-                let shouldUpdate = false;
-                
+                // Update Memori Lokal (Cache Runtime)
                 switch(colName) {
-                    case 'teachers': if(JSON.stringify(_teachers) !== JSON.stringify(cloudData)) { _teachers = cloudData; shouldUpdate = true; } break;
-                    case 'students': if(JSON.stringify(_students) !== JSON.stringify(cloudData)) { _students = cloudData; shouldUpdate = true; } break;
-                    case 'classes': if(JSON.stringify(_classes) !== JSON.stringify(cloudData)) { _classes = cloudData; shouldUpdate = true; } break;
-                    case 'records': if(JSON.stringify(_records) !== JSON.stringify(cloudData)) { _records = cloudData; shouldUpdate = true; } break;
-                    case 'categories': if(JSON.stringify(_categories) !== JSON.stringify(cloudData)) { _categories = cloudData; shouldUpdate = true; } break;
-                    case 'incidentTypes': if(JSON.stringify(_incidents) !== JSON.stringify(cloudData)) { _incidents = cloudData; shouldUpdate = true; } break;
-                    case 'rules': if(JSON.stringify(_rules) !== JSON.stringify(cloudData)) { _rules = cloudData; shouldUpdate = true; } break;
-                    case 'counseling': if(JSON.stringify(_counseling) !== JSON.stringify(cloudData)) { _counseling = cloudData; shouldUpdate = true; } break;
-                    case 'sanctions': if(JSON.stringify(_sanctions) !== JSON.stringify(cloudData)) { _sanctions = cloudData; shouldUpdate = true; } break;
-                    case 'cashflow': if(JSON.stringify(_cashflow) !== JSON.stringify(cloudData)) { _cashflow = cloudData; shouldUpdate = true; } break;
-                    case 'activity_logs': if(JSON.stringify(_activityLogs) !== JSON.stringify(cloudData)) { _activityLogs = cloudData; shouldUpdate = true; } break;
+                    case 'teachers': _teachers = cloudData; break;
+                    case 'students': _students = cloudData; break;
+                    case 'classes': _classes = cloudData; break;
+                    case 'records': _records = cloudData; break;
+                    case 'categories': _categories = cloudData; break;
+                    case 'incidentTypes': _incidents = cloudData; break;
+                    case 'rules': _rules = cloudData; break;
+                    case 'counseling': _counseling = cloudData; break;
+                    case 'sanctions': _sanctions = cloudData; break;
+                    case 'cashflow': _cashflow = cloudData; break;
+                    case 'activity_logs': _activityLogs = cloudData; break;
                 }
-
-                if (shouldUpdate) {
-                    console.log(`🔄 [Realtime] Update diterima dari Cloud: ${colName}`);
-                    notifyDataChange();
-                }
+                notifyDataChange();
+                
+                // Indikator visual sync pertama kali
+                loadedCount++;
+                if (loadedCount === collections.length) notifyListeners('SAVED');
+            } else {
+                // Dokumen belum ada di cloud (Fresh Install), biarkan array kosong
+                // Nanti akan terisi saat user melakukan input
             }
+        }, (error) => {
+            console.error(`Listener Error (${colName}):`, error);
+            notifyListeners('ERROR', "Terputus dari Cloud.");
         });
     });
   },
 
-  // --- GETTERS (Memory Access - Fast UI) ---
+  // --- GETTERS (Read from Memory Cache) ---
   getClasses: () => _classes || [],
   getStudents: () => _students || [],
   getCategories: () => _categories || [],
@@ -242,26 +160,25 @@ export const DataService = {
   getActivityLogs: () => _activityLogs || [],
   getTeachers: () => _teachers || [],
 
-  // --- SETTERS (Update Memory -> Push to Cloud) ---
-  // Kita menghapus 'saveToStorage' (LocalStorage) dari semua setter.
-  // Data hanya disimpan di Memory (untuk UI instan) dan Cloud (untuk persistensi).
+  // --- SETTERS (Write to Cloud) ---
+  // Kita update memory dulu (Optimistic UI) lalu push ke cloud
   
-  saveClasses: (data: ClassGroup[]) => { _classes = data; syncToCloud('classes', data); notifyDataChange(); },
-  saveStudents: (data: Student[]) => { _students = data; syncToCloud('students', data); notifyDataChange(); },
-  saveCategories: (data: MasterCategory[]) => { _categories = data; syncToCloud('categories', data); notifyDataChange(); },
-  saveIncidentTypes: (data: MasterIncidentType[]) => { _incidents = data; syncToCloud('incidentTypes', data); notifyDataChange(); },
-  saveRules: (data: CoachingRule[]) => { _rules = data; syncToCloud('rules', data); notifyDataChange(); },
-  saveRecords: (data: IncidentRecord[]) => { _records = data; syncToCloud('records', data); notifyDataChange(); },
-  saveTeachers: (data: Teacher[]) => { _teachers = data; syncToCloud('teachers', data); notifyDataChange(); },
-  saveSanctions: (data: StudentSanction[]) => { _sanctions = data; syncToCloud('sanctions', data); notifyDataChange(); },
-  saveCashflows: (data: CashflowRecord[]) => { _cashflow = data; syncToCloud('cashflow', data); notifyDataChange(); },
-  saveActivityLogs: (data: ActivityLog[]) => { _activityLogs = data; syncToCloud('activity_logs', data); notifyDataChange(); },
+  saveClasses: (data: ClassGroup[]) => { _classes = data; pushToCloud('classes', data); notifyDataChange(); },
+  saveStudents: (data: Student[]) => { _students = data; pushToCloud('students', data); notifyDataChange(); },
+  saveCategories: (data: MasterCategory[]) => { _categories = data; pushToCloud('categories', data); notifyDataChange(); },
+  saveIncidentTypes: (data: MasterIncidentType[]) => { _incidents = data; pushToCloud('incidentTypes', data); notifyDataChange(); },
+  saveRules: (data: CoachingRule[]) => { _rules = data; pushToCloud('rules', data); notifyDataChange(); },
+  saveRecords: (data: IncidentRecord[]) => { _records = data; pushToCloud('records', data); notifyDataChange(); },
+  saveTeachers: (data: Teacher[]) => { _teachers = data; pushToCloud('teachers', data); notifyDataChange(); },
+  saveSanctions: (data: StudentSanction[]) => { _sanctions = data; pushToCloud('sanctions', data); notifyDataChange(); },
+  saveCashflows: (data: CashflowRecord[]) => { _cashflow = data; pushToCloud('cashflow', data); notifyDataChange(); },
+  saveActivityLogs: (data: ActivityLog[]) => { _activityLogs = data; pushToCloud('activity_logs', data); notifyDataChange(); },
 
   saveCounselingSessions: (data: CounselingSession[]) => { 
       _counseling = data;
-      syncToCloud('counseling', data); 
+      pushToCloud('counseling', data); 
       
-      // SIDE EFFECT: Update status record jika diperlukan
+      // Update status record terkait secara otomatis jika konseling selesai
       if (data.length > 0) {
           const latestSession = data[data.length - 1]; 
           if (latestSession && latestSession.relatedRecordIds && latestSession.relatedRecordIds.length > 0) {
@@ -271,34 +188,27 @@ export const DataService = {
               
               const updatedRecords = allRecords.map(r => {
                   if (relatedIds.includes(r.id)) {
+                      let newStatus = r.bkStatus;
+                      // Logic status update
                       if (latestSession.sessionType === 'BK') {
-                          if (r.bkStatus !== 'COMPLETED') {
-                              recordsChanged = true;
-                              return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
-                          }
+                          if (r.bkStatus !== 'COMPLETED') newStatus = 'COMPLETED';
                       } 
                       else if (latestSession.sessionType === 'HOMEROOM') {
-                          if (latestSession.recommendation === 'TO_BK') {
-                              if (r.bkStatus !== 'REQUIRED') {
-                                  recordsChanged = true;
-                                  return { ...r, bkStatus: 'REQUIRED' as BkCounselingStatus };
-                              }
-                          }
-                          else if (latestSession.recommendation === 'NONE') {
-                              if (r.bkStatus !== 'COMPLETED') {
-                                  recordsChanged = true;
-                                  return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
-                              }
-                          }
+                          if (latestSession.recommendation === 'TO_BK') newStatus = 'REQUIRED';
+                          else if (latestSession.recommendation === 'NONE') newStatus = 'COMPLETED';
+                      }
+                      
+                      if (newStatus !== r.bkStatus) {
+                          recordsChanged = true;
+                          return { ...r, bkStatus: newStatus as BkCounselingStatus };
                       }
                   }
                   return r;
               });
               
               if (recordsChanged) {
-                  // Panggil setter internal untuk trigger sync records juga
                   _records = updatedRecords;
-                  syncToCloud('records', updatedRecords);
+                  pushToCloud('records', updatedRecords);
               }
           }
       }
@@ -318,7 +228,8 @@ export const DataService = {
       timestamp: new Date().toISOString(),
       deviceInfo: navigator.userAgent
     };
-    const updatedLogs = [newLog, ...logs].slice(0, 500); // Keep last 500 logs
+    // Keep logs manageable in single doc (max 1000)
+    const updatedLogs = [newLog, ...logs].slice(0, 1000); 
     DataService.saveActivityLogs(updatedLogs);
   },
 
@@ -330,8 +241,7 @@ export const DataService = {
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
         const last = t.lastActiveAt ? new Date(t.lastActiveAt).getTime() : 0;
-        // Update only if > 1 min has passed to save bandwidth
-        if (new Date().getTime() - last > 60000) {
+        if (new Date().getTime() - last > 60000) { // Update tiap 1 menit
            changed = true;
            return { ...t, lastActiveAt: now };
         }
@@ -393,17 +303,15 @@ export const DataService = {
   },
 
   // --- AUTHENTICATION ---
-  // Session tetap menggunakan localStorage agar user tidak perlu login ulang tiap refresh.
-  // Tapi data User-nya (Role, Nama, dll) akan divalidasi ulang dengan data terbaru dari Cloud (_teachers).
+  // Login tetap memerlukan validasi terhadap data Cloud (_teachers).
+  // localStorage hanya menyimpan sesi ID agar tidak perlu login ulang saat refresh.
 
   login: (username: string, password: string): Teacher | null => {
-    // Cek kredensial dari data memory (yang sudah di-fetch dari Cloud)
     const teachers = _teachers; 
     let user = teachers.find(t => t.username === username && t.password === password);
     
     if (user) {
-      // Simpan session token sederhana
-      localStorage.setItem('currentUser', JSON.stringify(user));
+      localStorage.setItem('session_user_id', user.id); // Hanya simpan ID
       DataService.logActivity(user, 'LOGIN');
       DataService.updateHeartbeat(user.id);
       return user;
@@ -414,25 +322,17 @@ export const DataService = {
   logout: () => {
     const user = DataService.getCurrentUser();
     if(user) DataService.logActivity(user, 'LOGOUT');
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem('session_user_id');
   },
 
   getCurrentUser: (): Teacher | null => {
     try {
-        const stored = localStorage.getItem('currentUser');
-        if (!stored) return null;
+        const storedId = localStorage.getItem('session_user_id');
+        if (!storedId) return null;
         
-        const sessionUser = JSON.parse(stored);
-        
-        // RE-VALIDATE WITH LATEST CLOUD DATA
-        // Jika data guru berubah di cloud (misal role diganti admin), session harus ikut berubah.
-        const freshUser = _teachers.find(t => t.id === sessionUser.id);
-        
-        if (freshUser) {
-            return freshUser; // Return yang paling update
-        } else {
-            return sessionUser; // Fallback jika belum sync
-        }
+        // Cari user segar dari data cloud
+        const freshUser = _teachers.find(t => t.id === storedId);
+        return freshUser || null;
     } catch(e) { return null; }
   },
 
@@ -440,19 +340,14 @@ export const DataService = {
     const teachers = _teachers;
     const updatedTeachers = teachers.map(t => {
       if (t.id === userId) {
-        const updatedUser = { ...t, password: newPass, mustChangePassword: false };
-        const currentUser = DataService.getCurrentUser();
-        if (currentUser && currentUser.id === userId) {
-             localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-        }
-        return updatedUser;
+        return { ...t, password: newPass, mustChangePassword: false };
       }
       return t;
     });
     DataService.saveTeachers(updatedTeachers);
   },
 
-  // --- CALCULATION HELPERS (PURE FUNCTIONS) ---
+  // --- HELPERS (Sama seperti sebelumnya) ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const validRecords = Array.isArray(records) ? records : [];
     const studentRecords = validRecords.filter(r => r.studentId === studentId);
@@ -509,15 +404,9 @@ export const DataService = {
 
     let newLevel: SanctionLevel | null = null;
 
-    if (score >= 160) {
-       if (!hasSP3 && !hasDO) newLevel = SanctionLevel.SP3;
-    }
-    else if (score >= 120) {
-        if (!hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP2;
-    }
-    else if (score >= 80) {
-        if (!hasSP1 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP1;
-    }
+    if (score >= 160 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP3;
+    else if (score >= 120 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP2;
+    else if (score >= 80 && !hasSP1 && !hasSP2 && !hasSP3 && !hasDO) newLevel = SanctionLevel.SP1;
 
     if (newLevel) {
         const newSanction: StudentSanction = {
@@ -536,7 +425,7 @@ export const DataService = {
     return null;
   },
 
-  resolveIncident: (recordId: string, status: IncidentStatus, reason?: string) => {
+  resolveIncident: (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
     const allRecords = _records;
     const updatedRecords = allRecords.map(r => {
       if (r.id === recordId) {

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { DataService, SyncState } from '../services/dataService';
+// removed isDemoConfig import
 import { 
   Users, 
   LayoutDashboard, 
@@ -31,7 +32,8 @@ import {
   Search,
   Wifi,
   WifiOff,
-  CloudOff
+  CloudOff,
+  Database
 } from 'lucide-react';
 import { Role, Teacher } from '../types';
 
@@ -45,7 +47,6 @@ interface LayoutProps {
   role: Role; 
 }
 
-// Tipe data untuk item menu yang lebih fleksibel
 type MenuItemType = 'link' | 'header' | 'separator';
 
 interface MenuItem {
@@ -69,7 +70,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Logo Error State (Fallback if image fails)
   const [logoError, setLogoError] = useState(false);
   
-  // Explicitly cast to Teacher | null to avoid 'never' inference issues in some environments
+  // Explicitly cast to Teacher | null
   const currentUser = DataService.getCurrentUser() as Teacher | null;
 
   // Force Password Change State
@@ -101,7 +102,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (currentUser) {
        DataService.updateHeartbeat(currentUser.id);
        const interval = setInterval(() => {
-          // Re-check user existence in interval closure
           const activeUser = DataService.getCurrentUser();
           if (activeUser) DataService.updateHeartbeat(activeUser.id);
        }, 60000);
@@ -114,7 +114,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
     
     // Check for forced password change
-    // We use a safe check here
     if (currentUser && (currentUser as Teacher).mustChangePassword === true && !successMessage) {
       setShowPasswordModal(true);
     }
@@ -137,26 +136,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
   
   const handleResetConnection = async () => {
-    if(confirm("Tindakan ini akan membersihkan cache database di browser untuk memperbaiki error koneksi. Data di server aman. Lanjutkan?")) {
-        try {
-            // Clear IndexedDB Firebase
-            // @ts-ignore
-            if (window.indexedDB && window.indexedDB.databases) {
-                // @ts-ignore
-                const dbs = await window.indexedDB.databases();
-                // @ts-ignore
-                dbs.forEach((db: any) => { 
-                    if(db.name && db.name.includes('firebase')) {
-                        window.indexedDB.deleteDatabase(db.name);
-                    }
-                });
-            }
-            localStorage.clear();
-            window.location.reload();
-        } catch (e) {
-            alert("Gagal reset otomatis. Silakan hapus history browser Anda secara manual.");
-            window.location.reload();
-        }
+    if(confirm("Tindakan ini akan me-reload aplikasi dan mencoba menghubungkan ulang ke database Cloud. Lanjutkan?")) {
+        window.location.reload();
     }
   };
 
@@ -435,11 +416,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </div>
                 )}
 
-                {/* 2. STATE: ERROR */}
+                {/* 2. STATE: ERROR / CONFIG MISSING */}
                 {isOnline && syncState === 'ERROR' && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 border border-red-200" title="Gagal terhubung ke Database">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 border border-red-200" title="Gagal terhubung ke Cloud">
                         <CloudOff className="h-4 w-4 text-red-600" />
-                        <span className="text-xs font-bold text-red-600 hidden sm:inline">Koneksi DB Error!</span>
+                        <span className="text-xs font-bold text-red-600 hidden sm:inline">Koneksi Error</span>
                     </div>
                 )}
 
@@ -475,8 +456,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <h3 className="text-sm font-bold text-red-800">Koneksi Database Bermasalah</h3>
                       <p className="text-xs text-red-600 leading-relaxed mt-1">
                          {!isOnline 
-                            ? "Internet Anda terputus. Data tidak akan tersimpan ke Cloud sampai Anda online kembali." 
-                            : `Terjadi kesalahan saat menghubungi server: ${syncError || "Koneksi timeout"}. Coba refresh halaman.`
+                            ? "Internet Anda terputus. Aplikasi tidak dapat menyimpan data." 
+                            : `Terjadi kesalahan Cloud: ${syncError || "Konfigurasi tidak valid"}. Silakan periksa konfigurasi di menu Admin.`
                          }
                       </p>
                    </div>
@@ -488,7 +469,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                      className="mt-2 md:mt-0 md:ml-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-md flex items-center gap-2 shrink-0"
                    >
                      <RotateCcw className="h-4 w-4" />
-                     Reset Koneksi
+                     Reconnect
                    </button>
                )}
             </div>

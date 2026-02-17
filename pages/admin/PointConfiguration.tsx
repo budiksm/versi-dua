@@ -253,7 +253,7 @@ const PointConfiguration: React.FC = () => {
       }
       
       localStorage.setItem('firebase_manual_config', JSON.stringify(parsed));
-      alert("Konfigurasi Database berhasil disimpan! Aplikasi akan terhubung ulang.");
+      alert("Konfigurasi Database berhasil disimpan! Aplikasi akan terhubung ulang ke database milik Anda.");
       window.location.reload();
     } catch (e: any) {
       alert("Gagal menyimpan: " + e.message);
@@ -624,8 +624,7 @@ const PointConfiguration: React.FC = () => {
                    <p className="font-bold flex items-center gap-2 mb-1">
                       <AlertCircle className="h-4 w-4" /> Area Sensitif
                    </p>
-                   Hanya ubah konfigurasi ini jika aplikasi kehilangan koneksi atau Anda berpindah project Firebase. 
-                   Data tersimpan di browser Anda.
+                   Aplikasi ini <b>Production Ready</b> dan membutuhkan backend Firebase milik Anda sendiri agar data tersimpan permanen di cloud.
                 </div>
 
                 <label className="block text-sm font-bold text-slate-700 mb-2">Firebase Config Object (JSON):</label>
