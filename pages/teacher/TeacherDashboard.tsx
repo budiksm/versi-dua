@@ -1030,7 +1030,7 @@ const TeacherDashboard: React.FC = () => {
                 </div>
                 <div className="text-right">
                     <div className={`text-sm font-bold ${record.typeSnapshot === IncidentTypeCategory.VIOLATION ? 'text-red-600' : 'text-emerald-600'}`}>
-                        {record.typeSnapshot === IncidentTypeCategory.VIOLATION ? '+' : '-'}{record.pointSnapshot} Poin
+                        {record.typeSnapshot === IncidentTypeCategory.VIOLATION ? '+' : ''}{record.pointSnapshot} Poin
                     </div>
                     <span className="text-[10px] text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Lihat Detail</span>
                 </div>

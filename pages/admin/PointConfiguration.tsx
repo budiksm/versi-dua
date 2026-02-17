@@ -240,7 +240,7 @@ const PointConfiguration: React.FC = () => {
               <div className="overflow-hidden rounded-xl border border-slate-200">
                   <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="px-6 py-3">Nama Kategori</th><th className="px-6 py-3">Tipe Poin</th><th className="text-right px-6 py-3">Aksi</th></tr></thead>
-                    <tbody className="divide-y divide-slate-100">{categories.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-800">{c.name}</td><td className="px-6 py-3"><span className={`px-2 py-1 rounded-md text-xs font-bold ${c.targetType === 'VIOLATION' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{c.targetType}</span></td><td className="text-right px-6 py-3 flex justify-end gap-2"><button onClick={() => handleEditCategory(c)} className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded"><Pencil className="h-4 w-4" /></button><button onClick={() => handleDeleteCategory(c.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded"><Trash2 className="h-4 w-4" /></button></td></tr>))}</tbody>
+                    <tbody className="divide-y divide-slate-100">{categories.map(c => (<tr key={c.id} className="hover:bg-slate-50"><td className="px-6 py-3 font-medium text-slate-800">{c.name}</td><td className="px-6 py-3"><span className={`px-2 py-1 rounded-md text-xs font-bold ${c.targetType === 'VIOLATION' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{c.targetType === 'VIOLATION' ? 'Pelanggaran' : 'Prestasi / Penghargaan'}</span></td><td className="text-right px-6 py-3 flex justify-end gap-2"><button onClick={() => handleEditCategory(c)} className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded"><Pencil className="h-4 w-4" /></button><button onClick={() => handleDeleteCategory(c.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded"><Trash2 className="h-4 w-4" /></button></td></tr>))}</tbody>
                   </table>
               </div>
             </div>
@@ -332,7 +332,13 @@ const PointConfiguration: React.FC = () => {
                 <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg text-slate-800">{isEditingCategory ? 'Edit Kategori' : 'Kategori Baru'}</h3><button onClick={() => setShowCatModal(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
                 <form onSubmit={handleSaveCategory} className="space-y-4">
                     <div><label className="block text-sm font-bold text-slate-700 mb-1">Nama Kategori</label><input required className="w-full border-2 border-slate-200 p-3 rounded-xl focus:border-indigo-500 outline-none font-medium" placeholder="Contoh: Kedisiplinan" value={catName} onChange={e => setCatName(e.target.value)} /></div>
-                    <div><label className="block text-sm font-bold text-slate-700 mb-1">Tipe Poin</label><select className="w-full border-2 border-slate-200 p-3 rounded-xl focus:border-indigo-500 outline-none bg-white font-medium" value={catType} onChange={e => setCatType(e.target.value as any)}><option value="VIOLATION">Pelanggaran (Poin Positif)</option><option value="ACHIEVEMENT">Penghargaan (Poin Pengurang)</option></select></div>
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Tipe Poin</label>
+                        <select className="w-full border-2 border-slate-200 p-3 rounded-xl focus:border-indigo-500 outline-none bg-white font-medium" value={catType} onChange={e => setCatType(e.target.value as any)}>
+                            <option value="VIOLATION">Pelanggaran (Poin Sanksi)</option>
+                            <option value="ACHIEVEMENT">Prestasi (Poin Apresiasi)</option>
+                        </select>
+                    </div>
                     <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all">Simpan Kategori</button>
                 </form>
             </div>
