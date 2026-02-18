@@ -1,6 +1,7 @@
+
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
-import { Teacher } from '../../types';
+import { Teacher, Role } from '../../types';
 import { 
   Users, 
   ShieldAlert, 
@@ -8,17 +9,18 @@ import {
   Clock, 
   UserCheck, 
   ArrowRight,
-  Activity
+  Activity,
+  HeartHandshake
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Role } from '../../types';
 
 const TeacherDashboard: React.FC = () => {
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalViolations: 0,
     totalAchievements: 0,
-    pendingIncidents: 0
+    pendingIncidents: 0,
+    activeCounseling: 0 // New stat for BK
   });
   const [recentIncidents, setRecentIncidents] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<Teacher | null>(null);
@@ -39,18 +41,24 @@ const TeacherDashboard: React.FC = () => {
     const records = DataService.getRecords();
     const incidents = DataService.getIncidentTypes();
     const classes = DataService.getClasses();
+    const sessions = DataService.getCounselingSessions();
 
     // Stats
     const totalStudents = students.length;
     const violations = records.filter(r => r.typeSnapshot === 'VIOLATION');
     const achievements = records.filter(r => r.typeSnapshot === 'ACHIEVEMENT');
     const pending = records.filter(r => r.status === 'PENDING');
+    
+    // BK LOGIC FIX: Count everything that is NOT completed as Active
+    // This catches OPEN, MONITORING, REFERRED, etc.
+    const activeCounseling = sessions.filter(s => s.status !== 'COMPLETED').length;
 
     setStats({
       totalStudents,
       totalViolations: violations.length,
       totalAchievements: achievements.length,
-      pendingIncidents: pending.length
+      pendingIncidents: pending.length,
+      activeCounseling
     });
 
     // Recent Activity
@@ -72,6 +80,8 @@ const TeacherDashboard: React.FC = () => {
 
     setRecentIncidents(recentWithDetails);
   };
+
+  const isBK = currentUser?.roles.includes(Role.BK);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -117,15 +127,28 @@ const TeacherDashboard: React.FC = () => {
            </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-           <div className="p-4 bg-yellow-50 text-yellow-600 rounded-xl">
-              <Clock className="h-8 w-8" />
-           </div>
-           <div>
-              <p className="text-slate-500 text-sm font-medium">Menunggu</p>
-              <h3 className="text-2xl font-black text-slate-800">{stats.pendingIncidents}</h3>
-           </div>
-        </div>
+        {/* LOGIC SWITCH: Tampilkan Konseling Aktif untuk BK, atau Pending Verifikasi untuk Guru Lain */}
+        {isBK ? (
+            <Link to="/teacher/bk/active" className="bg-white p-6 rounded-2xl border border-purple-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer group">
+                <div className="p-4 bg-purple-50 text-purple-600 rounded-xl group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                    <HeartHandshake className="h-8 w-8" />
+                </div>
+                <div>
+                    <p className="text-slate-500 text-sm font-medium group-hover:text-purple-600">Konseling Aktif</p>
+                    <h3 className="text-2xl font-black text-slate-800">{stats.activeCounseling}</h3>
+                </div>
+            </Link>
+        ) : (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div className="p-4 bg-yellow-50 text-yellow-600 rounded-xl">
+                    <Clock className="h-8 w-8" />
+                </div>
+                <div>
+                    <p className="text-slate-500 text-sm font-medium">Menunggu</p>
+                    <h3 className="text-2xl font-black text-slate-800">{stats.pendingIncidents}</h3>
+                </div>
+            </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
