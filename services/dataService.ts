@@ -363,7 +363,6 @@ export const DataService = {
     await DataService.saveRecords(updated);
   },
 
-  // --- UPDATED: KESISWAAN ACTION (Process Referral & LOG HISTORY) ---
   processKesiswaanReferral: async (
       recordIds: string[], 
       action: 'CLOSE' | 'RETURN_TO_BK', 
@@ -377,7 +376,6 @@ export const DataService = {
           'RETURN_TO_BK': 'RETURNED_TO_BK'
       };
       
-      // 1. Update Records
       const updatedRecords = store.records.active.map(r => {
           if (recordIds.includes(r.id)) {
               return { ...r, bkStatus: statusMap[action] as BkCounselingStatus };
@@ -386,8 +384,6 @@ export const DataService = {
       });
       await DataService.saveRecords(updatedRecords);
 
-      // 2. Create History Log (CounselingSession of type KESISWAAN)
-      // We need a studentId. Assuming all recordIds belong to the same student.
       const sampleRecord = store.records.active.find(r => recordIds.includes(r.id));
       if (sampleRecord) {
           const logSession: CounselingSession = {
@@ -430,42 +426,38 @@ export const DataService = {
     return { recordsDeleted: recordsToDelete.length, sanctionsDeleted: sanctionsToDelete.length, counselingDeleted: counselingToDelete.length };
   },
 
-  // --- MIGRATE BASE64 TO STORAGE (SAFE BATCHED VERSION) ---
+  // --- MIGRATE BASE64 TO STORAGE (STRICT ASYNC & LOGGING) ---
   migrateAllBase64ToStorage: async (logCallback: (msg: string) => void) => {
       if (!db) throw new Error("Database not connected");
-      logCallback("Memulai pemindaian data untuk migrasi gambar...");
+      logCallback("🚀 Memulai proses migrasi storage...");
 
       let migratedCount = 0;
       let errorsCount = 0;
-      const BATCH_SIZE = 5; // Process in small batches for safety
+      const BATCH_SIZE = 5;
 
-      // === 1. Migrate Records (proofImage) ===
-      // Safety Check: Only process strings starting with 'data:image' (Base64)
+      // --- RECORDS ---
       const recordsToUpdate = store.records.active.filter(r => 
           r.proofImage && 
           typeof r.proofImage === 'string' && 
           r.proofImage.startsWith('data:image')
       );
-      
-      logCallback(`Ditemukan ${recordsToUpdate.length} records dengan Base64 image.`);
-      
-      // Process in batches
+      logCallback(`📊 Ditemukan ${recordsToUpdate.length} record pelanggaran dengan Base64.`);
+
       for (let i = 0; i < recordsToUpdate.length; i += BATCH_SIZE) {
+          logCallback(`⏳ Memproses batch Record ${Math.floor(i / BATCH_SIZE) + 1}...`);
           const chunk = recordsToUpdate.slice(i, i + BATCH_SIZE);
           const batch = writeBatch(db);
           let batchHasOps = false;
 
-          logCallback(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}...`);
-
-          // Upload Loop (Parallel uploads in chunk)
           const uploadPromises = chunk.map(async (rec) => {
               try {
-                  // Deterministic path with timestamp to prevent overwrite
+                  logCallback(`⬆️ Uploading Record: ${rec.id} ...`);
                   const path = `violations/${rec.id}/proof_${Date.now()}`;
                   const url = await StorageService.uploadBase64(rec.proofImage!, path);
+                  logCallback(`✅ Upload Selesai: ${rec.id}`);
                   return { id: rec.id, url, success: true };
               } catch (e: any) {
-                  logCallback(`❌ Gagal upload record ${rec.id}: ${e.message}`);
+                  logCallback(`❌ Upload Gagal ${rec.id}: ${e.message}`);
                   errorsCount++;
                   return { id: rec.id, success: false };
               }
@@ -473,12 +465,11 @@ export const DataService = {
 
           const results = await Promise.all(uploadPromises);
 
-          // Add to WriteBatch
           results.forEach(res => {
               if (res.success && res.url) {
+                  // Use set with merge to be safe against missing docs
                   const ref = doc(db, "records", res.id);
-                  // Only update the proofImage field
-                  batch.update(ref, { proofImage: res.url });
+                  batch.set(ref, { proofImage: res.url }, { merge: true });
                   batchHasOps = true;
                   migratedCount++;
               }
@@ -487,36 +478,37 @@ export const DataService = {
           if (batchHasOps) {
               try {
                   await batch.commit();
-                  logCallback(`✅ Batch committed. Saved ${results.filter(r => r.success).length} items.`);
+                  logCallback(`💾 Batch Record Commit Sukses!`);
               } catch (e: any) {
-                  console.error("Batch commit failed", e);
-                  logCallback(`❌ FATAL: Gagal menyimpan batch ke Firestore! File mungkin menjadi orphan.`);
-                  errorsCount += results.filter(r => r.success).length; // Mark these as 'failed' in terms of complete migration
+                  logCallback(`❌ Batch Commit Error: ${e.message}`);
+                  errorsCount += results.filter(r => r.success).length;
               }
           }
       }
 
-      // === 2. Migrate Counseling (attachmentUrl) ===
+      // --- COUNSELING ---
       const counselingToUpdate = store.counseling.active.filter(c => 
           c.attachmentUrl && 
           typeof c.attachmentUrl === 'string' && 
           c.attachmentUrl.startsWith('data:image')
       );
-      
-      logCallback(`Ditemukan ${counselingToUpdate.length} sesi konseling dengan Base64 image.`);
+      logCallback(`📊 Ditemukan ${counselingToUpdate.length} sesi konseling dengan Base64.`);
 
       for (let i = 0; i < counselingToUpdate.length; i += BATCH_SIZE) {
+          logCallback(`⏳ Memproses batch Konseling ${Math.floor(i / BATCH_SIZE) + 1}...`);
           const chunk = counselingToUpdate.slice(i, i + BATCH_SIZE);
           const batch = writeBatch(db);
           let batchHasOps = false;
 
           const uploadPromises = chunk.map(async (sess) => {
               try {
+                  logCallback(`⬆️ Uploading Konseling: ${sess.id} ...`);
                   const path = `counseling/${sess.id}/attachment_${Date.now()}`;
                   const url = await StorageService.uploadBase64(sess.attachmentUrl!, path);
+                  logCallback(`✅ Upload Selesai: ${sess.id}`);
                   return { id: sess.id, url, success: true };
               } catch (e: any) {
-                  logCallback(`❌ Gagal upload konseling ${sess.id}: ${e.message}`);
+                  logCallback(`❌ Upload Gagal ${sess.id}: ${e.message}`);
                   errorsCount++;
                   return { id: sess.id, success: false };
               }
@@ -527,7 +519,7 @@ export const DataService = {
           results.forEach(res => {
               if (res.success && res.url) {
                   const ref = doc(db, "counseling", res.id);
-                  batch.update(ref, { attachmentUrl: res.url });
+                  batch.set(ref, { attachmentUrl: res.url }, { merge: true });
                   batchHasOps = true;
                   migratedCount++;
               }
@@ -536,16 +528,15 @@ export const DataService = {
           if (batchHasOps) {
               try {
                   await batch.commit();
-                  logCallback(`✅ Counseling Batch committed.`);
-              } catch (e) {
-                  console.error("Batch commit failed", e);
-                  logCallback(`❌ FATAL: Gagal menyimpan batch konseling!`);
+                  logCallback(`💾 Batch Konseling Commit Sukses!`);
+              } catch (e: any) {
+                  logCallback(`❌ Batch Commit Error: ${e.message}`);
                   errorsCount += results.filter(r => r.success).length;
               }
           }
       }
 
-      logCallback(`🎉 Migrasi Selesai. Sukses: ${migratedCount}, Gagal/Error: ${errorsCount}`);
+      logCallback(`🎉 Migrasi Selesai Total. Berhasil: ${migratedCount}, Gagal: ${errorsCount}`);
       return { migratedCount, errorsCount };
   },
 
