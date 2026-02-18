@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../services/dataService';
 import { IncidentRecord, MasterIncidentType, IncidentTypeCategory, ClassGroup, Teacher, Role, Student, SanctionLevel, RedemptionStatus, CounselingSession, IncidentStatus, StudentSanction, CoachingRule } from '../../types';
-import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar, LayoutGrid, UserPlus, Activity, MessageSquare, FileText, Paperclip, Link as LinkIcon } from 'lucide-react';
+import { AlertTriangle, Award, Clock, Star, Users, ArrowRight, UserX, Search, BookOpen, AlertCircle, HeartHandshake, Gavel, CheckCircle2, ClipboardList, UserCheck, ArrowUpRight, X, Inbox, Check, Ban, ChevronLeft, ChevronRight, Skull, Zap, PenTool, ExternalLink, TrendingUp, ShieldAlert, User, Calendar, LayoutGrid, UserPlus, Activity, MessageSquare, FileText, Paperclip, Link as LinkIcon, RotateCcw } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 
 // --- INTERFACE UNTUK TIMELINE STORY ---
@@ -21,29 +21,23 @@ interface StoryStep {
 
 const TeacherDashboard: React.FC = () => {
   // UX OPTIMIZATION: Synchronous State Initialization
-  // Mengambil data langsung dari RAM service saat komponen di-mount.
-  // Karena App.tsx sudah menunggu data siap, ini menjamin tidak ada "Empty State Flash".
-  
   const [records, setRecords] = useState<IncidentRecord[]>(() => DataService.getRecords());
   const [incidents, setIncidents] = useState<MasterIncidentType[]>(() => DataService.getIncidentTypes());
   const [students, setStudents] = useState<Student[]>(() => DataService.getStudents());
-  const [myClasses, setMyClasses] = useState<ClassGroup[]>([]); // Derived state, butuh kalkulasi
+  const [myClasses, setMyClasses] = useState<ClassGroup[]>([]); 
   const [allClasses, setAllClasses] = useState<ClassGroup[]>(() => DataService.getClasses());
   const [currentUser, setCurrentUser] = useState<Teacher | null>(() => DataService.getCurrentUser());
   
   const [counselingSessions, setCounselingSessions] = useState<CounselingSession[]>(() => DataService.getCounselingSessions());
   const [sanctions, setSanctions] = useState<StudentSanction[]>(() => DataService.getSanctions());
 
-  // Approval Specific State
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [rejectRecordId, setRejectRecordId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  // Pagination State for Recent Activities
   const [recentPage, setRecentPage] = useState(0);
   const ITEMS_PER_PAGE = 5;
 
-  // BK Specific State (Refactored)
   const [bkStats, setBkStats] = useState({
       activeCounseling: 0,
       mandatoryCases: 0,
@@ -63,13 +57,11 @@ const TeacherDashboard: React.FC = () => {
   const [doCount, setDoCount] = useState<number>(0); 
   const [activeRedemptions, setActiveRedemptions] = useState<number>(0);
   const [pendingTaskSanctions, setPendingTaskSanctions] = useState<any[]>([]); 
-  const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession}[]>([]);
+  const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession, recordIds: string[]}[]>([]);
   
-  // STATS DETAIL MODAL STATE
   const [showStatModal, setShowStatModal] = useState(false);
   const [selectedStatType, setSelectedStatType] = useState<string | null>(null); 
   
-  // CLASS DETAIL MODAL STATE
   const [classDetail, setClassDetail] = useState<{
     isOpen: boolean;
     title: string;
@@ -77,12 +69,10 @@ const TeacherDashboard: React.FC = () => {
     data: any[];
   }>({ isOpen: false, title: '', type: 'STUDENTS', data: [] });
 
-  // QUICK TASK MODAL STATE
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [selectedSanction, setSelectedSanction] = useState<any>(null);
   const [taskInput, setTaskInput] = useState('');
 
-  // UNIFIED DETAIL MODAL STATE
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [storyLine, setStoryLine] = useState<StoryStep[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -90,24 +80,18 @@ const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Initial calculation
     refreshDashboard();
-    
-    // Subscribe to Realtime Updates (for subsequent updates)
     const unsubscribe = DataService.subscribeToDataChanges(() => {
         refreshDashboard();
     });
-    
     return () => unsubscribe();
   }, []);
 
-  // --- HELPER UNTUK MENDAPATKAN AMBANG BATAS DINAMIS ---
   const getDynamicThresholds = (rules: CoachingRule[]) => {
       const getRuleMin = (keyword: string, defaultVal: number) => {
           const r = rules.find(x => x.statusLabel.toUpperCase().includes(keyword));
           return r ? r.minPoints : defaultVal;
       };
-      
       return {
           bk: getRuleMin('BK', 40),
           sp1: getRuleMin('SP 1', 80),
@@ -117,7 +101,6 @@ const TeacherDashboard: React.FC = () => {
   };
 
   const refreshDashboard = () => {
-    // Re-fetch all data to ensure sync, although useState initializers handled the first paint
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
 
@@ -167,33 +150,27 @@ const TeacherDashboard: React.FC = () => {
          setPendingApprovals(pendings);
       }
 
-      // --- LOGIKA DASHBOARD BK (DINAMIS) ---
       if (user.roles.includes(Role.BK)) {
         const thresholds = getDynamicThresholds(rules);
-        
         let activeCount = 0;
         let mandatoryCount = 0;
         let referralCount = 0;
         let highRiskCount = 0;
         let monthlyCount = 0;
-
         const currentMonth = new Date().getMonth();
         const mandatoryListTemp: any[] = [];
         const referralListTemp: any[] = [];
 
-        // 1. Calculate Per-Student Stats
         stds.forEach(s => {
             const stats = DataService.calculateStudentPoints(s.id, recs, incs);
             const sSessions = counselings.filter(c => c.studentId === s.id);
             const latestSession = sSessions.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
             const latestHomeroom = sSessions.find(c => c.sessionType === 'HOMEROOM');
 
-            // Active Counseling (Open Session)
             if (latestSession && latestSession.status === 'OPEN') {
                 activeCount++;
             }
 
-            // --- LOGIKA "MANDATORY" / WAJIB KONSELING ---
             const hasRequiredRecord = recs.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
             const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
             const latestViolation = recs.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
@@ -231,16 +208,14 @@ const TeacherDashboard: React.FC = () => {
                 }
             }
 
-            // --- REFERRALS (FROM HOMEROOM) ---
             if (latestHomeroom && latestHomeroom.recommendation === 'TO_BK') {
                 const newerBKSession = sSessions.find(c => c.sessionType === 'BK' && new Date(c.date) > new Date(latestHomeroom.date));
                 const relatedIds = latestHomeroom.relatedRecordIds || [];
                 const allRelatedResolved = relatedIds.length > 0 && relatedIds.every(id => {
                     const r = recs.find(rec => rec.id === id);
-                    return r && r.bkStatus === 'COMPLETED';
+                    return r && (r.bkStatus === 'COMPLETED' || r.bkStatus === 'REFERRED');
                 });
 
-                // Tampilkan HANYA jika belum ada sesi BK baru DAN kasus belum diselesaikan statusnya
                 if (!newerBKSession && !allRelatedResolved) {
                     referralCount++;
                     referralListTemp.push({
@@ -253,16 +228,13 @@ const TeacherDashboard: React.FC = () => {
                 }
             }
 
-            // High Risk Students
             if (stats.effectiveViolationScore >= (thresholds.sp1 * 0.7) && stats.effectiveViolationScore < thresholds.sp3) {
                 highRiskCount++;
             }
         });
 
-        // 2. Monthly Stats
         monthlyCount = counselings.filter(c => new Date(c.date).getMonth() === currentMonth).length;
 
-        // 3. Recent Activity
         const recentActivity = counselings
             .filter(c => c.sessionType === 'BK')
             .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -275,7 +247,7 @@ const TeacherDashboard: React.FC = () => {
             highRiskCount: highRiskCount,
             monthlySessions: monthlyCount
         });
-        setBkMandatoryList(mandatoryListTemp.sort((a,b) => b.score - a.score).slice(0, 10)); // Top 10 Priority
+        setBkMandatoryList(mandatoryListTemp.sort((a,b) => b.score - a.score).slice(0, 10));
         setBkReferralList(referralListTemp.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         setBkRecentActivity(recentActivity);
       }
@@ -313,19 +285,40 @@ const TeacherDashboard: React.FC = () => {
 
         setPendingTaskSanctions(unhandledSanctions.sort((a,b) => b.currentScore - a.currentScore));
 
-        const bkReferrals: {student: Student, score: number, session: CounselingSession}[] = [];
+        // NEW: Detect active referrals from BK
+        const bkReferrals: {student: Student, score: number, session: CounselingSession, recordIds: string[]}[] = [];
         stds.forEach(s => {
-             const sSessions = counselings.filter(c => c.studentId === s.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-             const latestSession = sSessions[0];
-             if (latestSession && (latestSession.recommendation === 'TO_KESISWAAN' || latestSession.recommendation === 'SUSPENSION_REVIEW')) {
-                 const stats = DataService.calculateStudentPoints(s.id, recs, incs);
-                 bkReferrals.push({ student: s, score: stats.effectiveViolationScore, session: latestSession });
+             // Check records with 'REFERRED' status
+             const referredRecords = recs.filter(r => r.studentId === s.id && r.bkStatus === 'REFERRED');
+             
+             if (referredRecords.length > 0) {
+                 const sSessions = counselings.filter(c => c.studentId === s.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                 // Find the session that triggered referral
+                 const referralSession = sSessions.find(sess => sess.recommendation === 'TO_KESISWAAN' || sess.recommendation === 'SUSPENSION_REVIEW');
+                 
+                 if (referralSession) {
+                     const stats = DataService.calculateStudentPoints(s.id, recs, incs);
+                     bkReferrals.push({ 
+                         student: s, 
+                         score: stats.effectiveViolationScore, 
+                         session: referralSession,
+                         recordIds: referredRecords.map(r => r.id)
+                     });
+                 }
              }
         });
         setBkHandledList(bkReferrals);
       }
     }
   }
+
+  // --- KESISWAAN ACTIONS ---
+  const handleKesiswaanAction = async (item: any, action: 'CLOSE' | 'RETURN') => {
+      const actionType = action === 'CLOSE' ? 'CLOSE' : 'RETURN_TO_BK';
+      await DataService.processKesiswaanReferral(item.recordIds, actionType);
+      refreshDashboard();
+      alert(action === 'CLOSE' ? "Kasus ditutup sebagai selesai." : "Kasus dikembalikan ke BK.");
+  };
 
   const translateRecommendation = (rec: string) => {
     switch(rec) {
@@ -339,58 +332,20 @@ const TeacherDashboard: React.FC = () => {
 
   const handleOpenDetail = (item: IncidentRecord | CounselingSession | StudentSanction) => {
       const story: StoryStep[] = [];
-      
       let relatedIncidentIds: string[] = [];
-      if ('incidentTypeId' in item) {
-          relatedIncidentIds = [item.id];
-      } else if ('sessionType' in item) {
-          relatedIncidentIds = item.relatedRecordIds || [];
-      }
+      if ('incidentTypeId' in item) { relatedIncidentIds = [item.id]; } 
+      else if ('sessionType' in item) { relatedIncidentIds = item.relatedRecordIds || []; }
 
       const relatedIncidents = records.filter(r => relatedIncidentIds.includes(r.id));
       relatedIncidents.forEach(inc => {
           const incName = incidents.find(i => i.id === inc.incidentTypeId)?.name || 'Unknown';
-          story.push({
-              id: inc.id,
-              date: inc.date,
-              type: 'INCIDENT',
-              title: 'Pencatatan Pelanggaran',
-              actor: `Guru: ${inc.recordedBy}`,
-              description: `${incName}. ${inc.notes}`,
-              statusLabel: inc.status === 'PENDING' ? 'Menunggu Verifikasi' : 'Terverifikasi',
-              statusColor: inc.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700',
-              attachmentUrl: inc.proofImage,
-              scoreImpact: inc.pointSnapshot
-          });
-          if (inc.status === 'APPROVED') {
-              story.push({
-                  id: `${inc.id}_approve`,
-                  date: inc.date,
-                  type: 'APPROVAL',
-                  title: 'Persetujuan Wali Kelas',
-                  actor: 'Wali Kelas',
-                  description: 'Laporan diverifikasi valid dan poin dicatat.',
-                  statusLabel: 'Aktif',
-                  statusColor: 'bg-green-100 text-green-700'
-              });
-          }
+          story.push({ id: inc.id, date: inc.date, type: 'INCIDENT', title: 'Pencatatan Pelanggaran', actor: `Guru: ${inc.recordedBy}`, description: `${incName}. ${inc.notes}`, statusLabel: inc.status === 'PENDING' ? 'Menunggu Verifikasi' : 'Terverifikasi', statusColor: inc.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700', attachmentUrl: inc.proofImage, scoreImpact: inc.pointSnapshot });
+          if (inc.status === 'APPROVED') { story.push({ id: `${inc.id}_approve`, date: inc.date, type: 'APPROVAL', title: 'Persetujuan Wali Kelas', actor: 'Wali Kelas', description: 'Laporan diverifikasi valid dan poin dicatat.', statusLabel: 'Aktif', statusColor: 'bg-green-100 text-green-700' }); }
       });
 
-      const relevantSessions = counselingSessions.filter(s => 
-          s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) ||
-          ('id' in item && item.id === s.id)
-      );
+      const relevantSessions = counselingSessions.filter(s => s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) || ('id' in item && item.id === s.id));
       relevantSessions.forEach(sess => {
-          story.push({
-              id: sess.id,
-              date: sess.date,
-              type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS',
-              title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas',
-              actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`,
-              description: sess.notes,
-              statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai',
-              statusColor: 'bg-blue-100 text-blue-700'
-          });
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas', actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`, description: sess.notes, statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai', statusColor: 'bg-blue-100 text-blue-700', attachmentUrl: sess.attachmentUrl });
       });
 
       if ('level' in item) {
@@ -399,18 +354,12 @@ const TeacherDashboard: React.FC = () => {
       }
 
       story.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
       setStoryLine(story);
       setDetailModalOpen(true);
   };
 
   const handleOpenClassDetail = (title: string, type: 'STUDENTS' | 'INCIDENTS', data: any[]) => {
-      setClassDetail({
-          isOpen: true,
-          title,
-          type,
-          data
-      });
+      setClassDetail({ isOpen: true, title, type, data });
   };
 
   const handleOpenStatModal = (type: string) => {
@@ -424,8 +373,6 @@ const TeacherDashboard: React.FC = () => {
       const allRules = DataService.getRules();
       let filteredStudents: any[] = []; 
 
-      // --- LOGIKA DATA MODAL UNTUK BK & KESISWAAN ---
-      
       if (selectedStatType.startsWith('BK_')) {
           const allCounselings = DataService.getCounselingSessions();
           const thresholds = getDynamicThresholds(allRules);
@@ -440,10 +387,8 @@ const TeacherDashboard: React.FC = () => {
               let note = '';
               let riskBadge: 'YELLOW' | 'ORANGE' | 'RED' | null = null;
 
-              if (selectedStatType === 'BK_ACTIVE' && latestSession?.status === 'OPEN') {
-                  include = true;
-                  note = 'Sesi Aktif';
-              } else if (selectedStatType === 'BK_MANDATORY') {
+              if (selectedStatType === 'BK_ACTIVE' && latestSession?.status === 'OPEN') { include = true; note = 'Sesi Aktif'; } 
+              else if (selectedStatType === 'BK_MANDATORY') {
                   const hasRequiredRecord = records.some(r => r.studentId === s.id && r.bkStatus === 'REQUIRED');
                   const latestBKSession = sSessions.filter(c => c.sessionType === 'BK').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
                   const latestViolation = records.filter(r => r.studentId === s.id && r.typeSnapshot === IncidentTypeCategory.VIOLATION).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
@@ -452,24 +397,16 @@ const TeacherDashboard: React.FC = () => {
                      if (!latestBKSession) unhandledHighScore = true;
                      else if (latestViolation && new Date(latestViolation.date).getTime() > new Date(latestBKSession.date).getTime()) unhandledHighScore = true;
                   }
-
-                  if (hasRequiredRecord || unhandledHighScore) {
-                      include = true;
-                      note = `Poin: ${stats.effectiveViolationScore}`;
-                  }
+                  if (hasRequiredRecord || unhandledHighScore) { include = true; note = `Poin: ${stats.effectiveViolationScore}`; }
               } else if (selectedStatType === 'BK_REFERRAL') {
                   if (latestHomeroom?.recommendation === 'TO_BK') {
                       const newerBK = sSessions.find(c => c.sessionType === 'BK' && new Date(c.date) > new Date(latestHomeroom.date));
                       const relatedIds = latestHomeroom.relatedRecordIds || [];
                       const allRelatedResolved = relatedIds.length > 0 && relatedIds.every(id => {
                           const r = records.find(rec => rec.id === id);
-                          return r && r.bkStatus === 'COMPLETED';
+                          return r && (r.bkStatus === 'COMPLETED' || r.bkStatus === 'REFERRED');
                       });
-
-                      if (!newerBK && !allRelatedResolved) {
-                          include = true;
-                          note = `Dari: ${latestHomeroom.counselorName}`;
-                      }
+                      if (!newerBK && !allRelatedResolved) { include = true; note = `Dari: ${latestHomeroom.counselorName}`; }
                   }
               } else if (selectedStatType === 'BK_HIGH_RISK') {
                   const score = stats.effectiveViolationScore;
@@ -479,103 +416,46 @@ const TeacherDashboard: React.FC = () => {
                       if (score < thresholds.sp1) { riskBadge = 'YELLOW'; nextLabel = 'SP 1'; }
                       else if (score < thresholds.sp2) { riskBadge = 'ORANGE'; nextLabel = 'SP 2'; }
                       else { riskBadge = 'RED'; nextLabel = 'SP 3'; }
-                      
-                      const coachingStatusRule = DataService.getCoachingStatus(score, allRules);
-                      const coachingStatus = coachingStatusRule?.statusLabel || 'Tidak Diketahui';
-                      note = `${score} Poin – Mendekati ${nextLabel}. Status: ${coachingStatus}.`;
+                      note = `${score} Poin – Mendekati ${nextLabel}.`;
                   }
               }
 
               if (include) {
                   const cl = allClassesList.find(c => c.id === s.classId);
-                  filteredStudents.push({
-                      id: `stat_${s.id}`,
-                      studentId: s.id,
-                      studentName: s.name,
-                      studentNis: s.nis,
-                      className: cl?.name || '-',
-                      date: new Date().toISOString(),
-                      notes: note,
-                      riskBadge: riskBadge
-                  });
+                  filteredStudents.push({ id: `stat_${s.id}`, studentId: s.id, studentName: s.name, studentNis: s.nis, className: cl?.name || '-', date: new Date().toISOString(), notes: note, riskBadge: riskBadge });
               }
           });
-          
       } else {
           let filteredSanctions: StudentSanction[] = [];
-          if (selectedStatType === 'REDEMPTION') {
-              filteredSanctions = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS);
-          } else {
-              filteredSanctions = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed);
-          }
+          if (selectedStatType === 'REDEMPTION') { filteredSanctions = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS); } 
+          else { filteredSanctions = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed); }
 
           filteredStudents = filteredSanctions.map(s => {
               const st = students.find(student => student.id === s.studentId);
               const cl = allClassesList.find(c => c.id === st?.classId);
-              return {
-                  id: s.id,
-                  studentId: s.studentId,
-                  studentName: st?.name || 'Unknown',
-                  studentNis: st?.nis || '-',
-                  className: cl?.name || '-',
-                  date: s.assignedDate,
-                  notes: s.notes
-              };
+              return { id: s.id, studentId: s.studentId, studentName: st?.name || 'Unknown', studentNis: st?.nis || '-', className: cl?.name || '-', date: s.assignedDate, notes: s.notes };
           });
       }
-
       return filteredStudents;
   };
 
-  const handleOpenTaskModal = (sanctionItem: any) => {
-      setSelectedSanction(sanctionItem);
-      setTaskInput('');
-      setShowTaskModal(true);
-  };
-
+  const handleOpenTaskModal = (sanctionItem: any) => { setSelectedSanction(sanctionItem); setTaskInput(''); setShowTaskModal(true); };
   const handleSaveTask = () => {
       if(!selectedSanction || !currentUser || !taskInput.trim()) return;
       const allSanctionsList = DataService.getSanctions();
       const updatedSanctions = allSanctionsList.map(s => {
           if (s.id === selectedSanction.sanctionId) {
-              return {
-                  ...s,
-                  redemptionTask: taskInput,
-                  redemptionStatus: RedemptionStatus.ASSIGNED, 
-                  assignedBy: `${s.assignedBy} & ${currentUser.name}` 
-              };
+              return { ...s, redemptionTask: taskInput, redemptionStatus: RedemptionStatus.ASSIGNED, assignedBy: `${s.assignedBy} & ${currentUser.name}` };
           }
           return s;
       });
       DataService.saveSanctions(updatedSanctions);
-      setShowTaskModal(false);
-      setTaskInput('');
-      setSelectedSanction(null);
-      refreshDashboard();
-      alert("Tugas penebusan berhasil ditetapkan! Siswa sekarang dapat mulai mengerjakan.");
+      setShowTaskModal(false); setTaskInput(''); setSelectedSanction(null); refreshDashboard(); alert("Tugas penebusan berhasil ditetapkan!");
   };
 
-  const handleApprove = (id: string) => {
-    DataService.resolveIncident(id, 'APPROVED');
-    const rec = records.find(r => r.id === id);
-    if (rec) DataService.evaluateAndApplySanction(rec.studentId); 
-    refreshDashboard();
-  };
-
-  const handleRejectClick = (id: string) => {
-    setRejectRecordId(id);
-    setRejectReason('');
-  };
-
-  const confirmReject = () => {
-    if (rejectRecordId && rejectReason) {
-      DataService.resolveIncident(rejectRecordId, 'REJECTED', rejectReason);
-      setRejectRecordId(null);
-      refreshDashboard();
-    } else {
-      alert("Alasan penolakan wajib diisi.");
-    }
-  };
+  const handleApprove = (id: string) => { DataService.resolveIncident(id, 'APPROVED'); const rec = records.find(r => r.id === id); if (rec) DataService.evaluateAndApplySanction(rec.studentId); refreshDashboard(); };
+  const handleRejectClick = (id: string) => { setRejectRecordId(id); setRejectReason(''); };
+  const confirmReject = () => { if (rejectRecordId && rejectReason) { DataService.resolveIncident(rejectRecordId, 'REJECTED', rejectReason); setRejectRecordId(null); refreshDashboard(); } else { alert("Alasan penolakan wajib diisi."); } };
 
   const getIncidentName = (id: string) => incidents.find(i => i.id === id)?.name || 'Unknown';
   const getStudentName = (id: string) => students.find(s => s.id === id)?.name || 'Unknown';
@@ -583,67 +463,27 @@ const TeacherDashboard: React.FC = () => {
   const isBK = currentUser?.roles.includes(Role.BK);
   const isKesiswaan = currentUser?.roles.includes(Role.KESISWAAN);
   const isAdmin = currentUser?.roles.includes(Role.ADMIN);
-
-  // Filter Logic:
-  // If user is strictly a Teacher (Walas/Mapel) -> filter Recent Activities by their classes.
-  // If user is BK/Kesiswaan/Admin -> show Global Recent Activities.
   const shouldFilterMyClass = myClasses.length > 0 && !isKesiswaan && !isAdmin && !isBK;
   const myStudentIds = students.filter(s => myClasses.some(c => c.id === s.classId)).map(s => s.id);
 
-  const allRecentRecords = [...records]
-    .filter(r => {
-        if (r.status === 'REJECTED') return false;
-        if (shouldFilterMyClass) return myStudentIds.includes(r.studentId);
-        return true;
-    })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
+  const allRecentRecords = [...records].filter(r => { if (r.status === 'REJECTED') return false; if (shouldFilterMyClass) return myStudentIds.includes(r.studentId); return true; }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const totalPages = Math.ceil(allRecentRecords.length / ITEMS_PER_PAGE);
   const currentRecords = allRecentRecords.slice(recentPage * ITEMS_PER_PAGE, (recentPage + 1) * ITEMS_PER_PAGE);
-
   const handlePrevPage = () => { if (recentPage > 0) setRecentPage(prev => prev - 1); };
   const handleNextPage = () => { if (recentPage < totalPages - 1) setRecentPage(prev => prev + 1); };
 
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Dashboard Guru</h1>
-          <p className="text-slate-500">
-            Selamat datang, <span className="font-semibold text-indigo-600">{currentUser?.name}</span>.
-          </p>
-        </div>
+        <div><h1 className="text-2xl font-bold text-slate-800">Dashboard Guru</h1><p className="text-slate-500">Selamat datang, <span className="font-semibold text-indigo-600">{currentUser?.name}</span>.</p></div>
       </div>
 
       {pendingApprovals.length > 0 && (
         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-5 shadow-sm animate-fade-in">
-           <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-yellow-100 text-yellow-700 rounded-lg">
-                 <Inbox className="h-5 w-5" />
-              </div>
-              <div>
-                 <h2 className="font-bold text-slate-800">Persetujuan Laporan Masuk</h2>
-                 <p className="text-xs text-slate-500">Laporan dari guru lain atau OSIS untuk kelas Anda.</p>
-              </div>
-           </div>
+           <div className="flex items-center gap-3 mb-4"><div className="p-2 bg-yellow-100 text-yellow-700 rounded-lg"><Inbox className="h-5 w-5" /></div><div><h2 className="font-bold text-slate-800">Persetujuan Laporan Masuk</h2><p className="text-xs text-slate-500">Laporan dari guru lain atau OSIS untuk kelas Anda.</p></div></div>
            <div className="space-y-3">
               {pendingApprovals.map((req) => (
-                 <div key={req.id} className="bg-white p-4 rounded-lg border border-yellow-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-                    <div className="flex-1">
-                       <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-slate-800">{req.studentName}</span>
-                          <span className="text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-mono">
-                             {new Date(req.date).toLocaleDateString()}
-                          </span>
-                       </div>
-                       <p className="text-sm text-slate-600 font-medium">{req.incidentName} <span className="text-red-500">({req.pointSnapshot} Poin)</span></p>
-                       <p className="text-xs text-slate-400 mt-1">Pelapor: {req.recordedBy}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                       <button onClick={() => handleApprove(req.id)} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold shadow-sm"><Check className="h-3 w-3" /> Terima</button>
-                       <button onClick={() => handleRejectClick(req.id)} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm"><Ban className="h-3 w-3" /> Tolak</button>
-                    </div>
-                 </div>
+                 <div key={req.id} className="bg-white p-4 rounded-lg border border-yellow-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-start md:items-center"><div className="flex-1"><div className="flex items-center gap-2 mb-1"><span className="font-bold text-slate-800">{req.studentName}</span><span className="text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-mono">{new Date(req.date).toLocaleDateString()}</span></div><p className="text-sm text-slate-600 font-medium">{req.incidentName} <span className="text-red-500">({req.pointSnapshot} Poin)</span></p><p className="text-xs text-slate-400 mt-1">Pelapor: {req.recordedBy}</p></div><div className="flex items-center gap-2 shrink-0"><button onClick={() => handleApprove(req.id)} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold shadow-sm"><Check className="h-3 w-3" /> Terima</button><button onClick={() => handleRejectClick(req.id)} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm"><Ban className="h-3 w-3" /> Tolak</button></div></div>
               ))}
            </div>
         </div>
@@ -655,77 +495,39 @@ const TeacherDashboard: React.FC = () => {
             <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
                 <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><Gavel className="h-64 w-64 -mr-16 -mt-16" /></div>
                 <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-2 bg-orange-500 rounded-lg"><Gavel className="h-6 w-6 text-white" /></div>
-                        <div><h2 className="text-xl font-bold">Dashboard Kesiswaan</h2><p className="text-slate-400 text-sm">Pusat kontrol ketertiban dan kedisiplinan sekolah</p></div>
-                    </div>
+                    <div className="flex items-center gap-3 mb-6"><div className="p-2 bg-orange-500 rounded-lg"><Gavel className="h-6 w-6 text-white" /></div><div><h2 className="text-xl font-bold">Dashboard Kesiswaan</h2><p className="text-slate-400 text-sm">Pusat kontrol ketertiban dan kedisiplinan sekolah</p></div></div>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP1)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 1 <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{sp1Count}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP2)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-orange-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 2 <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{sp2Count}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP3)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 3 <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{sp3Count}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal(SanctionLevel.DROP_OUT)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30 cursor-pointer hover:bg-red-900/50 transition-all hover:scale-105">
-                            <p className="text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"><Skull className="h-3 w-3" /> Drop Out <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{doCount}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal('REDEMPTION')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Penebusan Jalan <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{activeRedemptions}</p>
-                        </div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP1)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-orange-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 1 <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{sp1Count}</p></div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP2)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-orange-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 2 <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{sp2Count}</p></div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.SP3)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Aktif SP 3 <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{sp3Count}</p></div>
+                        <div onClick={() => handleOpenStatModal(SanctionLevel.DROP_OUT)} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-500/50 bg-red-900/30 cursor-pointer hover:bg-red-900/50 transition-all hover:scale-105"><p className="text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"><Skull className="h-3 w-3" /> Drop Out <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{doCount}</p></div>
+                        <div onClick={() => handleOpenStatModal('REDEMPTION')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/10 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-blue-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Penebusan Jalan <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{activeRedemptions}</p></div>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div className="bg-slate-700/50 rounded-xl border border-white/10 overflow-hidden">
-                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
-                                <h3 className="font-bold text-sm flex items-center gap-2 text-orange-300"><ClipboardList className="h-4 w-4" /> Antrean Sanksi Otomatis</h3>
-                                <span className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingTaskSanctions.length}</span>
-                            </div>
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5"><h3 className="font-bold text-sm flex items-center gap-2 text-orange-300"><ClipboardList className="h-4 w-4" /> Antrean Sanksi Otomatis</h3><span className="bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingTaskSanctions.length}</span></div>
                             <div className="divide-y divide-white/5 max-h-60 overflow-y-auto">
-                                {pendingTaskSanctions.length === 0 ? (
-                                    <div className="p-4 text-center text-slate-400 text-xs">Aman. Tidak ada sanksi baru yang butuh tugas.</div>
-                                ) : (
-                                    pendingTaskSanctions.map((item, idx) => (
-                                        <div key={idx} className="p-3 hover:bg-white/5 transition-colors flex justify-between items-center">
-                                            <div>
-                                                <div className="font-bold text-sm">{item.student.name} <span className="text-slate-400 font-normal">({item.className})</span></div>
-                                                <div className="text-xs text-slate-300 mt-0.5 flex items-center gap-2">
-                                                    <span className="text-red-400 font-bold">{item.level}</span> • Skor: {item.currentScore}
-                                                </div>
-                                            </div>
-                                            <button onClick={() => handleOpenTaskModal(item)} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded shadow-sm">Beri Tugas</button>
-                                        </div>
-                                    ))
-                                )}
+                                {pendingTaskSanctions.length === 0 ? (<div className="p-4 text-center text-slate-400 text-xs">Aman. Tidak ada sanksi baru yang butuh tugas.</div>) : (pendingTaskSanctions.map((item, idx) => (
+                                    <div key={idx} className="p-3 hover:bg-white/5 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm">{item.student.name} <span className="text-slate-400 font-normal">({item.className})</span></div><div className="text-xs text-slate-300 mt-0.5 flex items-center gap-2"><span className="text-red-400 font-bold">{item.level}</span> • Skor: {item.currentScore}</div></div><button onClick={() => handleOpenTaskModal(item)} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded shadow-sm">Beri Tugas</button></div>
+                                )))}
                             </div>
                         </div>
                         <div className="bg-slate-700/50 rounded-xl border border-white/10 overflow-hidden">
-                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
-                                <h3 className="font-bold text-sm flex items-center gap-2 text-blue-300"><HeartHandshake className="h-4 w-4" /> Rujukan Tindakan Lanjut (Dari BK)</h3>
-                                <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">{bkHandledList.length}</span>
-                            </div>
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5"><h3 className="font-bold text-sm flex items-center gap-2 text-blue-300"><HeartHandshake className="h-4 w-4" /> Tinjauan Kasus (Rujukan BK)</h3><span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">{bkHandledList.length}</span></div>
                             <div className="divide-y divide-white/5 max-h-60 overflow-y-auto">
-                                {bkHandledList.length === 0 ? (
-                                    <div className="p-4 text-center text-slate-400 text-xs">Tidak ada rujukan eskalasi dari BK.</div>
-                                ) : (
-                                    bkHandledList.map((item, idx) => (
-                                        <div key={idx} className="p-3 hover:bg-white/5 transition-colors flex justify-between items-center">
-                                            <div>
-                                                <div className="font-bold text-sm">{item.student.name}</div>
-                                                <div className="text-xs text-slate-300 mt-0.5">
-                                                    {translateRecommendation(item.session.recommendation)}
-                                                </div>
-                                            </div>
-                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white text-xs font-bold rounded">Lihat</Link>
+                                {bkHandledList.length === 0 ? (<div className="p-4 text-center text-slate-400 text-xs">Tidak ada rujukan eskalasi dari BK.</div>) : (bkHandledList.map((item, idx) => (
+                                    <div key={idx} className="p-3 hover:bg-white/5 transition-colors flex flex-col gap-2">
+                                        <div className="flex justify-between items-start">
+                                            <div><div className="font-bold text-sm">{item.student.name}</div><div className="text-xs text-slate-300 mt-0.5 italic">"{item.session.notes.substring(0, 50)}..."</div></div>
+                                            <div className="text-xs text-blue-300 bg-blue-900/50 px-2 py-1 rounded border border-blue-700">{translateRecommendation(item.session.recommendation)}</div>
                                         </div>
-                                    ))
-                                )}
+                                        <div className="flex gap-2 justify-end mt-1">
+                                            <button onClick={() => handleKesiswaanAction(item, 'RETURN')} className="px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white text-[10px] font-bold rounded flex items-center gap-1"><RotateCcw className="h-3 w-3" /> Kembalikan ke BK</button>
+                                            <button onClick={() => handleKesiswaanAction(item, 'CLOSE')} className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded flex items-center gap-1"><Check className="h-3 w-3" /> Tutup Kasus</button>
+                                            <Link to={`/teacher/student/${item.student.id}`} className="px-2 py-1 bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1"><Gavel className="h-3 w-3" /> Lanjut Sanksi</Link>
+                                        </div>
+                                    </div>
+                                )))}
                             </div>
                         </div>
                     </div>
@@ -734,85 +536,38 @@ const TeacherDashboard: React.FC = () => {
         </div>
     )}
 
-    {/* --- BK DASHBOARD --- */}
+    {/* --- BK DASHBOARD (Violet Theme) --- */}
     {isBK && (
         <div className="space-y-6 animate-fade-in">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
+            <div className="bg-gradient-to-r from-violet-600 to-fuchsia-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
                 <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><HeartHandshake className="h-64 w-64 -mr-16 -mt-16" /></div>
                 <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div>
-                        <div><h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2><p className="text-blue-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p></div>
-                    </div>
+                    <div className="flex items-center gap-3 mb-6"><div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div><div><h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2><p className="text-violet-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p></div></div>
                     
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                        <div onClick={() => handleOpenStatModal('BK_ACTIVE')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{bkStats.activeCounseling}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal('BK_MANDATORY')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-400/50 bg-red-900/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-red-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Prioritas (Wajib) <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{bkStats.mandatoryCases}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal('BK_REFERRAL')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-orange-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Rujukan Walas <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{bkStats.referrals}</p>
-                        </div>
-                        <div onClick={() => handleOpenStatModal('BK_HIGH_RISK')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-yellow-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Risiko Tinggi <ExternalLink className="h-3 w-3" /></p>
-                            <p className="text-3xl font-bold mt-1">{bkStats.highRiskCount}</p>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                            <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider">Sesi Bulan Ini</p>
-                            <p className="text-3xl font-bold mt-1">{bkStats.monthlySessions}</p>
-                        </div>
+                        <div onClick={() => handleOpenStatModal('BK_ACTIVE')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-violet-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{bkStats.activeCounseling}</p></div>
+                        <div onClick={() => handleOpenStatModal('BK_MANDATORY')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-400/50 bg-red-900/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-red-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Prioritas (Wajib) <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{bkStats.mandatoryCases}</p></div>
+                        <div onClick={() => handleOpenStatModal('BK_REFERRAL')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-orange-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Rujukan Walas <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{bkStats.referrals}</p></div>
+                        <div onClick={() => handleOpenStatModal('BK_HIGH_RISK')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105"><p className="text-yellow-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Risiko Tinggi <ExternalLink className="h-3 w-3" /></p><p className="text-3xl font-bold mt-1">{bkStats.highRiskCount}</p></div>
+                        <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20"><p className="text-violet-200 text-[10px] font-bold uppercase tracking-wider">Sesi Bulan Ini</p><p className="text-3xl font-bold mt-1">{bkStats.monthlySessions}</p></div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div className="bg-white/10 rounded-xl border border-white/10 overflow-hidden">
-                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
-                                <h3 className="font-bold text-sm flex items-center gap-2 text-red-200"><AlertCircle className="h-4 w-4" /> Siswa Wajib Konseling</h3>
-                            </div>
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5"><h3 className="font-bold text-sm flex items-center gap-2 text-red-200"><AlertCircle className="h-4 w-4" /> Siswa Wajib Konseling</h3></div>
                             <div className="divide-y divide-white/10 max-h-60 overflow-y-auto">
-                                {bkMandatoryList.length === 0 ? (
-                                    <div className="p-4 text-center text-blue-200 text-xs">Tidak ada siswa yang mencapai ambang batas poin (40).</div>
-                                ) : (
-                                    bkMandatoryList.map((item, idx) => (
-                                        <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center">
-                                            <div>
-                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-blue-300 font-normal">({item.className})</span></div>
-                                                <div className="text-xs text-red-300 mt-0.5 font-medium">
-                                                    {item.score} Poin - {item.topIncident}
-                                                </div>
-                                            </div>
-                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-white text-indigo-700 text-xs font-bold rounded hover:bg-blue-50">Proses</Link>
-                                        </div>
-                                    ))
-                                )}
+                                {bkMandatoryList.length === 0 ? (<div className="p-4 text-center text-violet-200 text-xs">Tidak ada siswa yang mencapai ambang batas poin (40).</div>) : (bkMandatoryList.map((item, idx) => (
+                                    <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm text-white">{item.student.name} <span className="text-violet-300 font-normal">({item.className})</span></div><div className="text-xs text-red-300 mt-0.5 font-medium">{item.score} Poin - {item.topIncident}</div></div><Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-white text-violet-700 text-xs font-bold rounded hover:bg-violet-50">Proses</Link></div>
+                                )))}
                             </div>
                         </div>
 
                         <div className="bg-white/10 rounded-xl border border-white/10 overflow-hidden">
-                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5">
-                                <h3 className="font-bold text-sm flex items-center gap-2 text-orange-200"><User className="h-4 w-4" /> Masuk: Rujukan Wali Kelas</h3>
-                            </div>
+                            <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-white/5"><h3 className="font-bold text-sm flex items-center gap-2 text-orange-200"><User className="h-4 w-4" /> Masuk: Rujukan Wali Kelas</h3></div>
                             <div className="divide-y divide-white/10 max-h-60 overflow-y-auto">
-                                {bkReferralList.length === 0 ? (
-                                    <div className="p-4 text-center text-blue-200 text-xs">Tidak ada rujukan baru yang perlu tindakan.</div>
-                                ) : (
-                                    bkReferralList.map((item, idx) => (
-                                        <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center">
-                                            <div>
-                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-blue-300 font-normal">({item.className})</span></div>
-                                                <div className="text-xs text-orange-200 mt-0.5">
-                                                    Dari: {item.homeroomName}
-                                                </div>
-                                                <div className="text-[10px] text-blue-200 italic mt-0.5 truncate max-w-[200px]">"{item.note}"</div>
-                                            </div>
-                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-orange-500/80 text-white text-xs font-bold rounded hover:bg-orange-500">Terima</Link>
-                                        </div>
-                                    ))
-                                )}
+                                {bkReferralList.length === 0 ? (<div className="p-4 text-center text-violet-200 text-xs">Tidak ada rujukan baru yang perlu tindakan.</div>) : (bkReferralList.map((item, idx) => (
+                                    <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center"><div><div className="font-bold text-sm text-white">{item.student.name} <span className="text-violet-300 font-normal">({item.className})</span></div><div className="text-xs text-orange-200 mt-0.5">Dari: {item.homeroomName}</div><div className="text-[10px] text-violet-200 italic mt-0.5 truncate max-w-[200px]">"{item.note}"</div></div><Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-orange-500/80 text-white text-xs font-bold rounded hover:bg-orange-500">Terima</Link></div>
+                                )))}
                             </div>
                         </div>
                     </div>
@@ -822,7 +577,6 @@ const TeacherDashboard: React.FC = () => {
     )}
       
       {/* --- DASHBOARD WALI KELAS (My Classes) --- */}
-      {/* Always show this if the user has assigned classes, regardless of other roles */}
       {myClasses.length > 0 && (
         <div className="space-y-6">
           {myClasses.map(cls => {

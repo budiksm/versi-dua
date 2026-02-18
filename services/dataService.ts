@@ -62,12 +62,7 @@ const reconcile = (key: keyof typeof store) => {
     let newActive: any[] = [];
     let newSource = 'INITIAL';
 
-    // 1. Prioritize New Collection ONLY if data integrity seems preserved
     if (newCount > 0) {
-        // SAFETY CHECK: 
-        // If legacy has data, assume new collection must have AT LEAST as much data
-        // to be considered "Migration Complete".
-        // Allow a small margin of error or strict equality? Strict for safety.
         if (legacyCount > 0 && newCount < legacyCount) {
              newActive = s.legacy;
              newSource = `LEGACY (Safe Fallback: New ${newCount} < Old ${legacyCount})`;
@@ -83,7 +78,6 @@ const reconcile = (key: keyof typeof store) => {
         newSource = 'EMPTY (No Data)';
     }
 
-    // AUDIT LOGGING
     if (s.source !== newSource) {
         const isNew = newSource.includes('NEW');
         const color = isNew ? 'background: #22c55e; color: white; padding: 2px 5px; border-radius: 3px;' : 'background: #f59e0b; color: black; padding: 2px 5px; border-radius: 3px;';
@@ -105,7 +99,6 @@ const setupHybridListener = (
     newCollectionName: string, 
     isConfig: boolean = false
 ) => {
-    // 1. Listen to NEW Collection
     if (isConfig) {
         onSnapshot(doc(db, "master_data", newCollectionName), (snap) => {
             store[key].new = snap.exists() ? (snap.data().data || []) : [];
@@ -121,7 +114,6 @@ const setupHybridListener = (
         });
     }
 
-    // 2. Listen to LEGACY Document
     onSnapshot(doc(db, "school_data", isConfig ? key : newCollectionName), (snap) => {
         store[key].legacy = snap.exists() ? (snap.data().data || []) : [];
         reconcile(key);
@@ -131,10 +123,6 @@ const setupHybridListener = (
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- BATCH HELPER (Writes to NEW) ---
-// Note: During hybrid mode, writing to NEW while reading LEGACY (if not migrated) might mean
-// user doesn't see their update immediately until migration runs.
-// This is acceptable for "Stabilization" phase where we want Admin to migrate.
 const batchSyncCollection = async (collectionName: string, newData: any[], currentData: any[]) => {
     if (!db) throw new Error("Database not connected");
     notifyListeners('SYNCING');
@@ -156,7 +144,6 @@ const batchSyncCollection = async (collectionName: string, newData: any[], curre
             }
         }
         
-        // Deletion handling (simplified)
         const newIds = new Set(newData.map(i => i.id));
         const toDelete = currentData.filter(i => !newIds.has(i.id));
         
@@ -216,7 +203,6 @@ export const DataService = {
     const isConnected = await connectToFirebase();
     if (!isConnected) return false;
 
-    // Setup Dual Listeners
     setupHybridListener('teachers', 'teachers', 'teachers');
     setupHybridListener('students', 'students', 'students');
     setupHybridListener('classes', 'classes', 'classes');
@@ -226,19 +212,17 @@ export const DataService = {
     setupHybridListener('cashflow', 'cashflow', 'cashflow');
     setupHybridListener('activity_logs', 'activity_logs', 'activity_logs');
 
-    // Configs
     setupHybridListener('categories', 'categories', 'categories', true);
     setupHybridListener('incidentTypes', 'incidentTypes', 'incidentTypes', true);
     setupHybridListener('rules', 'rules', 'rules', true);
 
-    await new Promise(r => setTimeout(r, 2500)); // Increased wait time for both listeners
+    await new Promise(r => setTimeout(r, 2500)); 
 
     isInitialLoadComplete = true;
     notifyListeners('SAVED');
     return true;
   },
 
-  // --- GETTERS ---
   getTeachers: () => store.teachers.active,
   getStudents: () => store.students.active,
   getClasses: () => store.classes.active,
@@ -251,7 +235,6 @@ export const DataService = {
   getCounselingSessions: () => store.counseling.active,
   getActivityLogs: () => store.activity_logs.active,
 
-  // --- SETTERS ---
   saveStudents: async (data: Student[]) => { await batchSyncCollection('students', data, store.students.active); },
   saveTeachers: async (data: Teacher[]) => { await batchSyncCollection('teachers', data, store.teachers.active); },
   saveClasses: async (data: ClassGroup[]) => { await batchSyncCollection('classes', data, store.classes.active); },
@@ -264,37 +247,28 @@ export const DataService = {
   saveIncidentTypes: async (data: MasterIncidentType[]) => { await saveSingleDocConfig('incidentTypes', data); },
   saveRules: async (data: CoachingRule[]) => { await saveSingleDocConfig('rules', data); },
 
-  // --- AUTH LOGIC (WITH BACKDOOR) ---
-
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
-    
-    // 1. BACKDOOR (Only if Enabled)
     if (ENABLE_BACKDOOR && username === 'admin' && password === '123') {
        console.warn("%c[AUTH] Using Hardcoded Admin Access", "background:red;color:white;font-size:12px;padding:4px;");
        const superAdmin: Teacher = { id: 'super_admin', name: 'Super Admin (Rescue)', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
        sessionStorage.setItem('session_user_id', 'super_admin');
        return superAdmin;
     }
-
-    // 2. Real Auth
     const foundUser = store.teachers.active.find(t => t.username === username && t.password === password);
     if (foundUser) {
       sessionStorage.setItem('session_user_id', foundUser.id);
       return foundUser;
     }
-    
     return null;
   },
 
   getCurrentUser: (): Teacher | null => {
     const storedId = sessionStorage.getItem('session_user_id');
     if (!storedId) return null;
-
     if (storedId === 'super_admin') {
         return { id: 'super_admin', name: 'Super Admin (Rescue)', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
     }
-
     return store.teachers.active.find(t => t.id === storedId) || null;
   },
 
@@ -316,7 +290,6 @@ export const DataService = {
     if (db) await setDoc(doc(db, "teachers", userId), { lastActiveAt: new Date().toISOString() }, { merge: true });
   },
 
-  // --- BUSINESS LOGIC (Unchanged) ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
@@ -387,6 +360,18 @@ export const DataService = {
 
     const updated = store.records.active.map(r => r.id === recordId ? { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= bkThreshold) ? 'REQUIRED' : (r.bkStatus || 'NONE') } : r);
     await DataService.saveRecords(updated);
+  },
+
+  // --- NEW: KESISWAAN ACTION (Process Referral) ---
+  processKesiswaanReferral: async (recordIds: string[], action: 'CLOSE' | 'RETURN_TO_BK') => {
+      const updated = store.records.active.map(r => {
+          if (recordIds.includes(r.id)) {
+              if (action === 'CLOSE') return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+              if (action === 'RETURN_TO_BK') return { ...r, bkStatus: 'REQUIRED' as BkCounselingStatus };
+          }
+          return r;
+      });
+      await DataService.saveRecords(updated);
   },
 
   getClassBalance: (classId: string) => {

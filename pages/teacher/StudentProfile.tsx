@@ -131,7 +131,6 @@ const StudentProfile: React.FC = () => {
     return () => unsubscribe();
   }, [studentId, refreshKey]);
 
-  // LOGIC SANKSI CERDAS (REVISI)
   useEffect(() => {
       if (student && rules.length > 0) {
           const stats = DataService.calculateStudentPoints(student.id, records, incidents);
@@ -212,7 +211,7 @@ const StudentProfile: React.FC = () => {
 
       const relevantSessions = counselingSessions.filter(s => s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) || ('id' in item && item.id === s.id));
       relevantSessions.forEach(sess => {
-          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas', actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`, description: sess.notes, statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai', statusColor: 'bg-blue-100 text-blue-700' });
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas', actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`, description: sess.notes, statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai', statusColor: 'bg-blue-100 text-blue-700', attachmentUrl: sess.attachmentUrl });
       });
 
       if ('level' in item) {
@@ -222,7 +221,7 @@ const StudentProfile: React.FC = () => {
       story.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       if (story.length === 0 && 'sessionType' in item) { 
           const sess = item as CounselingSession;
-          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling Preventif' : 'Pembinaan Preventif', actor: sess.counselorName, description: sess.notes, statusLabel: 'Preventif', statusColor: 'bg-blue-50 text-blue-600' });
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling Preventif' : 'Pembinaan Preventif', actor: sess.counselorName, description: sess.notes, statusLabel: 'Preventif', statusColor: 'bg-blue-50 text-blue-600', attachmentUrl: sess.attachmentUrl });
       }
       setStoryLine(story);
       setDetailModalOpen(true);
@@ -269,7 +268,7 @@ const StudentProfile: React.FC = () => {
         const studentClass = classes.find(c => c.id === student.classId);
         const isHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
         const initialStatus: IncidentStatus = isHomeroom ? 'APPROVED' : 'PENDING';
-        const newRecord: IncidentRecord = { id: `rec_${Date.now()}`, studentId: student.id, incidentTypeId: selectedIncident, date: new Date().toISOString(), notes: notes, proofImage: imageProof || undefined, recordedBy: currentUser?.name || 'Unknown', pointSnapshot: incidentDef.points, typeSnapshot: incidentDef.type, status: initialStatus };
+        const newRecord: IncidentRecord = { id: `rec_${Date.now()}`, studentId: student.id, incidentTypeId: selectedIncident, date: new Date().toISOString(), notes: notes, proofImage: imageProof || undefined, recordedBy: currentUser?.name || 'Unknown', pointSnapshot: incidentDef.points, typeSnapshot: IncidentTypeCategory.VIOLATION, status: initialStatus };
         const bkRule = rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
         const bkThreshold = bkRule ? bkRule.minPoints : 40;
         if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= bkThreshold && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) newRecord.bkStatus = 'REQUIRED';
@@ -282,28 +281,55 @@ const StudentProfile: React.FC = () => {
   const handleSubmitCounseling = async (e: React.FormEvent, type: 'BK' | 'HOMEROOM') => {
     e.preventDefault();
     if (!student) return;
+    
+    // MANDATORY CHECK
+    if (!counselingNotes.trim()) { alert("Catatan pembinaan wajib diisi!"); return; }
+    if (!imageProof) { alert("Bukti foto dokumentasi wajib dilampirkan!"); return; }
+
     setIsSubmitting(true);
     try {
         let finalRelatedRecords: string[] = [];
         if (type === 'BK') finalRelatedRecords = (bkMode === 'CASE') ? selectedCounselingRecords : [];
         else if (type === 'HOMEROOM') finalRelatedRecords = (homeroomMode === 'CASE') ? selectedCounselingRecords : [];
 
-        const newSession: CounselingSession = { id: `coun_${Date.now()}`, studentId: student.id, counselorId: currentUser?.id || '', counselorName: currentUser?.name || 'Unknown', date: new Date().toISOString(), notes: counselingNotes, recommendation: counselingRec, status: counselingRec !== 'NONE' ? 'OPEN' : 'CLOSED', sessionType: type, relatedRecordIds: finalRelatedRecords };
+        const newSession: CounselingSession = { 
+            id: `coun_${Date.now()}`, 
+            studentId: student.id, 
+            counselorId: currentUser?.id || '', 
+            counselorName: currentUser?.name || 'Unknown', 
+            date: new Date().toISOString(), 
+            notes: counselingNotes, 
+            recommendation: counselingRec, 
+            status: counselingRec !== 'NONE' ? 'OPEN' : 'CLOSED', 
+            sessionType: type, 
+            relatedRecordIds: finalRelatedRecords,
+            attachmentUrl: imageProof // Save mandatory image
+        };
         await DataService.saveCounselingSessions([...DataService.getCounselingSessions(), newSession]);
 
         if (finalRelatedRecords.length > 0) {
             const updatedRecords = DataService.getRecords().map(r => {
                 if (finalRelatedRecords.includes(r.id)) {
                     let newBkStatus: BkCounselingStatus = r.bkStatus || 'NONE';
-                    if (type === 'HOMEROOM') { if (counselingRec === 'TO_BK') newBkStatus = 'REQUIRED'; else if (counselingRec === 'NONE') newBkStatus = 'COMPLETED'; }
-                    else if (type === 'BK') newBkStatus = 'COMPLETED';
+                    
+                    if (type === 'HOMEROOM') { 
+                        if (counselingRec === 'TO_BK') newBkStatus = 'REQUIRED'; 
+                        else if (counselingRec === 'NONE') newBkStatus = 'COMPLETED'; 
+                    } else if (type === 'BK') {
+                        // CRITICAL FIX: If referred to Kesiswaan, do NOT set to COMPLETED
+                        if (counselingRec === 'TO_KESISWAAN' || counselingRec === 'SUSPENSION_REVIEW') {
+                            newBkStatus = 'REFERRED';
+                        } else {
+                            newBkStatus = 'COMPLETED';
+                        }
+                    }
                     return { ...r, bkStatus: newBkStatus };
                 }
                 return r;
             });
             await DataService.saveRecords(updatedRecords);
         }
-        setSuccessMsg('Catatan konseling disimpan!'); setCounselingNotes(''); setCounselingRec('NONE'); setSelectedCounselingRecords([]); setRefreshKey(prev => prev + 1); setTimeout(() => setSuccessMsg(''), 3000);
+        setSuccessMsg('Catatan konseling disimpan!'); setCounselingNotes(''); setCounselingRec('NONE'); setImageProof(null); setSelectedCounselingRecords([]); setRefreshKey(prev => prev + 1); setTimeout(() => setSuccessMsg(''), 3000);
     } catch (error) { alert("Gagal menyimpan sesi konseling."); } finally { setIsSubmitting(false); }
   };
 
@@ -366,8 +392,11 @@ const StudentProfile: React.FC = () => {
   const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
   const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED');
-  const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED');
+  
+  // FIX: Also exclude REFERRED from BK form so they don't double process
+  const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED');
+  
+  const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED');
   const bkRule = rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
   const bkThreshold = bkRule ? bkRule.minPoints : 40;
   const hasMandatoryBKCondition = stats.effectiveViolationScore >= bkThreshold || counselingSessions.some(s => s.sessionType === 'HOMEROOM' && s.recommendation === 'TO_BK') || records.some(r => r.bkStatus === 'REQUIRED');
@@ -405,7 +434,7 @@ const StudentProfile: React.FC = () => {
          <nav className="-mb-px flex gap-6 overflow-x-auto" aria-label="Tabs">
             <button onClick={() => setActiveTab('INCIDENTS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'INCIDENTS' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><ClipboardList className="h-4 w-4" /> Catatan Kejadian</span></button>
             {isReporterHomeroom && (<button onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); setHomeroomMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'HOMEROOM' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><User className="h-4 w-4" /> Pembinaan Wali Kelas</span></button>)}
-            {showBkTab && (<button onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); setBkMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><HeartHandshake className="h-4 w-4" /> Bimbingan Konseling</span></button>)}
+            {showBkTab && (<button onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); setBkMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-violet-600 text-violet-700' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><HeartHandshake className="h-4 w-4" /> Bimbingan Konseling</span></button>)}
             {shouldShowSanctionPanel && (<button onClick={() => setActiveTab('SANCTIONS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><Gavel className="h-4 w-4" /> Panel Sanksi</span></button>)}
          </nav>
       </div>
@@ -437,10 +466,13 @@ const StudentProfile: React.FC = () => {
                       const incName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
                       const isCompleted = record.bkStatus === 'COMPLETED';
                       const isRequired = record.bkStatus === 'REQUIRED';
+                      const isReferred = record.bkStatus === 'REFERRED';
+                      
                       return (
-                        <div key={record.id} onClick={() => handleOpenDetail(record)} className={`bg-white p-3 rounded-lg border shadow-sm transition-all cursor-pointer group relative overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}>
+                        <div key={record.id} onClick={() => handleOpenDetail(record)} className={`bg-white p-3 rounded-lg border shadow-sm transition-all cursor-pointer group relative overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/50' : isReferred ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}>
                           {isCompleted && (<div className="absolute top-0 right-0 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-emerald-200 flex items-center gap-1"><Check className="h-3 w-3" /> KASUS SELESAI</div>)}
-                          {isRequired && (<div className="absolute top-0 right-0 bg-orange-100 text-orange-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-orange-200 flex items-center gap-1 animate-pulse"><ArrowRight className="h-3 w-3" /> DIRUJUK KE BK</div>)}
+                          {isReferred && (<div className="absolute top-0 right-0 bg-orange-100 text-orange-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-orange-200 flex items-center gap-1"><ArrowRight className="h-3 w-3" /> DI KESISWAAN</div>)}
+                          {isRequired && (<div className="absolute top-0 right-0 bg-blue-100 text-blue-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-blue-200 flex items-center gap-1 animate-pulse"><ArrowRight className="h-3 w-3" /> DIRUJUK KE BK</div>)}
                           <div className="flex justify-between items-start mb-1 pr-24"><div className="flex-1"><h4 className={`font-bold text-sm line-clamp-1 ${isCompleted ? 'text-emerald-900' : 'text-slate-800 group-hover:text-indigo-600'}`}>{incName}</h4><p className="text-xs text-slate-500 mt-0.5">{new Date(record.date).toLocaleDateString()} • {record.recordedBy}</p></div></div>
                           <div className="flex justify-between items-center mt-2"><div className="flex items-center gap-2">{getStatusBadge(record.status)}<span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${record.typeSnapshot === 'VIOLATION' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{record.typeSnapshot === 'VIOLATION' ? `+${record.pointSnapshot}` : record.pointSnapshot} Pt</span></div><div className="flex items-center gap-1 text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Lihat Detail <ArrowLeft className="h-3 w-3 rotate-180" /></div></div>
                         </div>
@@ -479,9 +511,14 @@ const StudentProfile: React.FC = () => {
                             </div>
                           </>
                       ) : (<div className="p-4 rounded-lg text-sm border mb-4 bg-yellow-50 text-yellow-800 border-yellow-100"><p className="font-bold mb-1 flex items-center gap-2"><LifeBuoy className="h-4 w-4" /> Mode Pembinaan Preventif</p><p>Gunakan untuk sesi curhat, masalah keluarga, atau motivasi belajar. Tidak terkait poin pelanggaran.</p></div>)}
-                      <div><label className="block text-sm font-medium text-slate-700 mb-2">Catatan Pembinaan / Solusi</label><textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900" placeholder="Jelaskan permasalahan siswa..." /></div>
+                      <div><label className="block text-sm font-medium text-slate-700 mb-2">Catatan Pembinaan / Solusi <span className="text-red-500">*</span></label><textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900" placeholder="Jelaskan permasalahan siswa..." /></div>
+                      
+                      {/* MANDATORY IMAGE UPLOAD */}
+                      <div><label className="block text-sm font-medium text-slate-700 mb-2">Bukti Foto Dokumentasi <span className="text-red-500">*</span></label>{!imageProof ? (<label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer hover:bg-slate-50 transition-colors ${isCompressing ? 'opacity-50 cursor-wait' : ''}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{isCompressing ? (<><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mb-2"></div><p className="text-sm text-slate-500">Memproses gambar...</p></>) : (<><ImageIcon className="w-8 h-8 text-slate-400 mb-2" /><p className="text-sm text-slate-500"><span className="font-semibold">Klik untuk upload</span> (Wajib)</p></>)}</div><input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={isCompressing} /></label>) : (<div className="relative w-full h-48 bg-slate-100 rounded-lg overflow-hidden border border-slate-300"><img src={imageProof} alt="Preview" className="w-full h-full object-contain" /><button type="button" onClick={() => setImageProof(null)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600"><X className="w-4 h-4" /></button></div>)}</div>
+
                       <div><label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label><select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-slate-900"><option value="NONE">Selesai (Cukup Pembinaan)</option><option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>{homeroomMode === 'CASE' ? (<option value="TO_BK">Rujuk ke BK (Eskalasi Kasus Disiplin)</option>) : (<option value="TO_BK">Rekomendasi Konseling BK (Preventif)</option>)}</select></div>
-                      <button type="submit" disabled={isSubmitting || !counselingNotes} className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"><Save className="h-5 w-5" /> Simpan Pembinaan</button>
+                      
+                      <button type="submit" disabled={isSubmitting || !counselingNotes || !imageProof || isCompressing} className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"><Save className="h-5 w-5" /> Simpan Pembinaan</button>
                    </form>
                 </div>
              </div>
@@ -496,10 +533,10 @@ const StudentProfile: React.FC = () => {
                       const isReferredToBK = session.recommendation === 'TO_BK';
                       return (
                         <div key={session.id} onClick={() => handleOpenDetail(session)} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md cursor-pointer hover:border-orange-300">
-                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseResolved ? 'bg-emerald-500' : isReferredToBK ? 'bg-orange-500 animate-pulse' : isCaseSession ? 'bg-yellow-400' : 'bg-blue-400'}`} />
+                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseResolved ? 'bg-emerald-500' : isReferredToBK ? 'bg-blue-500 animate-pulse' : isCaseSession ? 'bg-yellow-400' : 'bg-slate-400'}`} />
                            <div className="flex justify-between items-start mb-2 pl-2">
                              <div className="flex flex-col"><span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseSession ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'}`}>{isCaseSession ? 'Pembinaan Kasus' : 'Pembinaan Preventif'}</span><div className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</div></div>
-                             {isCaseResolved ? (<span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase rounded border border-emerald-200 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Kasus Selesai</span>) : isReferredToBK ? (<span className="px-2 py-1 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded border border-orange-200 flex items-center gap-1"><ArrowRight className="h-3 w-3" /> Dirujuk ke BK</span>) : (session.recommendation !== 'NONE' && (<span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>))}
+                             {isCaseResolved ? (<span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase rounded border border-emerald-200 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Kasus Selesai</span>) : isReferredToBK ? (<span className="px-2 py-1 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase rounded border border-blue-200 flex items-center gap-1"><ArrowRight className="h-3 w-3" /> Dirujuk ke BK</span>) : (session.recommendation !== 'NONE' && (<span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>))}
                            </div>
                            <p className="text-sm text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-100 ml-1 line-clamp-2">{session.notes}</p>
                            {isCaseSession && <div className="mt-3 ml-2 text-[10px] bg-slate-100 text-slate-600 p-2 rounded border border-slate-200 flex items-center gap-2"><CheckCircle2 className="h-3 w-3 text-orange-500" /><span>Menindaklanjuti {session.relatedRecordIds!.length} pelanggaran.</span></div>}
@@ -519,23 +556,23 @@ const StudentProfile: React.FC = () => {
              {canInputBk && (
                 <div className="lg:col-span-2 space-y-6">
                     {activeHomeroomReferral && (
-                        <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 flex gap-3 animate-fade-in shadow-sm">
-                            <div className="bg-orange-100 p-2 rounded-full h-fit"><AlertTriangle className="h-6 w-6 text-orange-600" /></div>
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 flex gap-3 animate-fade-in shadow-sm">
+                            <div className="bg-blue-100 p-2 rounded-full h-fit"><AlertTriangle className="h-6 w-6 text-blue-600" /></div>
                             <div className="flex-1">
-                                <h3 className="font-bold text-orange-800 text-sm">Menindaklanjuti Rujukan Wali Kelas</h3>
-                                <p className="text-xs text-orange-700 mt-1"><b>{activeHomeroomReferral.counselorName}</b> merujuk siswa ini pada tanggal <b>{new Date(activeHomeroomReferral.date).toLocaleDateString()}</b>.<br/>Catatan: <i>"{activeHomeroomReferral.notes}"</i></p>
-                                <div className="mt-3 flex gap-2"><button onClick={() => { setBkMode('CASE'); setSelectedCounselingRecords(activeHomeroomReferral.relatedRecordIds || []); }} className="text-xs bg-orange-600 text-white px-3 py-1.5 rounded font-bold hover:bg-orange-700 flex items-center gap-1 shadow-sm"><Check className="h-3 w-3" /> Tangani Kasus Ini Sekarang</button></div>
+                                <h3 className="font-bold text-blue-800 text-sm">Menindaklanjuti Rujukan Wali Kelas</h3>
+                                <p className="text-xs text-blue-700 mt-1"><b>{activeHomeroomReferral.counselorName}</b> merujuk siswa ini pada tanggal <b>{new Date(activeHomeroomReferral.date).toLocaleDateString()}</b>.<br/>Catatan: <i>"{activeHomeroomReferral.notes}"</i></p>
+                                <div className="mt-3 flex gap-2"><button onClick={() => { setBkMode('CASE'); setSelectedCounselingRecords(activeHomeroomReferral.relatedRecordIds || []); }} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-bold hover:bg-blue-700 flex items-center gap-1 shadow-sm"><Check className="h-3 w-3" /> Tangani Kasus Ini Sekarang</button></div>
                             </div>
                         </div>
                     )}
 
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="p-6 border-b flex justify-between items-center bg-blue-50 border-blue-100"><h2 className="font-bold flex items-center gap-2 text-blue-800"><HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling BK</h2></div>
-                    <div className="px-6 pt-6"><div className="flex p-1 bg-slate-100 rounded-lg">{hasMandatoryBKCondition && (<button onClick={() => setBkMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'CASE' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-orange-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Konseling Kasus (Disiplin)</button>)}<button onClick={() => setBkMode('PREVENTIVE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'PREVENTIVE' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-700'}`}><LifeBuoy className="h-4 w-4" /> Konseling Preventif</button></div></div>
+                    <div className="p-6 border-b flex justify-between items-center bg-violet-50 border-violet-100"><h2 className="font-bold flex items-center gap-2 text-violet-800"><HeartHandshake className="h-5 w-5" /> Catat Sesi Konseling BK</h2></div>
+                    <div className="px-6 pt-6"><div className="flex p-1 bg-slate-100 rounded-lg">{hasMandatoryBKCondition && (<button onClick={() => setBkMode('CASE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'CASE' ? 'bg-white text-violet-600 shadow-sm ring-1 ring-violet-200' : 'text-slate-500 hover:text-slate-700'}`}><Shield className="h-4 w-4" /> Konseling Kasus (Disiplin)</button>)}<button onClick={() => setBkMode('PREVENTIVE')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-2 transition-all ${bkMode === 'PREVENTIVE' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-200' : 'text-slate-500 hover:text-slate-700'}`}><LifeBuoy className="h-4 w-4" /> Konseling Preventif</button></div></div>
                     <form onSubmit={(e) => handleSubmitCounseling(e, 'BK')} className="p-6 space-y-6">
                         {bkMode === 'CASE' ? (
                             <>
-                                <div className="p-4 rounded-lg text-sm border mb-4 bg-orange-50 text-orange-800 border-orange-100 flex items-start gap-2"><AlertTriangle className="h-5 w-5 shrink-0" /><div><p className="font-bold">Mode Penanganan Kasus</p><p className="text-xs mt-1">Gunakan mode ini untuk menindaklanjuti pelanggaran spesifik. Kasus yang dipilih akan ditandai sebagai <b>SELESAI</b> dalam alur disiplin.</p></div></div>
+                                <div className="p-4 rounded-lg text-sm border mb-4 bg-violet-50 text-violet-800 border-violet-100 flex items-start gap-2"><AlertTriangle className="h-5 w-5 shrink-0" /><div><p className="font-bold">Mode Penanganan Kasus</p><p className="text-xs mt-1">Gunakan mode ini untuk menindaklanjuti pelanggaran spesifik. Kasus yang dipilih akan ditandai sebagai <b>SELESAI</b> jika tidak dirujuk ke Kesiswaan.</p></div></div>
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">Pilih Kasus / Pelanggaran Terkait</label>
                                     <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
@@ -544,8 +581,8 @@ const StudentProfile: React.FC = () => {
                                                 const isSelected = selectedCounselingRecords.includes(record.id);
                                                 const isRequired = record.bkStatus === 'REQUIRED';
                                                 return (
-                                                    <div key={record.id} onClick={() => toggleCounselingRecord(record.id)} className={`p-3 rounded-lg border cursor-pointer text-xs flex items-center gap-3 transition-all ${isSelected ? 'bg-orange-50 border-orange-300 text-orange-900' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
-                                                        <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-white border-slate-300'}`}>{isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}</div>
+                                                    <div key={record.id} onClick={() => toggleCounselingRecord(record.id)} className={`p-3 rounded-lg border cursor-pointer text-xs flex items-center gap-3 transition-all ${isSelected ? 'bg-violet-50 border-violet-300 text-violet-900' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
+                                                        <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-violet-500 border-violet-500' : 'bg-white border-slate-300'}`}>{isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}</div>
                                                         <div className="flex-1"><div className="flex justify-between"><span className="font-bold text-sm">{incidentName}</span><span className="font-bold text-red-600">+{record.pointSnapshot} Poin</span></div><div className="flex items-center gap-2 mt-1"><span className="text-slate-500">{new Date(record.date).toLocaleDateString()}</span>{isRequired && <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}</div></div>
                                                     </div>
                                                 )
@@ -555,9 +592,14 @@ const StudentProfile: React.FC = () => {
                                 </div>
                             </>
                         ) : (<div className="p-4 rounded-lg text-sm border mb-4 bg-blue-50 text-blue-800 border-blue-100 flex items-start gap-2"><LifeBuoy className="h-5 w-5 shrink-0" /><div><p className="font-bold">Mode Konseling Preventif</p><p className="text-xs mt-1">Gunakan mode ini untuk bimbingan karir, masalah pribadi, atau rujukan wali kelas yang <b>bukan</b> pelanggaran disiplin. Tidak mengubah status poin.</p></div></div>)}
-                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil</label><textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900" placeholder={bkMode === 'CASE' ? "Jelaskan penyelesaian kasus dan komitmen siswa..." : "Catat hasil diskusi dan saran pengembangan diri..."} /></div>
-                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label><select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-900"><option value="NONE">Cukup Pembinaan (Selesai)</option><option value="PARENT_CALL">Perlu Panggilan Orang Tua</option><option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Perlu Sanksi Tegas)</option><option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option></select></div>
-                        <button type="submit" disabled={isSubmitting || !counselingNotes} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"><Save className="h-5 w-5" /> {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan BK'}</button>
+                        
+                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Catatan Konseling / Hasil <span className="text-red-500">*</span></label><textarea required value={counselingNotes} onChange={(e) => setCounselingNotes(e.target.value)} rows={6} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 bg-white text-slate-900" placeholder={bkMode === 'CASE' ? "Jelaskan penyelesaian kasus dan komitmen siswa..." : "Catat hasil diskusi dan saran pengembangan diri..."} /></div>
+                        
+                        {/* MANDATORY IMAGE UPLOAD */}
+                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Bukti Foto Dokumentasi <span className="text-red-500">*</span></label>{!imageProof ? (<label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer hover:bg-slate-50 transition-colors ${isCompressing ? 'opacity-50 cursor-wait' : ''}`}><div className="flex flex-col items-center justify-center pt-5 pb-6">{isCompressing ? (<><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600 mb-2"></div><p className="text-sm text-slate-500">Memproses gambar...</p></>) : (<><ImageIcon className="w-8 h-8 text-slate-400 mb-2" /><p className="text-sm text-slate-500"><span className="font-semibold">Klik untuk upload</span> (Wajib)</p></>)}</div><input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={isCompressing} /></label>) : (<div className="relative w-full h-48 bg-slate-100 rounded-lg overflow-hidden border border-slate-300"><img src={imageProof} alt="Preview" className="w-full h-full object-contain" /><button type="button" onClick={() => setImageProof(null)} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600"><X className="w-4 h-4" /></button></div>)}</div>
+
+                        <div><label className="block text-sm font-medium text-slate-700 mb-2">Rekomendasi Tindak Lanjut</label><select value={counselingRec} onChange={(e) => setCounselingRec(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 bg-white text-slate-900"><option value="NONE">Cukup Pembinaan (Selesai)</option><option value="PARENT_CALL">Perlu Panggilan Orang Tua</option><option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Eskalasi)</option><option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option></select></div>
+                        <button type="submit" disabled={isSubmitting || !counselingNotes || !imageProof || isCompressing} className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl shadow-md transition-all"><Save className="h-5 w-5" /> {isSubmitting ? 'Menyimpan...' : 'Simpan Laporan BK'}</button>
                     </form>
                     </div>
                 </div>
@@ -571,14 +613,16 @@ const StudentProfile: React.FC = () => {
                       let isCaseResolved = false;
                       if (isCaseCounseling) { const relatedRecs = records.filter(r => session.relatedRecordIds?.includes(r.id)); if (relatedRecs.length > 0 && relatedRecs.every(r => r.bkStatus === 'COMPLETED')) { isCaseResolved = true; } }
                       const isReferralResponse = homeroomSessions.some(h => h.recommendation === 'TO_BK' && new Date(h.date) < new Date(session.date) && ((session.relatedRecordIds?.some(id => h.relatedRecordIds?.includes(id))) || (!session.relatedRecordIds?.length && !h.relatedRecordIds?.length)));
+                      const isReferralToKesiswaan = session.recommendation === 'TO_KESISWAAN' || session.recommendation === 'SUSPENSION_REVIEW';
+
                       return (
-                        <div key={session.id} onClick={() => handleOpenDetail(session)} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md cursor-pointer hover:border-blue-300">
-                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseResolved ? 'bg-emerald-500' : isCaseCounseling ? 'bg-orange-500' : 'bg-blue-400'}`} />
-                           {isReferralResponse && (<div className="absolute top-0 right-0 bg-indigo-100 text-indigo-700 px-2 py-1 rounded-bl-lg text-[9px] font-bold flex items-center gap-1 border-l border-b border-indigo-200"><ArrowDown className="h-3 w-3" /> RESPON RUJUKAN</div>)}
-                           <div className="flex justify-between items-start mb-3 pl-2 pr-20"><div className="flex flex-col"><span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseCounseling ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{isCaseCounseling ? 'Konseling Kasus' : 'Konseling Preventif'}</span><span className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</span></div></div>
-                           <div className="mb-3 pl-2 flex flex-wrap gap-2">{isCaseResolved ? (<span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase rounded border border-emerald-200 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Kasus Selesai</span>) : (session.recommendation !== 'NONE' && (<span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>))}</div>
+                        <div key={session.id} onClick={() => handleOpenDetail(session)} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md cursor-pointer hover:border-violet-300">
+                           <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${isCaseResolved ? 'bg-emerald-500' : isReferralToKesiswaan ? 'bg-orange-500' : isCaseCounseling ? 'bg-violet-500' : 'bg-blue-400'}`} />
+                           {isReferralResponse && (<div className="absolute top-0 right-0 bg-blue-100 text-blue-700 px-2 py-1 rounded-bl-lg text-[9px] font-bold flex items-center gap-1 border-l border-b border-blue-200"><ArrowDown className="h-3 w-3" /> RESPON RUJUKAN</div>)}
+                           <div className="flex justify-between items-start mb-3 pl-2 pr-20"><div className="flex flex-col"><span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit mb-1 ${isCaseCounseling ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{isCaseCounseling ? 'Konseling Kasus' : 'Konseling Preventif'}</span><span className="text-xs font-semibold text-slate-500">{new Date(session.date).toLocaleDateString()}</span></div></div>
+                           <div className="mb-3 pl-2 flex flex-wrap gap-2">{isCaseResolved ? (<span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase rounded border border-emerald-200 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Kasus Selesai</span>) : isReferralToKesiswaan ? (<span className="px-2 py-1 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded border border-orange-200 flex items-center gap-1"><ArrowRight className="h-3 w-3" /> Ke Kesiswaan</span>) : (session.recommendation !== 'NONE' && (<span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100">! {translateRecommendation(session.recommendation)}</span>))}</div>
                            <p className="text-sm text-slate-700 whitespace-pre-wrap pl-2 border-l-2 border-slate-100 ml-1 line-clamp-2">{session.notes}</p>
-                           {isCaseCounseling && <div className="mt-3 ml-2 text-[10px] bg-slate-100 text-slate-600 p-2 rounded border border-slate-200 flex items-center gap-2"><CheckCircle2 className="h-3 w-3 text-orange-500" /><span>Menyelesaikan {session.relatedRecordIds!.length} kasus pelanggaran.</span></div>}
+                           {isCaseCounseling && <div className="mt-3 ml-2 text-[10px] bg-slate-100 text-slate-600 p-2 rounded border border-slate-200 flex items-center gap-2"><CheckCircle2 className="h-3 w-3 text-violet-500" /><span>Menangani {session.relatedRecordIds!.length} kasus pelanggaran.</span></div>}
                            <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400 flex items-center gap-1 pl-2"><User className="h-3 w-3" /> <span className="font-semibold text-slate-500">Konselor:</span> {session.counselorName} <span className="text-indigo-500 font-bold ml-auto flex items-center gap-1">Detail <ArrowLeft className="h-3 w-3 rotate-180" /></span></div>
                         </div>
                       )
