@@ -59,6 +59,9 @@ const ActiveCoaching: React.FC = () => {
       // Cek Poin Tinggi
       const isHighPoints = stats.effectiveViolationScore >= bkThreshold;
 
+      // Status override jika dikembalikan dari Kesiswaan
+      const isReturnedFromKesiswaan = records.some(r => r.studentId === s.id && r.bkStatus === 'RETURNED_TO_BK');
+
       const caseData = {
         student: s,
         className: classes.find(c => c.id === s.classId)?.name || '-',
@@ -79,7 +82,8 @@ const ActiveCoaching: React.FC = () => {
       // --- LOGIKA PENGELOMPOKAN ---
       
       // 1. KASUS PRIORITAS (Wajib Ditangani)
-      if (hasReferralFromHomeroom || hasRequiredRecord || (isHighPoints && !latestSession)) {
+      if (hasReferralFromHomeroom || hasRequiredRecord || (isHighPoints && !latestSession) || isReturnedFromKesiswaan) {
+          if(isReturnedFromKesiswaan) caseData.triggers.push('Dikembalikan Kesiswaan');
           if(hasReferralFromHomeroom) caseData.triggers.push('Rujukan Wali Kelas');
           if(hasRequiredRecord) caseData.triggers.push('Pelanggaran Berat (Auto)');
           if(isHighPoints) caseData.triggers.push(`Poin Tinggi (${stats.effectiveViolationScore})`);
@@ -182,7 +186,7 @@ const ActiveCoaching: React.FC = () => {
                     {activeTab === 'PRIORITY' && (
                         <div className="flex flex-wrap gap-2 mb-3">
                             {item.triggers.map((t: string, i: number) => (
-                                <span key={i} className="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded border border-red-200 flex items-center gap-1">
+                                <span key={i} className={`px-2 py-1 text-xs font-bold rounded border flex items-center gap-1 ${t === 'Dikembalikan Kesiswaan' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
                                     <AlertCircle className="h-3 w-3" /> {t}
                                 </span>
                             ))}

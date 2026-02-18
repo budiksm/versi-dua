@@ -50,7 +50,8 @@ import {
   Link as LinkIcon, 
   Loader2,
   ArrowDown,
-  ArrowRight
+  ArrowRight,
+  Reply
 } from 'lucide-react';
 
 interface StoryStep {
@@ -215,11 +216,19 @@ const StudentProfile: React.FC = () => {
       relevantSessions.forEach(sess => {
           let title = 'Pembinaan';
           let color = 'bg-blue-100 text-blue-700';
+          let label = sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai';
+          
           if (sess.sessionType === 'BK') title = 'Konseling BK';
           if (sess.sessionType === 'HOMEROOM') title = 'Pembinaan Wali Kelas';
-          if (sess.sessionType === 'KESISWAAN') { title = 'Tindakan Kesiswaan'; color = 'bg-red-100 text-red-700'; }
+          if (sess.sessionType === 'KESISWAAN') { 
+              title = 'Tindakan Kesiswaan'; 
+              color = 'bg-red-100 text-red-700';
+              if (sess.recommendation === 'TO_BK') {
+                  label = 'Dikembalikan ke BK';
+              }
+          }
 
-          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: title, actor: `${sess.counselorName}`, description: sess.notes, statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai', statusColor: color, attachmentUrl: sess.attachmentUrl });
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: title, actor: `${sess.counselorName}`, description: sess.notes, statusLabel: label, statusColor: color, attachmentUrl: sess.attachmentUrl });
       });
 
       if ('level' in item) {
@@ -457,6 +466,11 @@ const StudentProfile: React.FC = () => {
   const filteredIncidents = incidents.filter(i => i.isActive && i.type === formType && i.categoryId === selectedCategory);
   const activeHomeroomReferral = homeroomSessions.find(s => { if (s.recommendation !== 'TO_BK') return false; const relatedIds = s.relatedRecordIds || []; if (relatedIds.length > 0) { const hasActiveIncident = relatedIds.some(id => { const rec = records.find(r => r.id === id); return rec && rec.bkStatus !== 'COMPLETED'; }); return hasActiveIncident; } const newerBK = bkSessions.find(bk => new Date(bk.date) > new Date(s.date)); return !newerBK; });
 
+  // FIND LATEST BK REFERRAL SESSION FOR DISPLAY
+  const latestReferralSession = counselingSessions
+    .filter(s => s.sessionType === 'BK' && (s.recommendation === 'TO_KESISWAAN' || s.recommendation === 'SUSPENSION_REVIEW'))
+    .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
   return (
     <div className="space-y-8 pb-12 animate-fade-in relative">
       <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -477,7 +491,7 @@ const StudentProfile: React.FC = () => {
             <button onClick={() => setActiveTab('INCIDENTS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'INCIDENTS' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><ClipboardList className="h-4 w-4" /> Catatan Kejadian</span></button>
             {isReporterHomeroom && (<button onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); setHomeroomMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'HOMEROOM' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><User className="h-4 w-4" /> Pembinaan Wali Kelas</span></button>)}
             {showBkTab && (<button onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); setBkMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-purple-500 text-purple-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><HeartHandshake className="h-4 w-4" /> Bimbingan Konseling</span></button>)}
-            {shouldShowSanctionPanel && (<button onClick={() => setActiveTab('SANCTIONS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><Gavel className="h-4 w-4" /> Panel Sanksi</span></button>)}
+            {shouldShowSanctionPanel && (<button onClick={() => setActiveTab('SANCTIONS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><Gavel className="h-4 w-4" /> Panel Kesiswaan</span></button>)}
          </nav>
       </div>
 
@@ -509,13 +523,15 @@ const StudentProfile: React.FC = () => {
                       const isCompleted = record.bkStatus === 'COMPLETED';
                       const isRequired = record.bkStatus === 'REQUIRED';
                       const isReferredToKesiswaan = record.bkStatus === 'REFERRED_TO_KESISWAAN';
+                      const isReturnedToBK = record.bkStatus === 'RETURNED_TO_BK';
                       
                       return (
-                        <div key={record.id} onClick={() => handleOpenDetail(record)} className={`bg-white p-3 rounded-lg border shadow-sm transition-all cursor-pointer group relative overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/50' : isReferredToKesiswaan ? 'border-red-200 bg-red-50/30' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}>
+                        <div key={record.id} onClick={() => handleOpenDetail(record)} className={`bg-white p-3 rounded-lg border shadow-sm transition-all cursor-pointer group relative overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/50' : isReferredToKesiswaan ? 'border-red-200 bg-red-50/30' : isReturnedToBK ? 'border-purple-200 bg-purple-50/30' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}>
                           {isCompleted && (<div className="absolute top-0 right-0 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-emerald-200 flex items-center gap-1"><Check className="h-3 w-3" /> SELESAI</div>)}
                           {isRequired && (<div className="absolute top-0 right-0 bg-orange-100 text-orange-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-orange-200 flex items-center gap-1 animate-pulse"><ArrowRight className="h-3 w-3" /> KE BK</div>)}
                           {isReferredToKesiswaan && (<div className="absolute top-0 right-0 bg-red-100 text-red-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-red-200 flex items-center gap-1"><ArrowRight className="h-3 w-3" /> KE KESISWAAN</div>)}
-                          <div className="flex justify-between items-start mb-1 pr-24"><div className="flex-1"><h4 className={`font-bold text-sm line-clamp-1 ${isCompleted ? 'text-emerald-900' : isReferredToKesiswaan ? 'text-red-900' : 'text-slate-800 group-hover:text-indigo-600'}`}>{incName}</h4><p className="text-xs text-slate-500 mt-0.5">{new Date(record.date).toLocaleDateString()} • {record.recordedBy}</p></div></div>
+                          {isReturnedToBK && (<div className="absolute top-0 right-0 bg-purple-100 text-purple-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-purple-200 flex items-center gap-1"><Reply className="h-3 w-3" /> KEMBALI KE BK</div>)}
+                          <div className="flex justify-between items-start mb-1 pr-24"><div className="flex-1"><h4 className={`font-bold text-sm line-clamp-1 ${isCompleted ? 'text-emerald-900' : isReferredToKesiswaan ? 'text-red-900' : isReturnedToBK ? 'text-purple-900' : 'text-slate-800 group-hover:text-indigo-600'}`}>{incName}</h4><p className="text-xs text-slate-500 mt-0.5">{new Date(record.date).toLocaleDateString()} • {record.recordedBy}</p></div></div>
                           <div className="flex justify-between items-center mt-2"><div className="flex items-center gap-2">{getStatusBadge(record.status)}<span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${record.typeSnapshot === 'VIOLATION' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{record.typeSnapshot === 'VIOLATION' ? `+${record.pointSnapshot}` : record.pointSnapshot} Pt</span></div><div className="flex items-center gap-1 text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Lihat Detail <ArrowLeft className="h-3 w-3 rotate-180" /></div></div>
                         </div>
                       )
@@ -679,7 +695,7 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* TAB 4: SANCTIONS */}
+        {/* TAB 4: SANCTIONS / KESISWAAN PANEL */}
         {activeTab === 'SANCTIONS' && shouldShowSanctionPanel && (
            <>
              <div className="lg:col-span-2 space-y-6">
@@ -692,8 +708,33 @@ const StudentProfile: React.FC = () => {
                             <span className="bg-white text-red-600 px-2 py-0.5 rounded text-xs font-bold">{activeReferralRecords.length} Kasus</span>
                         </div>
                         <div className="p-6">
+                            {/* NEW: DISPLAY BK NOTES */}
+                            {latestReferralSession && (
+                                <div className="mb-6 bg-white p-4 rounded-lg border border-red-200 shadow-sm relative">
+                                    <div className="absolute top-0 right-0 px-2 py-1 bg-red-100 text-red-700 text-[10px] font-bold rounded-bl-lg border-l border-b border-red-200">
+                                        Rujukan Terbaru
+                                    </div>
+                                    <div className="flex items-center gap-2 mb-2 text-xs text-slate-500 border-b border-slate-100 pb-2">
+                                        <User className="h-3 w-3" /> <b>{latestReferralSession.counselorName}</b> (BK)
+                                        <span>•</span>
+                                        <span>{new Date(latestReferralSession.date).toLocaleDateString()}</span>
+                                    </div>
+                                    <p className="text-sm text-slate-800 italic">"{latestReferralSession.notes}"</p>
+                                    
+                                    {latestReferralSession.attachmentUrl && (
+                                        <div className="mt-3 flex justify-end">
+                                            <button 
+                                                onClick={() => setPreviewImage(latestReferralSession.attachmentUrl || null)}
+                                                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded transition-colors"
+                                            >
+                                                <Paperclip className="h-3 w-3" /> Lihat Lampiran BK
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             <p className="text-sm text-slate-600 mb-4">
-                                Terdapat <b>{activeReferralRecords.length}</b> kasus pelanggaran yang dirujuk oleh BK untuk ditindaklanjuti Kesiswaan. 
                                 Silakan tentukan apakah perlu sanksi tegas (SP), dikembalikan ke BK, atau ditutup.
                             </p>
                             

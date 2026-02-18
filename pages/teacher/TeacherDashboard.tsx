@@ -327,12 +327,14 @@ const TeacherDashboard: React.FC = () => {
     }
   }
 
-  const translateRecommendation = (rec: string) => {
+  const translateRecommendation = (rec: string, type?: string) => {
     switch(rec) {
       case 'PARENT_CALL': return 'Panggilan Orang Tua';
       case 'TO_KESISWAAN': return 'Rujuk ke Kesiswaan';
       case 'SUSPENSION_REVIEW': return 'Tinjauan Skorsing';
-      case 'TO_BK': return 'Rujuk ke BK';
+      case 'TO_BK': 
+        if (type === 'KESISWAAN') return 'Dikembalikan ke BK';
+        return 'Rujuk ke BK';
       default: return '-';
     }
   };
@@ -385,11 +387,11 @@ const TeacherDashboard: React.FC = () => {
               id: sess.id,
               date: sess.date,
               type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS',
-              title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas',
-              actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`,
+              title: sess.sessionType === 'BK' ? 'Konseling BK' : sess.sessionType === 'KESISWAAN' ? 'Tindakan Kesiswaan' : 'Pembinaan Wali Kelas',
+              actor: `${sess.sessionType === 'BK' ? 'Guru BK' : sess.sessionType === 'KESISWAAN' ? 'Kesiswaan' : 'Wali Kelas'}: ${sess.counselorName}`,
               description: sess.notes,
-              statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai',
-              statusColor: 'bg-blue-100 text-blue-700'
+              statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation, sess.sessionType) : 'Selesai',
+              statusColor: sess.sessionType === 'KESISWAAN' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
           });
       });
 
@@ -737,17 +739,17 @@ const TeacherDashboard: React.FC = () => {
     {/* --- BK DASHBOARD --- */}
     {isBK && (
         <div className="space-y-6 animate-fade-in">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-600 to-fuchsia-700 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
                 <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><HeartHandshake className="h-64 w-64 -mr-16 -mt-16" /></div>
                 <div className="relative z-10">
                     <div className="flex items-center gap-3 mb-6">
                         <div className="p-2 bg-white/20 rounded-lg"><BookOpen className="h-6 w-6 text-white" /></div>
-                        <div><h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2><p className="text-blue-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p></div>
+                        <div><h2 className="text-xl font-bold">Dashboard Bimbingan & Konseling</h2><p className="text-purple-100 text-sm">Monitoring kesehatan mental dan perilaku siswa.</p></div>
                     </div>
                     
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                         <div onClick={() => handleOpenStatModal('BK_ACTIVE')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
-                            <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p>
+                            <p className="text-purple-200 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">Konseling Aktif <ExternalLink className="h-3 w-3" /></p>
                             <p className="text-3xl font-bold mt-1">{bkStats.activeCounseling}</p>
                         </div>
                         <div onClick={() => handleOpenStatModal('BK_MANDATORY')} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-red-400/50 bg-red-900/20 cursor-pointer hover:bg-white/20 transition-all hover:scale-105">
@@ -763,7 +765,7 @@ const TeacherDashboard: React.FC = () => {
                             <p className="text-3xl font-bold mt-1">{bkStats.highRiskCount}</p>
                         </div>
                         <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                            <p className="text-blue-200 text-[10px] font-bold uppercase tracking-wider">Sesi Bulan Ini</p>
+                            <p className="text-purple-200 text-[10px] font-bold uppercase tracking-wider">Sesi Bulan Ini</p>
                             <p className="text-3xl font-bold mt-1">{bkStats.monthlySessions}</p>
                         </div>
                     </div>
@@ -775,17 +777,17 @@ const TeacherDashboard: React.FC = () => {
                             </div>
                             <div className="divide-y divide-white/10 max-h-60 overflow-y-auto">
                                 {bkMandatoryList.length === 0 ? (
-                                    <div className="p-4 text-center text-blue-200 text-xs">Tidak ada siswa yang mencapai ambang batas poin (40).</div>
+                                    <div className="p-4 text-center text-purple-200 text-xs">Tidak ada siswa yang mencapai ambang batas poin (40).</div>
                                 ) : (
                                     bkMandatoryList.map((item, idx) => (
                                         <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center">
                                             <div>
-                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-blue-300 font-normal">({item.className})</span></div>
+                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-purple-300 font-normal">({item.className})</span></div>
                                                 <div className="text-xs text-red-300 mt-0.5 font-medium">
                                                     {item.score} Poin - {item.topIncident}
                                                 </div>
                                             </div>
-                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-white text-indigo-700 text-xs font-bold rounded hover:bg-blue-50">Proses</Link>
+                                            <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-white text-purple-700 text-xs font-bold rounded hover:bg-purple-50">Proses</Link>
                                         </div>
                                     ))
                                 )}
@@ -798,16 +800,16 @@ const TeacherDashboard: React.FC = () => {
                             </div>
                             <div className="divide-y divide-white/10 max-h-60 overflow-y-auto">
                                 {bkReferralList.length === 0 ? (
-                                    <div className="p-4 text-center text-blue-200 text-xs">Tidak ada rujukan baru yang perlu tindakan.</div>
+                                    <div className="p-4 text-center text-purple-200 text-xs">Tidak ada rujukan baru yang perlu tindakan.</div>
                                 ) : (
                                     bkReferralList.map((item, idx) => (
                                         <div key={idx} className="p-3 hover:bg-white/10 transition-colors flex justify-between items-center">
                                             <div>
-                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-blue-300 font-normal">({item.className})</span></div>
+                                                <div className="font-bold text-sm text-white">{item.student.name} <span className="text-purple-300 font-normal">({item.className})</span></div>
                                                 <div className="text-xs text-orange-200 mt-0.5">
                                                     Dari: {item.homeroomName}
                                                 </div>
-                                                <div className="text-[10px] text-blue-200 italic mt-0.5 truncate max-w-[200px]">"{item.note}"</div>
+                                                <div className="text-[10px] text-purple-200 italic mt-0.5 truncate max-w-[200px]">"{item.note}"</div>
                                             </div>
                                             <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-orange-500/80 text-white text-xs font-bold rounded hover:bg-orange-500">Terima</Link>
                                         </div>
@@ -1129,7 +1131,7 @@ const TeacherDashboard: React.FC = () => {
                                         ${step.type === 'INCIDENT' ? 'bg-white text-slate-600' : 
                                           step.type === 'APPROVAL' ? 'bg-green-100 text-green-600' :
                                           step.type === 'COUNSELING_WALAS' ? 'bg-orange-100 text-orange-600' :
-                                          step.type === 'COUNSELING_BK' ? 'bg-blue-100 text-blue-600' :
+                                          step.type === 'COUNSELING_BK' ? 'bg-purple-100 text-purple-600' :
                                           'bg-red-600 text-white'}
                                     `}>
                                         {step.type === 'INCIDENT' && <FileText className="h-5 w-5" />}
