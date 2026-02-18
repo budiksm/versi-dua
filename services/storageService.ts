@@ -126,8 +126,12 @@ export const StorageService = {
             const snapshot = await uploadBytes(storageRef, fileToUpload);
             const downloadURL = await getDownloadURL(snapshot.ref);
             return downloadURL;
-        } catch (error) {
+        } catch (error: any) {
             console.error("Upload failed:", error);
+            // CORS Detection
+            if (error.message && (error.message.includes('network') || error.message.includes('retry'))) {
+                throw new Error("Gagal koneksi Storage (Cek CORS)");
+            }
             throw new Error("Gagal mengupload file ke server.");
         }
     },
@@ -156,7 +160,12 @@ export const StorageService = {
             return downloadURL;
         } catch (error: any) {
             console.error("Base64 Upload Critical Error:", error);
-            throw new Error(`Storage Error: ${error.message}`);
+            let msg = error.message;
+            // Explicitly detect network errors common with CORS blocks
+            if (msg && (msg.includes('network') || msg.includes('retry') || msg.toLowerCase().includes('failed to fetch'))) {
+                msg += " (POTENSI ERROR CORS: Cek Panduan di Migration Tool)";
+            }
+            throw new Error(`Storage Error: ${msg}`);
         }
     }
 };
