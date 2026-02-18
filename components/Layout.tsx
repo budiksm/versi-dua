@@ -26,7 +26,8 @@ import {
   Wifi,
   WifiOff,
   CloudOff,
-  Loader2
+  Loader2,
+  Database
 } from 'lucide-react';
 import { Role, Teacher } from '../types';
 
@@ -66,10 +67,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [successMessage, setSuccessMessage] = useState('');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   
-  // State baru untuk overlay loading saat logout
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
+    // If no user, redirect immediately
+    if (!currentUser) {
+        navigate('/');
+        return;
+    }
+
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
@@ -103,24 +109,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
        window.removeEventListener('online', handleOnline);
        window.removeEventListener('offline', handleOffline);
     };
-  }, [currentUser?.id, successMessage]); 
+  }, [currentUser?.id, successMessage, navigate]); 
 
   const handleLogoutClick = () => setShowLogoutModal(true);
   
-  // Update Logic Logout
   const handleConfirmLogout = async () => { 
       if (currentUser) {
           setShowLogoutModal(false);
-          setIsLoggingOut(true); // Tampilkan overlay loading
-          
+          setIsLoggingOut(true); 
           try {
-              // Simpan data terakhir ke cloud
               await DataService.finalizeSession(currentUser.id);
           } catch (error) {
               console.error("Gagal sync logout", error);
           }
-          
-          // Setelah selesai simpan (atau error), baru logout lokal
           DataService.logout(); 
           navigate('/');
           setIsLoggingOut(false);
@@ -161,6 +162,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             { type: 'link', path: '/admin/students', label: 'Manajemen Siswa', icon: Users },
             { type: 'link', path: '/admin/accounts', label: 'Manajemen Akun', icon: UserCog },
             { type: 'link', path: '/admin/config', label: 'Konfigurasi Poin', icon: ShieldCheck },
+            { type: 'link', path: '/admin/migrate', label: 'Migration Tool', icon: Database },
             { type: 'separator' },
             { type: 'header', label: 'Menu Guru' },
             { type: 'link', path: '/teacher/dashboard', label: 'Dashboard Guru', icon: LayoutDashboard },
@@ -230,8 +232,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-slate-50">
+      {/* ... (Rest of JSX identical to previous, just ensuring imports and hooks are safe) */}
       
-      {/* OVERLAY LOADING SAAT LOGOUT */}
       {isLoggingOut && (
         <div className="fixed inset-0 z-[150] bg-indigo-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
             <div className="bg-white p-10 rounded-3xl shadow-2xl flex flex-col items-center text-slate-800">

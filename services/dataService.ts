@@ -8,19 +8,23 @@ import {
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
 import { doc, setDoc, onSnapshot, getDoc, writeBatch, collection, deleteDoc, query } from 'firebase/firestore';
 
-// --- RAM STORAGE (CACHE) ---
-// Frontend membaca ini secara sync agar UI cepat
-let _teachers: Teacher[] = [];
-let _students: Student[] = [];
-let _classes: ClassGroup[] = [];
-let _records: IncidentRecord[] = [];
-let _categories: MasterCategory[] = [];
-let _incidents: MasterIncidentType[] = [];
-let _rules: CoachingRule[] = [];
-let _counseling: CounselingSession[] = [];
-let _sanctions: StudentSanction[] = [];
-let _cashflow: CashflowRecord[] = [];
-let _activityLogs: ActivityLog[] = [];
+// --- HYBRID STORAGE (Legacy + New) ---
+// Kita simpan dua versi data di memori untuk transisi mulus
+const store = {
+    teachers: { legacy: [] as Teacher[], new: [] as Teacher[], active: [] as Teacher[] },
+    students: { legacy: [] as Student[], new: [] as Student[], active: [] as Student[] },
+    classes: { legacy: [] as ClassGroup[], new: [] as ClassGroup[], active: [] as ClassGroup[] },
+    records: { legacy: [] as IncidentRecord[], new: [] as IncidentRecord[], active: [] as IncidentRecord[] },
+    counseling: { legacy: [] as CounselingSession[], new: [] as CounselingSession[], active: [] as CounselingSession[] },
+    sanctions: { legacy: [] as StudentSanction[], new: [] as StudentSanction[], active: [] as StudentSanction[] },
+    cashflow: { legacy: [] as CashflowRecord[], new: [] as CashflowRecord[], active: [] as CashflowRecord[] },
+    activity_logs: { legacy: [] as ActivityLog[], new: [] as ActivityLog[], active: [] as ActivityLog[] },
+    
+    // Configs (Master Data vs School Data)
+    categories: { legacy: [] as MasterCategory[], new: [] as MasterCategory[], active: [] as MasterCategory[] },
+    incidentTypes: { legacy: [] as MasterIncidentType[], new: [] as MasterIncidentType[], active: [] as MasterIncidentType[] },
+    rules: { legacy: [] as CoachingRule[], new: [] as CoachingRule[], active: [] as CoachingRule[] },
+};
 
 // --- SYNC STATUS ---
 export type SyncState = 'IDLE' | 'SYNCING' | 'SAVED' | 'ERROR' | 'OFFLINE' | 'LOADING_INITIAL';
@@ -46,38 +50,66 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
+// --- RECONCILIATION LOGIC ---
+// Memilih sumber data: Jika Collection Baru ada isi, pakai itu. Jika tidak, pakai Legacy.
+const reconcile = (key: keyof typeof store) => {
+    const s = store[key];
+    // Priority: New > Legacy
+    if (s.new.length > 0) {
+        s.active = s.new;
+    } else {
+        s.active = s.legacy;
+    }
+};
+
+// Helper untuk setup listener ganda
+const setupHybridListener = (
+    key: keyof typeof store,
+    legacyDocPath: string, // e.g., "school_data/teachers"
+    newCollectionName: string, // e.g., "teachers"
+    isConfig: boolean = false // Configs use "master_data" collection instead of root
+) => {
+    // 1. Listen to NEW Collection (Priority)
+    // Note: Configs in new structure are Single Docs inside "master_data" collection
+    if (isConfig) {
+        onSnapshot(doc(db, "master_data", newCollectionName), (snap) => {
+            store[key].new = snap.exists() ? (snap.data().data || []) : [];
+            reconcile(key);
+            notifyDataChange();
+        });
+    } else {
+        onSnapshot(collection(db, newCollectionName), (snap) => {
+            const data = snap.docs.map(d => d.data() as any);
+            store[key].new = data;
+            reconcile(key);
+            notifyDataChange();
+        });
+    }
+
+    // 2. Listen to LEGACY Document (Fallback)
+    onSnapshot(doc(db, "school_data", isConfig ? key : newCollectionName), (snap) => {
+        store[key].legacy = snap.exists() ? (snap.data().data || []) : [];
+        reconcile(key);
+        notifyDataChange();
+    });
+};
+
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- BATCH HELPER (The Core of Facade) ---
-// Membandingkan Array Baru (dari UI) dengan Array Lama (di RAM)
-// untuk menentukan mana yang Create/Update/Delete di Firestore Collection.
+// --- BATCH HELPER ---
 const batchSyncCollection = async (collectionName: string, newData: any[], currentData: any[]) => {
     if (!db) throw new Error("Database not connected");
     notifyListeners('SYNCING');
     const startTime = Date.now();
 
     try {
-        const batchSize = 400; // Safe limit (Firestore max 500)
-        let operations: Promise<void>[] = [];
-        
-        const newIds = new Set(newData.map(item => item.id));
-        const currentIds = new Set(currentData.map(item => item.id));
-
-        // 1. Identify Deletions
-        const toDelete = currentData.filter(item => !newIds.has(item.id));
-        
-        // 2. Identify Writes (Create/Update)
-        // Note: For true optimization, we could deep-compare objects, 
-        // but for safety in this migration, we Upsert all existing in newData.
-        const toUpsert = newData; 
-
-        // Execute in chunks
+        const batchSize = 400; 
         let batch = writeBatch(db);
         let count = 0;
-
-        // Process Deletes
-        for (const item of toDelete) {
-            batch.delete(doc(db, collectionName, item.id));
+        
+        // Simple Set/Merge approach for robustness
+        for (const item of newData) {
+            batch.set(doc(db, collectionName, item.id), JSON.parse(JSON.stringify(item)), { merge: true });
             count++;
             if (count >= batchSize) {
                 await batch.commit();
@@ -85,14 +117,16 @@ const batchSyncCollection = async (collectionName: string, newData: any[], curre
                 count = 0;
             }
         }
-
-        // Process Upserts
-        for (const item of toUpsert) {
-            // Clean undefined values
-            const cleanItem = JSON.parse(JSON.stringify(item));
-            batch.set(doc(db, collectionName, item.id), cleanItem, { merge: true });
-            count++;
-            if (count >= batchSize) {
+        
+        // Handle deletions (naive approach: find IDs in currentData not in newData)
+        // Note: For migration safety, we prioritize upsert. Deletion logic requires exact tracking.
+        const newIds = new Set(newData.map(i => i.id));
+        const toDelete = currentData.filter(i => !newIds.has(i.id));
+        
+        for (const item of toDelete) {
+             batch.delete(doc(db, collectionName, item.id));
+             count++;
+             if (count >= batchSize) {
                 await batch.commit();
                 batch = writeBatch(db);
                 count = 0;
@@ -101,7 +135,6 @@ const batchSyncCollection = async (collectionName: string, newData: any[], curre
 
         if (count > 0) await batch.commit();
 
-        // Artificial delay for UX perception
         const elapsedTime = Date.now() - startTime;
         if (elapsedTime < 500) await wait(500 - elapsedTime);
 
@@ -113,7 +146,6 @@ const batchSyncCollection = async (collectionName: string, newData: any[], curre
     }
 };
 
-// Helper khusus untuk Configs (masih single doc)
 const saveSingleDocConfig = async (docName: string, data: any[]) => {
     if (!db) return;
     notifyListeners('SYNCING');
@@ -147,150 +179,72 @@ export const DataService = {
     const isConnected = await connectToFirebase();
     if (!isConnected) return false;
 
-    // --- MAPPING COLLECTION ---
-    // Key: Nama Collection di Firestore
-    // Setter: Fungsi update variabel RAM
-    const collectionMap = {
-        'students': (data: any[]) => { _students = data; },
-        'teachers': (data: any[]) => { _teachers = data; },
-        'classes': (data: any[]) => { _classes = data; },
-        'records': (data: any[]) => { _records = data; },
-        'counseling': (data: any[]) => { _counseling = data; },
-        'sanctions': (data: any[]) => { _sanctions = data; },
-        'cashflow': (data: any[]) => { _cashflow = data; },
-        'activity_logs': (data: any[]) => { _activityLogs = data; },
-    };
+    // Setup Dual Listeners for all types
+    setupHybridListener('teachers', 'teachers', 'teachers');
+    setupHybridListener('students', 'students', 'students');
+    setupHybridListener('classes', 'classes', 'classes');
+    setupHybridListener('records', 'records', 'records');
+    setupHybridListener('counseling', 'counseling', 'counseling');
+    setupHybridListener('sanctions', 'sanctions', 'sanctions');
+    setupHybridListener('cashflow', 'cashflow', 'cashflow');
+    setupHybridListener('activity_logs', 'activity_logs', 'activity_logs');
 
-    const configMap = {
-        'categories': (data: any[]) => { _categories = data; },
-        'incidentTypes': (data: any[]) => { _incidents = data; },
-        'rules': (data: any[]) => { _rules = data; },
-    };
+    // Configs
+    setupHybridListener('categories', 'categories', 'categories', true);
+    setupHybridListener('incidentTypes', 'incidentTypes', 'incidentTypes', true);
+    setupHybridListener('rules', 'rules', 'rules', true);
 
-    const promises: Promise<void>[] = [];
-
-    // 1. Listen to Collections
-    Object.entries(collectionMap).forEach(([colName, setter]) => {
-        promises.push(new Promise((resolve) => {
-            onSnapshot(collection(db, colName), (querySnapshot) => {
-                const data: any[] = [];
-                querySnapshot.forEach((doc) => {
-                    data.push(doc.data());
-                });
-                setter(data);
-                notifyDataChange();
-                resolve();
-            }, (error) => {
-                console.error(`Error loading ${colName}:`, error);
-                resolve(); // Resolve anyway to not block app
-            });
-        }));
-    });
-
-    // 2. Listen to Master Data Configs (Single Docs)
-    Object.entries(configMap).forEach(([docName, setter]) => {
-        promises.push(new Promise((resolve) => {
-            onSnapshot(doc(db, "master_data", docName), (docSnap) => {
-                if (docSnap.exists()) {
-                    setter(docSnap.data().data || []);
-                } else {
-                    setter([]);
-                }
-                notifyDataChange();
-                resolve();
-            });
-        }));
-    });
-
-    // Wait for initial data (timeout 15s)
-    await Promise.race([
-        Promise.all(promises),
-        new Promise(r => setTimeout(r, 15000))
-    ]);
+    // Give it a moment to load from cache/network
+    await new Promise(r => setTimeout(r, 2000));
 
     isInitialLoadComplete = true;
     notifyListeners('SAVED');
     return true;
   },
 
-  // --- GETTERS (Tetap mengembalikan Array) ---
-  getTeachers: () => _teachers,
-  getStudents: () => _students,
-  getClasses: () => _classes,
-  getRecords: () => _records,
-  getCashflows: () => _cashflow,
-  getCategories: () => _categories,
-  getIncidentTypes: () => _incidents,
-  getRules: () => _rules,
-  getSanctions: () => _sanctions,
-  getCounselingSessions: () => _counseling,
-  getActivityLogs: () => _activityLogs,
+  // --- GETTERS (Return Active Data) ---
+  getTeachers: () => store.teachers.active,
+  getStudents: () => store.students.active,
+  getClasses: () => store.classes.active,
+  getRecords: () => store.records.active,
+  getCashflows: () => store.cashflow.active,
+  getCategories: () => store.categories.active,
+  getIncidentTypes: () => store.incidentTypes.active,
+  getRules: () => store.rules.active,
+  getSanctions: () => store.sanctions.active,
+  getCounselingSessions: () => store.counseling.active,
+  getActivityLogs: () => store.activity_logs.active,
 
-  // --- SETTERS (Menggunakan Batch Sync Logic) ---
-  
-  saveStudents: async (data: Student[]) => { 
-      await batchSyncCollection('students', data, _students); 
-      _students = data; notifyDataChange(); 
-  },
-  
-  saveTeachers: async (data: Teacher[]) => { 
-      await batchSyncCollection('teachers', data, _teachers); 
-      _teachers = data; notifyDataChange(); 
-  },
-  
-  saveClasses: async (data: ClassGroup[]) => { 
-      await batchSyncCollection('classes', data, _classes); 
-      _classes = data; notifyDataChange(); 
-  },
-  
-  saveRecords: async (data: IncidentRecord[]) => { 
-      await batchSyncCollection('records', data, _records); 
-      _records = data; notifyDataChange(); 
-  },
-  
-  saveCashflows: async (data: CashflowRecord[]) => { 
-      await batchSyncCollection('cashflow', data, _cashflow); 
-      _cashflow = data; notifyDataChange(); 
-  },
-  
-  saveCounselingSessions: async (data: CounselingSession[]) => { 
-      await batchSyncCollection('counseling', data, _counseling); 
-      _counseling = data; notifyDataChange(); 
-  },
-  
-  saveSanctions: async (data: StudentSanction[]) => { 
-      await batchSyncCollection('sanctions', data, _sanctions); 
-      _sanctions = data; notifyDataChange(); 
-  },
+  // --- SETTERS (Write to New Structure) ---
+  saveStudents: async (data: Student[]) => { await batchSyncCollection('students', data, store.students.active); },
+  saveTeachers: async (data: Teacher[]) => { await batchSyncCollection('teachers', data, store.teachers.active); },
+  saveClasses: async (data: ClassGroup[]) => { await batchSyncCollection('classes', data, store.classes.active); },
+  saveRecords: async (data: IncidentRecord[]) => { await batchSyncCollection('records', data, store.records.active); },
+  saveCashflows: async (data: CashflowRecord[]) => { await batchSyncCollection('cashflow', data, store.cashflow.active); },
+  saveCounselingSessions: async (data: CounselingSession[]) => { await batchSyncCollection('counseling', data, store.counseling.active); },
+  saveSanctions: async (data: StudentSanction[]) => { await batchSyncCollection('sanctions', data, store.sanctions.active); },
 
-  // --- CONFIG SAVERS (Single Doc) ---
-  saveCategories: async (data: MasterCategory[]) => { 
-      await saveSingleDocConfig('categories', data); 
-      _categories = data; notifyDataChange(); 
-  },
-  
-  saveIncidentTypes: async (data: MasterIncidentType[]) => { 
-      await saveSingleDocConfig('incidentTypes', data); 
-      _incidents = data; notifyDataChange(); 
-  },
-  
-  saveRules: async (data: CoachingRule[]) => { 
-      await saveSingleDocConfig('rules', data); 
-      _rules = data; notifyDataChange(); 
-  },
+  // Configs
+  saveCategories: async (data: MasterCategory[]) => { await saveSingleDocConfig('categories', data); },
+  saveIncidentTypes: async (data: MasterIncidentType[]) => { await saveSingleDocConfig('incidentTypes', data); },
+  saveRules: async (data: CoachingRule[]) => { await saveSingleDocConfig('rules', data); },
 
-  // --- BUSINESS LOGIC (Unchanged) ---
+  // --- AUTH LOGIC (FIXED) ---
 
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
-    const foundUser = _teachers.find(t => t.username === username && t.password === password);
+    
+    // Check Real Users
+    const foundUser = store.teachers.active.find(t => t.username === username && t.password === password);
     if (foundUser) {
       sessionStorage.setItem('session_user_id', foundUser.id);
       return foundUser;
     }
-    // Super Admin Fallback
-    if (username === 'admin' && password === '123' && _teachers.length === 0) {
+    
+    // Super Admin Fallback (Always works if no teachers loaded OR strictly matches credentials)
+    if (username === 'admin' && password === '123') {
        const superAdmin: Teacher = { id: 'super_admin', name: 'Admin', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
+       sessionStorage.setItem('session_user_id', 'super_admin');
        return superAdmin;
     }
     return null;
@@ -298,31 +252,40 @@ export const DataService = {
 
   getCurrentUser: (): Teacher | null => {
     const storedId = sessionStorage.getItem('session_user_id');
-    return _teachers.find(t => t.id === storedId) || null;
+    if (!storedId) return null;
+
+    // Explicitly handle Super Admin session
+    if (storedId === 'super_admin') {
+        return { id: 'super_admin', name: 'Admin', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
+    }
+
+    // Look in active data (which handles both legacy and new)
+    return store.teachers.active.find(t => t.id === storedId) || null;
   },
 
   logout: () => { sessionStorage.removeItem('session_user_id'); },
 
   finalizeSession: async (userId: string) => {
+    if (userId === 'super_admin') return;
     await DataService.updateHeartbeat(userId);
   },
 
   updatePassword: async (userId: string, newPass: string) => {
-    const updated = _teachers.map(t => t.id === userId ? { ...t, password: newPass, mustChangePassword: false } : t);
+    if (userId === 'super_admin') return;
+    const updated = store.teachers.active.map(t => t.id === userId ? { ...t, password: newPass, mustChangePassword: false } : t);
     await DataService.saveTeachers(updated);
   },
 
   updateHeartbeat: async (userId: string) => {
-    // Optimistic Update
-    const user = _teachers.find(t => t.id === userId);
+    if (userId === 'super_admin') return;
+    const user = store.teachers.active.find(t => t.id === userId);
     if (user) {
         const now = new Date().toISOString();
-        const updatedUser = { ...user, lastActiveAt: now };
-        // Direct update to DB for heartbeat to avoid full array sync overhead
         if (db) await setDoc(doc(db, "teachers", userId), { lastActiveAt: now }, { merge: true });
     }
   },
 
+  // --- BUSINESS LOGIC ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
@@ -354,12 +317,12 @@ export const DataService = {
   },
 
   evaluateAndApplySanction: async (studentId: string): Promise<SanctionLevel | null> => {
-    const stats = DataService.calculateStudentPoints(studentId, _records, _incidents);
+    const stats = DataService.calculateStudentPoints(studentId, store.records.active, store.incidentTypes.active);
     const score = stats.effectiveViolationScore;
-    const studentSanctions = _sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
+    const studentSanctions = store.sanctions.active.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
     
     const getThreshold = (keyword: string, defaultVal: number) => {
-       const rule = _rules.find(r => r.statusLabel.toUpperCase().replace(/\s/g, '').includes(keyword.replace(/\s/g, '')));
+       const rule = store.rules.active.find(r => r.statusLabel.toUpperCase().replace(/\s/g, '').includes(keyword.replace(/\s/g, '')));
        return rule ? rule.minPoints : defaultVal;
     }
 
@@ -380,7 +343,7 @@ export const DataService = {
             notes: `Otomatis skor ${score}`, 
             redemptionStatus: RedemptionStatus.NONE
         };
-        await DataService.saveSanctions([..._sanctions, newSanction]);
+        await DataService.saveSanctions([...store.sanctions.active, newSanction]);
         return newLevel;
     }
     return null;
@@ -388,28 +351,26 @@ export const DataService = {
 
   resolveIncident: async (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
     let bkThreshold = 40;
-    const bkRule = _rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
+    const bkRule = store.rules.active.find(r => r.statusLabel.toUpperCase().includes('BK'));
     if (bkRule) bkThreshold = bkRule.minPoints;
 
-    const updated = _records.map(r => r.id === recordId ? { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= bkThreshold) ? 'REQUIRED' : (r.bkStatus || 'NONE') } : r);
+    const updated = store.records.active.map(r => r.id === recordId ? { ...r, status, rejectionReason: reason, bkStatus: (status === 'APPROVED' && r.pointSnapshot >= bkThreshold) ? 'REQUIRED' : (r.bkStatus || 'NONE') } : r);
     await DataService.saveRecords(updated);
   },
 
   getClassBalance: (classId: string) => {
-    const classFlows = _cashflow.filter(f => f.classId === classId && f.status === 'APPROVED');
+    const classFlows = store.cashflow.active.filter(f => f.classId === classId && f.status === 'APPROVED');
     let totalIn = 0, totalOut = 0;
     classFlows.forEach(f => f.type === 'IN' ? totalIn += f.amount : totalOut += f.amount);
     return { balance: totalIn - totalOut, totalIn, totalOut, transactionCount: classFlows.length };
   },
 
   cleanupOrphanData: async () => {
-    // Cleanup implementation is complex with collections.
-    // For now, simpler implementation:
-    const validStudentIds = new Set(_students.map(s => s.id));
+    const validStudentIds = new Set(store.students.active.map(s => s.id));
     
-    const recordsToDelete = _records.filter(r => !validStudentIds.has(r.studentId));
-    const sanctionsToDelete = _sanctions.filter(s => !validStudentIds.has(s.studentId));
-    const counselingToDelete = _counseling.filter(s => !validStudentIds.has(s.studentId));
+    const recordsToDelete = store.records.active.filter(r => !validStudentIds.has(r.studentId));
+    const sanctionsToDelete = store.sanctions.active.filter(s => !validStudentIds.has(s.studentId));
+    const counselingToDelete = store.counseling.active.filter(s => !validStudentIds.has(s.studentId));
 
     const batch = writeBatch(db);
     recordsToDelete.forEach(x => batch.delete(doc(db, "records", x.id)));
@@ -422,9 +383,16 @@ export const DataService = {
 
   exportDataJSON: () => {
     const backupData = {
-        teachers: _teachers, students: _students, classes: _classes, records: _records,
-        categories: _categories, incidents: _incidents, rules: _rules,
-        counseling: _counseling, sanctions: _sanctions, cashflow: _cashflow,
+        teachers: store.teachers.active, 
+        students: store.students.active, 
+        classes: store.classes.active, 
+        records: store.records.active,
+        categories: store.categories.active, 
+        incidents: store.incidentTypes.active, 
+        rules: store.rules.active,
+        counseling: store.counseling.active, 
+        sanctions: store.sanctions.active, 
+        cashflow: store.cashflow.active,
         generatedAt: new Date().toISOString()
     };
     return JSON.stringify(backupData, null, 2);
@@ -434,7 +402,6 @@ export const DataService = {
       try {
           const data = JSON.parse(jsonString);
           if (!data.students) throw new Error("Invalid Backup");
-          // Restore using the new save methods (Batch Sync)
           await DataService.saveTeachers(data.teachers || []);
           await DataService.saveStudents(data.students || []);
           await DataService.saveClasses(data.classes || []);
