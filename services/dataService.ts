@@ -6,7 +6,7 @@ import {
 } from '../types';
 
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
-import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc, writeBatch } from 'firebase/firestore';
 
 // --- RAM STORAGE ---
 let _teachers: Teacher[] = [];
@@ -223,21 +223,16 @@ export const DataService = {
     sessionStorage.removeItem('session_user_id');
   },
 
-  // Fungsi baru untuk sinkronisasi terakhir sebelum logout
   finalizeSession: async (userId: string) => {
     if (!db) return;
     notifyListeners('SYNCING');
     try {
-        // Update heartbeat sebagai penanda aktivitas terakhir
         await DataService.updateHeartbeat(userId);
-        
-        // Jeda buatan agar UX terasa "menyimpan" dan memastikan network flush
         await wait(1500); 
-        
         notifyListeners('SAVED');
     } catch (error) {
         console.error("Logout sync error", error);
-        notifyListeners('IDLE'); // Reset ke idle jika gagal, agar logout tetap bisa lanjut
+        notifyListeners('IDLE'); 
     }
   },
 
@@ -249,8 +244,6 @@ export const DataService = {
   updateHeartbeat: async (userId: string) => {
     const now = new Date().toISOString();
     const updated = _teachers.map(t => t.id === userId ? { ...t, lastActiveAt: now } : t);
-    // Kita gunakan setDoc langsung tanpa pushToCloud penuh agar lebih ringan/spesifik untuk background task
-    // Namun untuk konsistensi cache RAM, kita update _teachers juga
     _teachers = updated;
     await setDoc(doc(db, "school_data", "teachers"), { data: updated });
   },
@@ -290,20 +283,17 @@ export const DataService = {
     const score = stats.effectiveViolationScore;
     const studentSanctions = _sanctions.filter(s => s.studentId === studentId && s.redemptionStatus !== RedemptionStatus.COMPLETED);
     
-    // --- LOGIKA DINAMIS BERDASARKAN RULES ---
-    // Mencari aturan yang mengandung kata "SP 1", "SP 2", "SP 3" di labelnya
     const getThreshold = (keyword: string, defaultVal: number) => {
        const rule = _rules.find(r => r.statusLabel.toUpperCase().replace(/\s/g, '').includes(keyword.replace(/\s/g, '')));
        return rule ? rule.minPoints : defaultVal;
     }
 
-    const limitSP3 = getThreshold('SP3', 160); // Default 160 jika rule tidak ditemukan
-    const limitSP2 = getThreshold('SP2', 120); // Default 120
-    const limitSP1 = getThreshold('SP1', 80);  // Default 80
+    const limitSP3 = getThreshold('SP3', 160);
+    const limitSP2 = getThreshold('SP2', 120); 
+    const limitSP1 = getThreshold('SP1', 80); 
 
     let newLevel: SanctionLevel | null = null;
     
-    // Evaluasi dari yang terberat
     if (score >= limitSP3 && !studentSanctions.some(s => s.level === SanctionLevel.SP3)) {
        newLevel = SanctionLevel.SP3;
     } else if (score >= limitSP2 && !studentSanctions.some(s => s.level === SanctionLevel.SP2)) {
@@ -326,9 +316,7 @@ export const DataService = {
   },
 
   resolveIncident: async (recordId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING', reason?: string) => {
-    // Logic BK Trigger juga perlu dinamis (default 40)
     let bkThreshold = 40;
-    // Cari rule yang mengandung "BK" jika ada, untuk menentukan batas minimal konseling
     const bkRule = _rules.find(r => r.statusLabel.toUpperCase().includes('BK'));
     if (bkRule) bkThreshold = bkRule.minPoints;
 
@@ -343,10 +331,67 @@ export const DataService = {
     return { balance: totalIn - totalOut, totalIn, totalOut, transactionCount: classFlows.length };
   },
 
+  // --- MAINTENANCE & BACKUP FEATURES ---
+
   cleanupOrphanData: async () => {
     const validStudentIds = new Set(_students.map(s => s.id));
+    
+    // Cleanup Records
     const validRecords = _records.filter(r => validStudentIds.has(r.studentId));
-    if (_records.length !== validRecords.length) await DataService.saveRecords(validRecords);
-    return { deletedRecords: _records.length - validRecords.length };
+    const recordsDeleted = _records.length - validRecords.length;
+    
+    // Cleanup Sanctions
+    const validSanctions = _sanctions.filter(s => validStudentIds.has(s.studentId));
+    const sanctionsDeleted = _sanctions.length - validSanctions.length;
+
+    // Cleanup Counseling
+    const validCounseling = _counseling.filter(s => validStudentIds.has(s.studentId));
+    const counselingDeleted = _counseling.length - validCounseling.length;
+
+    if (recordsDeleted > 0) await DataService.saveRecords(validRecords);
+    if (sanctionsDeleted > 0) await DataService.saveSanctions(validSanctions);
+    if (counselingDeleted > 0) await DataService.saveCounselingSessions(validCounseling);
+
+    return { recordsDeleted, sanctionsDeleted, counselingDeleted };
+  },
+
+  exportDataJSON: () => {
+    const backupData = {
+        teachers: _teachers,
+        students: _students,
+        classes: _classes,
+        records: _records,
+        categories: _categories,
+        incidents: _incidents,
+        rules: _rules,
+        counseling: _counseling,
+        sanctions: _sanctions,
+        cashflow: _cashflow,
+        generatedAt: new Date().toISOString()
+    };
+    return JSON.stringify(backupData, null, 2);
+  },
+
+  restoreDataJSON: async (jsonString: string) => {
+      try {
+          const data = JSON.parse(jsonString);
+          if (!data.students || !data.teachers) throw new Error("Format backup tidak valid.");
+
+          await DataService.saveTeachers(data.teachers || []);
+          await DataService.saveStudents(data.students || []);
+          await DataService.saveClasses(data.classes || []);
+          await DataService.saveRecords(data.records || []);
+          await DataService.saveCategories(data.categories || []);
+          await DataService.saveIncidentTypes(data.incidents || []);
+          await DataService.saveRules(data.rules || []);
+          await DataService.saveSanctions(data.sanctions || []);
+          await DataService.saveCounselingSessions(data.counseling || []);
+          await DataService.saveCashflows(data.cashflow || []);
+          
+          return true;
+      } catch (error) {
+          console.error("Restore failed", error);
+          return false;
+      }
   }
 };
