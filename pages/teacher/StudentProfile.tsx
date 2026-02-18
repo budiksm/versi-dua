@@ -125,6 +125,13 @@ const StudentProfile: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
+  // --- SAFE DATE HELPER (Mencegah NaN error pada Date) ---
+  const safeDate = (dateStr?: string | null): Date => {
+      if (!dateStr) return new Date();
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? new Date() : d;
+  };
+
   useEffect(() => {
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
@@ -138,10 +145,10 @@ const StudentProfile: React.FC = () => {
     return () => unsubscribe();
   }, [studentId, refreshKey]);
 
-  // LOGIC SANKSI CERDAS
+  // LOGIC SANKSI CERDAS (With Guards)
   useEffect(() => {
-      if (student && rules.length > 0) {
-          const stats = DataService.calculateStudentPoints(student.id, records, incidents);
+      if (student && rules && rules.length > 0) {
+          const stats = DataService.calculateStudentPoints(student.id, records || [], incidents || []);
           const score = stats.effectiveViolationScore;
           
           const currentRule = rules.find(r => score >= r.minPoints && score <= r.maxPoints);
@@ -156,7 +163,7 @@ const StudentProfile: React.FC = () => {
               else if (label.includes('DROP')) targetLevel = SanctionLevel.DROP_OUT;
           }
 
-          const existingLevels = sanctions.map(s => s.level);
+          const existingLevels = (sanctions || []).map(s => s.level);
           const allLevels = Object.values(SanctionLevel);
           
           let filteredOptions = allLevels.filter(lvl => !existingLevels.includes(lvl));
@@ -182,8 +189,11 @@ const StudentProfile: React.FC = () => {
         
         if (foundStudent) {
             setStudent(foundStudent);
+            
+            // Safe Loaders
             const allRecords = DataService.getRecords() || [];
             setRecords(allRecords.filter((r: any) => r && r.studentId === studentId));
+            
             setCategories(DataService.getCategories() || []);
             setIncidents(DataService.getIncidentTypes() || []);
             setRules(DataService.getRules() || []);
@@ -204,18 +214,58 @@ const StudentProfile: React.FC = () => {
     }
   };
 
-  // ... (Other functions mostly same, but check for Date parsing safety) ...
   const handleOpenDetail = (item: any) => {
-      // ... safe copy from previous, omitted for brevity but logic is same
+      const story: StoryStep[] = [];
+      let relatedIncidentIds: string[] = [];
+      if ('incidentTypeId' in item) relatedIncidentIds = [item.id];
+      else if ('sessionType' in item) relatedIncidentIds = item.relatedRecordIds || [];
+
+      const relatedIncidents = (records || []).filter(r => relatedIncidentIds.includes(r.id));
+      relatedIncidents.forEach(inc => {
+          const incName = incidents.find(i => i.id === inc.incidentTypeId)?.name || 'Unknown';
+          story.push({ id: inc.id, date: inc.date, type: 'INCIDENT', title: 'Pencatatan Pelanggaran', actor: `Guru: ${inc.recordedBy}`, description: `${incName}. ${inc.notes}`, statusLabel: inc.status === 'PENDING' ? 'Menunggu Verifikasi' : 'Terverifikasi', statusColor: inc.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700', attachmentUrl: inc.proofImage, scoreImpact: inc.pointSnapshot });
+          if (inc.status === 'APPROVED') story.push({ id: `${inc.id}_approve`, date: inc.date, type: 'APPROVAL', title: 'Persetujuan Wali Kelas', actor: 'Wali Kelas', description: 'Laporan diverifikasi valid dan poin dicatat.', statusLabel: 'Aktif', statusColor: 'bg-green-100 text-green-700' });
+      });
+
+      const relevantSessions = counselingSessions.filter(s => s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) || ('id' in item && item.id === s.id));
+      relevantSessions.forEach(sess => {
+          let title = 'Pembinaan';
+          let color = 'bg-blue-100 text-blue-700';
+          let label = sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai';
+          
+          if (sess.sessionType === 'BK') title = 'Konseling BK';
+          if (sess.sessionType === 'HOMEROOM') title = 'Pembinaan Wali Kelas';
+          if (sess.sessionType === 'KESISWAAN') { 
+              title = 'Tindakan Kesiswaan'; 
+              color = 'bg-red-100 text-red-700';
+              if (sess.recommendation === 'TO_BK') {
+                  label = 'Dikembalikan ke BK';
+              }
+          }
+
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: title, actor: `${sess.counselorName}`, description: sess.notes, statusLabel: label, statusColor: color, attachmentUrl: sess.attachmentUrl });
+      });
+
+      if ('level' in item) {
+          const s = item as StudentSanction;
+          story.push({ id: s.id, date: s.assignedDate, type: 'SANCTION', title: 'Tindakan Kesiswaan', actor: `Kesiswaan (${s.assignedBy})`, description: `Diterbitkan ${s.level}. Alasan: ${s.notes}`, statusLabel: s.redemptionStatus === 'COMPLETED' ? 'Sanksi Selesai' : 'Sanksi Aktif', statusColor: 'bg-red-100 text-red-700' });
+      }
+      story.sort((a,b) => {
+          const dA = safeDate(a.date).getTime();
+          const dB = safeDate(b.date).getTime();
+          return dA - dB;
+      });
+      if (story.length === 0 && 'sessionType' in item) { 
+          const sess = item as CounselingSession;
+          let title = sess.sessionType === 'BK' ? 'Konseling Preventif' : 'Pembinaan Preventif';
+          if (sess.sessionType === 'KESISWAAN') title = 'Log Kesiswaan';
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: title, actor: sess.counselorName, description: sess.notes, statusLabel: 'Preventif', statusColor: 'bg-blue-50 text-blue-600', attachmentUrl: sess.attachmentUrl });
+      }
+      setStoryLine(story);
       setDetailModalOpen(true);
   };
-  
-  // SAFE DATE PARSING HELPER
-  const safeDate = (dateStr: string) => {
-      const d = new Date(dateStr);
-      return isNaN(d.getTime()) ? new Date() : d;
-  };
 
+  const toggleCounselingRecord = (id: string) => { if (selectedCounselingRecords.includes(id)) setSelectedCounselingRecords(p => p.filter(x => x !== id)); else setSelectedCounselingRecords(p => [...p, id]); };
   const handleTypeChange = (type: IncidentTypeCategory) => { setFormType(type); setSelectedCategory(''); setSelectedIncident(''); };
   
   // CLIENT-SIDE IMAGE COMPRESSION (BASE64)
@@ -247,8 +297,6 @@ const StudentProfile: React.FC = () => {
     if (file) { setIsCompressing(true); try { const compressedBase64 = await compressImage(file); setImageProof(compressedBase64); } catch (error) { alert("Gagal memproses gambar."); } finally { setIsCompressing(false); } }
   };
 
-  const toggleCounselingRecord = (id: string) => { if (selectedCounselingRecords.includes(id)) setSelectedCounselingRecords(p => p.filter(x => x !== id)); else setSelectedCounselingRecords(p => [...p, id]); };
-
   const handleSubmitIncident = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedIncident || !selectedCategory || !student) return;
@@ -262,8 +310,8 @@ const StudentProfile: React.FC = () => {
         
         const newRecord: IncidentRecord = { id: `rec_${Date.now()}`, studentId: student.id, incidentTypeId: selectedIncident, date: new Date().toISOString(), notes: notes, proofImage: imageProof || undefined, recordedBy: currentUser?.name || 'Unknown', pointSnapshot: incidentDef.points, typeSnapshot: incidentDef.type, status: initialStatus };
         
-        // CRITICAL FIX: Safe access to statusLabel
-        const bkRule = rules.find(r => (r.statusLabel || '').toUpperCase().includes('BK'));
+        // SAFE GUARD
+        const bkRule = (rules || []).find(r => (r.statusLabel || '').toUpperCase().includes('BK'));
         const bkThreshold = bkRule ? bkRule.minPoints : 40;
         if (initialStatus === 'APPROVED' && newRecord.pointSnapshot >= bkThreshold && newRecord.typeSnapshot === IncidentTypeCategory.VIOLATION) newRecord.bkStatus = 'REQUIRED';
         
@@ -274,11 +322,9 @@ const StudentProfile: React.FC = () => {
     } catch (error) { alert("Gagal menyimpan data."); } finally { setIsSubmitting(false); }
   };
 
-  // ... (Other handlers identical but using safe access) ...
   const handleSubmitCounseling = async (e: React.FormEvent, type: 'BK' | 'HOMEROOM') => {
     e.preventDefault();
     if (!student) return;
-    // VALIDASI WAJIB: Catatan & Foto
     if (!counselingNotes.trim()) { alert("Catatan pembinaan wajib diisi!"); return; }
     if (!imageProof) { alert("Wajib melampirkan foto bukti pembinaan!"); return; }
     if (counselingRec === 'ROUTINE_MONITORING' && !nextEvaluationDate) { alert("Tanggal evaluasi wajib diisi untuk Pantauan Rutin."); return; }
@@ -341,19 +387,54 @@ const StudentProfile: React.FC = () => {
     } catch (error) { alert("Gagal menyimpan sesi konseling."); } finally { setIsSubmitting(false); }
   };
 
-  const handleKesiswaanAction = async (action: 'CLOSE' | 'RETURN_TO_BK') => {
-      // ... same logic
-  };
-
   const handleAssignSanction = async (e: React.FormEvent) => {
-      // ... same logic
+    e.preventDefault();
+    if(!student) return;
+    setIsSubmitting(true);
+    try {
+        const allSanctions = DataService.getSanctions();
+        if (editingSanctionId) {
+            const updatedSanctions = allSanctions.map(s => {
+                if (s.id === editingSanctionId) {
+                    return { ...s, level: sanctionLevel, notes: sanctionNotes, redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : s.redemptionStatus, redemptionTask: sanctionRedemptionTask, assignedBy: `${s.assignedBy} & ${currentUser?.name}` };
+                }
+                return s;
+            });
+            await DataService.saveSanctions(updatedSanctions);
+            setSuccessMsg('Data sanksi berhasil diperbarui!');
+        } else {
+            const newSanction: StudentSanction = { id: `san_${Date.now()}`, studentId: student.id, level: sanctionLevel, assignedBy: currentUser?.name || 'Kesiswaan', assignedDate: new Date().toISOString(), notes: sanctionNotes, redemptionStatus: sanctionRedemptionTask ? RedemptionStatus.ASSIGNED : RedemptionStatus.NONE, redemptionTask: sanctionRedemptionTask, isRedeemed: false };
+            await DataService.saveSanctions([...allSanctions, newSanction]);
+            
+            // Mark referred records as COMPLETED if sanction given
+            if (activeReferralRecords.length > 0) {
+                const recIds = activeReferralRecords.map(r => r.id);
+                // Call helper to close cases related
+                const updatedRecords = DataService.getRecords().map(r => {
+                    if (recIds.includes(r.id)) return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
+                    return r;
+                });
+                await DataService.saveRecords(updatedRecords);
+            }
+
+            setSuccessMsg('Sanksi baru ditetapkan!');
+        }
+        setSanctionNotes(''); setSanctionRedemptionTask(''); setEditingSanctionId(null); setRefreshKey(prev => prev + 1); setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (error) { alert("Gagal menyimpan sanksi."); } finally { setIsSubmitting(false); }
   };
 
   const startEditSanction = (s: StudentSanction) => { setEditingSanctionId(s.id); setSanctionLevel(s.level); setSanctionNotes(s.notes); setSanctionRedemptionTask(s.redemptionTask || ''); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cancelEditSanction = () => { setEditingSanctionId(null); setSanctionNotes(''); setSanctionRedemptionTask(''); };
   
   const updateRedemptionStatus = async (sanctionId: string, status: RedemptionStatus) => {
-    // ... same logic
+    setIsSubmitting(true);
+    try {
+        const updatedSanctions = DataService.getSanctions().map(s => s.id === sanctionId ? { ...s, redemptionStatus: status, redemptionDate: status === RedemptionStatus.COMPLETED ? new Date().toISOString() : s.redemptionDate, isRedeemed: status === RedemptionStatus.COMPLETED } : s);
+        await DataService.saveSanctions(updatedSanctions);
+        setRefreshKey(prev => prev + 1);
+        if (status === RedemptionStatus.IN_PROGRESS) setSuccessMsg('Penebusan dimulai!'); else if (status === RedemptionStatus.COMPLETED) setSuccessMsg('Sanksi diselesaikan!');
+        setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err) { alert("Gagal update status."); } finally { setIsSubmitting(false); }
   };
 
   const translateRecommendation = (rec: string) => { switch(rec) { case 'PARENT_CALL': return 'Panggilan Orang Tua'; case 'TO_KESISWAAN': return 'Rujuk ke Kesiswaan'; case 'SUSPENSION_REVIEW': return 'Tinjauan Skorsing'; case 'TO_BK': return 'Rujuk ke BK'; case 'ROUTINE_MONITORING': return 'Pantauan Rutin'; case 'COMPLETED': return 'Selesai'; default: return '-'; } };
@@ -367,22 +448,25 @@ const StudentProfile: React.FC = () => {
   if (isLoading) return <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-500"><Loader2 className="h-12 w-12 animate-spin text-indigo-600 mb-4" /><p>Memuat profil siswa...</p></div>;
   if (!student) return <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-500"><div className="bg-red-50 p-6 rounded-full mb-4"><User className="h-12 w-12 text-red-400" /></div><h2 className="text-xl font-bold text-slate-800">Siswa Tidak Ditemukan</h2><p className="mb-6">Data siswa mungkin telah dihapus atau ID tidak valid.</p><button onClick={() => navigate(-1)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">Kembali</button></div>;
 
-  const stats = DataService.calculateStudentPoints(student.id, records, incidents);
-  const recommendedStatus = DataService.getCoachingStatus(stats.effectiveViolationScore, rules);
-  const history = [...records].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const activeSanction = sanctions.find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
-  const studentClass = classes.find(c => c.id === student.classId);
+  // SAFE CALCULATION
+  const stats = DataService.calculateStudentPoints(student.id, records || [], incidents || []);
+  const recommendedStatus = DataService.getCoachingStatus(stats.effectiveViolationScore, rules) || { id: 'default', statusLabel: 'Normal', color: 'bg-emerald-100 text-emerald-800', minPoints: 0, maxPoints: 0 };
+  
+  const history = [...(records || [])].sort((a, b) => safeDate(b.date).getTime() - safeDate(a.date).getTime());
+  const activeSanction = (sanctions || []).find(s => s.redemptionStatus !== RedemptionStatus.COMPLETED);
+  const studentClass = (classes || []).find(c => c.id === student.classId);
   const className = studentClass ? `Kelas ${studentClass.name}` : 'Kelas Tidak Diketahui';
   const isReporterHomeroom = currentUser?.id === studentClass?.homeroomTeacherId;
-  const homeroomSessions = counselingSessions.filter(s => s.sessionType === 'HOMEROOM');
-  const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType || s.sessionType === 'KESISWAAN');
-  const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  const homeroomSessions = (counselingSessions || []).filter(s => s.sessionType === 'HOMEROOM');
+  const bkSessions = (counselingSessions || []).filter(s => s.sessionType === 'BK' || !s.sessionType || s.sessionType === 'KESISWAAN');
+  const violationRecords = (records || []).filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => safeDate(b.date).getTime() - safeDate(a.date).getTime());
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED_TO_KESISWAAN');
   const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED_TO_KESISWAAN');
   const activeReferralRecords = violationRecords.filter(r => r.bkStatus === 'REFERRED_TO_KESISWAAN');
   
-  // CRITICAL FIX: Safe access to statusLabel
-  const bkRule = rules.find(r => (r.statusLabel || '').toUpperCase().includes('BK'));
+  // SAFE ACCESS
+  const bkRule = (rules || []).find(r => (r.statusLabel || '').toUpperCase().includes('BK'));
   const bkThreshold = bkRule ? bkRule.minPoints : 40;
   const hasMandatoryBKCondition = stats.effectiveViolationScore >= bkThreshold || counselingSessions.some(s => s.sessionType === 'HOMEROOM' && s.recommendation === 'TO_BK') || records.some(r => r.bkStatus === 'REQUIRED');
   
@@ -399,7 +483,20 @@ const StudentProfile: React.FC = () => {
   const canRecord = isEducator; 
   const filteredCategories = categories.filter(c => c.targetType === formType);
   const filteredIncidents = incidents.filter(i => i.isActive && i.type === formType && i.categoryId === selectedCategory);
-  const activeHomeroomReferral = homeroomSessions.find(s => { if (s.recommendation !== 'TO_BK') return false; const relatedIds = s.relatedRecordIds || []; if (relatedIds.length > 0) { const hasActiveIncident = relatedIds.some(id => { const rec = records.find(r => r.id === id); return rec && rec.bkStatus !== 'COMPLETED'; }); return hasActiveIncident; } const newerBK = bkSessions.find(bk => new Date(bk.date) > new Date(s.date)); return !newerBK; });
+  
+  const activeHomeroomReferral = homeroomSessions.find(s => { 
+      if (s.recommendation !== 'TO_BK') return false; 
+      const relatedIds = s.relatedRecordIds || []; 
+      if (relatedIds.length > 0) { 
+          const hasActiveIncident = relatedIds.some(id => { 
+              const rec = records.find(r => r.id === id); 
+              return rec && rec.bkStatus !== 'COMPLETED'; 
+          }); 
+          return hasActiveIncident; 
+      } 
+      const newerBK = bkSessions.find(bk => safeDate(bk.date) > safeDate(s.date)); 
+      return !newerBK; 
+  });
 
   // LOGIC VISIBILITAS TAB PEMBINAAN WALI KELAS (New Requirement)
   const hasApprovedViolations = records.some(r => r.typeSnapshot === IncidentTypeCategory.VIOLATION && r.status === 'APPROVED');
@@ -412,15 +509,6 @@ const StudentProfile: React.FC = () => {
           setHomeroomMode('PREVENTIVE');
       }
   }, [activeTab, showCaseCoachingOption]);
-
-  // FIND LATEST BK REFERRAL SESSION FOR DISPLAY (Safe Sorting)
-  const latestReferralSession = counselingSessions
-    .filter(s => s.sessionType === 'BK' && (s.recommendation === 'TO_KESISWAAN' || s.recommendation === 'SUSPENSION_REVIEW'))
-    .sort((a,b) => {
-        const dA = new Date(a.date).getTime();
-        const dB = new Date(b.date).getTime();
-        return (isNaN(dB) ? 0 : dB) - (isNaN(dA) ? 0 : dA);
-    })[0];
 
   return (
     <div className="space-y-8 pb-12 animate-fade-in relative">
@@ -496,13 +584,12 @@ const StudentProfile: React.FC = () => {
         {/* --- OTHER TABS (HOMEROOM, BK) --- */}
         {activeTab === 'HOMEROOM' && isReporterHomeroom && (
            <>
-             {/* ... Homeroom Input Form (Same as before) ... */}
+             {/* ... Homeroom Input Form ... */}
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                   {/* ... Header ... */}
                    <div className="p-6 border-b flex justify-between items-center bg-orange-50 border-orange-100"><h2 className="font-bold flex items-center gap-2 text-orange-800"><User className="h-5 w-5" /> Catat Pembinaan Wali Kelas</h2></div>
                    
-                   {/* MODIFIED: Contextual Visibility Logic */}
+                   {/* Contextual Visibility */}
                    <div className="px-6 pt-6">
                        {showCaseCoachingOption ? (
                            <div className="flex p-1 bg-slate-100 rounded-lg">
