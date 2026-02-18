@@ -74,8 +74,8 @@ export interface MasterIncidentType {
 }
 
 export type IncidentStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
-// UPDATED: Added 'REFERRED' for cases sent to Kesiswaan
-export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED' | 'REFERRED'; 
+// UPDATED: Added 'RETURNED_TO_BK'
+export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED' | 'REFERRED' | 'RETURNED_TO_BK'; 
 
 export interface IncidentRecord {
   id: string;
@@ -113,7 +113,7 @@ export interface CounselingSession {
   notes: string; 
   recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK';
   status: 'OPEN' | 'CLOSED';
-  sessionType?: 'BK' | 'HOMEROOM'; // Distinguish between BK session and Homeroom coaching
+  sessionType?: 'BK' | 'HOMEROOM' | 'KESISWAAN'; // Added KESISWAAN for logging decisions
   relatedRecordIds?: string[]; // LINK TO SPECIFIC INCIDENTS (CASE BASED)
   attachmentUrl?: string; // NEW: Mandatory proof for counseling
 }

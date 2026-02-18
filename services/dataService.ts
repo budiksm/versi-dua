@@ -362,16 +362,48 @@ export const DataService = {
     await DataService.saveRecords(updated);
   },
 
-  // --- NEW: KESISWAAN ACTION (Process Referral) ---
-  processKesiswaanReferral: async (recordIds: string[], action: 'CLOSE' | 'RETURN_TO_BK') => {
-      const updated = store.records.active.map(r => {
+  // --- UPDATED: KESISWAAN ACTION (Process Referral & LOG HISTORY) ---
+  processKesiswaanReferral: async (
+      recordIds: string[], 
+      action: 'CLOSE' | 'RETURN_TO_BK', 
+      notes: string, 
+      attachmentUrl?: string, 
+      officerName?: string,
+      officerId?: string
+  ) => {
+      const statusMap = {
+          'CLOSE': 'COMPLETED',
+          'RETURN_TO_BK': 'RETURNED_TO_BK'
+      };
+      
+      // 1. Update Records
+      const updatedRecords = store.records.active.map(r => {
           if (recordIds.includes(r.id)) {
-              if (action === 'CLOSE') return { ...r, bkStatus: 'COMPLETED' as BkCounselingStatus };
-              if (action === 'RETURN_TO_BK') return { ...r, bkStatus: 'REQUIRED' as BkCounselingStatus };
+              return { ...r, bkStatus: statusMap[action] as BkCounselingStatus };
           }
           return r;
       });
-      await DataService.saveRecords(updated);
+      await DataService.saveRecords(updatedRecords);
+
+      // 2. Create History Log (CounselingSession of type KESISWAAN)
+      // We need a studentId. Assuming all recordIds belong to the same student.
+      const sampleRecord = store.records.active.find(r => recordIds.includes(r.id));
+      if (sampleRecord) {
+          const logSession: CounselingSession = {
+              id: `act_kes_${Date.now()}`,
+              studentId: sampleRecord.studentId,
+              counselorId: officerId || 'kesiswaan',
+              counselorName: officerName || 'Kesiswaan',
+              date: new Date().toISOString(),
+              notes: notes,
+              recommendation: action === 'CLOSE' ? 'NONE' : 'TO_BK',
+              status: 'CLOSED', // Admin actions are immediate
+              sessionType: 'KESISWAAN',
+              relatedRecordIds: recordIds,
+              attachmentUrl: attachmentUrl
+          };
+          await DataService.saveCounselingSessions([...store.counseling.active, logSession]);
+      }
   },
 
   getClassBalance: (classId: string) => {

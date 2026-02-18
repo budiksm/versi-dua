@@ -58,7 +58,7 @@ import {
 interface StoryStep {
   id: string;
   date: string;
-  type: 'INCIDENT' | 'APPROVAL' | 'COUNSELING_WALAS' | 'COUNSELING_BK' | 'SANCTION';
+  type: 'INCIDENT' | 'APPROVAL' | 'COUNSELING_WALAS' | 'COUNSELING_BK' | 'SANCTION' | 'KESISWAAN';
   title: string;
   actor: string;
   description: string;
@@ -211,7 +211,7 @@ const StudentProfile: React.FC = () => {
 
       const relevantSessions = counselingSessions.filter(s => s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) || ('id' in item && item.id === s.id));
       relevantSessions.forEach(sess => {
-          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling BK' : 'Pembinaan Wali Kelas', actor: `${sess.sessionType === 'BK' ? 'Guru BK' : 'Wali Kelas'}: ${sess.counselorName}`, description: sess.notes, statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai', statusColor: 'bg-blue-100 text-blue-700', attachmentUrl: sess.attachmentUrl });
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType as any, title: sess.sessionType === 'BK' ? 'Konseling BK' : sess.sessionType === 'KESISWAAN' ? 'Keputusan Kesiswaan' : 'Pembinaan Wali Kelas', actor: `${sess.sessionType}: ${sess.counselorName}`, description: sess.notes, statusLabel: sess.recommendation !== 'NONE' ? translateRecommendation(sess.recommendation) : 'Selesai', statusColor: 'bg-blue-100 text-blue-700', attachmentUrl: sess.attachmentUrl });
       });
 
       if ('level' in item) {
@@ -221,7 +221,7 @@ const StudentProfile: React.FC = () => {
       story.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       if (story.length === 0 && 'sessionType' in item) { 
           const sess = item as CounselingSession;
-          story.push({ id: sess.id, date: sess.date, type: sess.sessionType === 'BK' ? 'COUNSELING_BK' : 'COUNSELING_WALAS', title: sess.sessionType === 'BK' ? 'Konseling Preventif' : 'Pembinaan Preventif', actor: sess.counselorName, description: sess.notes, statusLabel: 'Preventif', statusColor: 'bg-blue-50 text-blue-600', attachmentUrl: sess.attachmentUrl });
+          story.push({ id: sess.id, date: sess.date, type: sess.sessionType as any, title: sess.sessionType === 'BK' ? 'Konseling Preventif' : 'Pembinaan Preventif', actor: sess.counselorName, description: sess.notes, statusLabel: 'Preventif', statusColor: 'bg-blue-50 text-blue-600', attachmentUrl: sess.attachmentUrl });
       }
       setStoryLine(story);
       setDetailModalOpen(true);
@@ -393,7 +393,7 @@ const StudentProfile: React.FC = () => {
   const bkSessions = counselingSessions.filter(s => s.sessionType === 'BK' || !s.sessionType);
   const violationRecords = records.filter(r => r.typeSnapshot === 'VIOLATION').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
-  // FIX: Also exclude REFERRED from BK form so they don't double process
+  // FIX: Also exclude REFERRED and RETURNED_TO_BK from BK form list to avoid duplicates
   const activeViolationRecordsForForm = violationRecords.filter(r => r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED');
   
   const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED');
@@ -413,7 +413,27 @@ const StudentProfile: React.FC = () => {
   const canRecord = isEducator; 
   const filteredCategories = categories.filter(c => c.targetType === formType);
   const filteredIncidents = incidents.filter(i => i.isActive && i.type === formType && i.categoryId === selectedCategory);
-  const activeHomeroomReferral = homeroomSessions.find(s => { if (s.recommendation !== 'TO_BK') return false; const relatedIds = s.relatedRecordIds || []; if (relatedIds.length > 0) { const hasActiveIncident = relatedIds.some(id => { const rec = records.find(r => r.id === id); return rec && rec.bkStatus !== 'COMPLETED'; }); return hasActiveIncident; } const newerBK = bkSessions.find(bk => new Date(bk.date) > new Date(s.date)); return !newerBK; });
+  
+  // Logic to find returned cases
+  const returnedCaseRecords = records.filter(r => r.studentId === student.id && r.bkStatus === 'RETURNED_TO_BK');
+  const hasReturnedCase = returnedCaseRecords.length > 0;
+
+  // Logic for Homeroom Referral
+  const activeHomeroomReferral = homeroomSessions.find(s => { 
+      if (s.recommendation !== 'TO_BK') return false; 
+      const relatedIds = s.relatedRecordIds || []; 
+      if (relatedIds.length > 0) { 
+          // Referral is active if any related record is NOT completed
+          const hasActiveIncident = relatedIds.some(id => { 
+              const rec = records.find(r => r.id === id); 
+              return rec && rec.bkStatus !== 'COMPLETED' && rec.bkStatus !== 'REFERRED'; 
+          }); 
+          return hasActiveIncident; 
+      } 
+      // If no related IDs, check strictly date vs latest BK
+      const newerBK = bkSessions.find(bk => new Date(bk.date) > new Date(s.date)); 
+      return !newerBK; 
+  });
 
   return (
     <div className="space-y-8 pb-12 animate-fade-in relative">
@@ -435,7 +455,7 @@ const StudentProfile: React.FC = () => {
             <button onClick={() => setActiveTab('INCIDENTS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'INCIDENTS' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><ClipboardList className="h-4 w-4" /> Catatan Kejadian</span></button>
             {isReporterHomeroom && (<button onClick={() => { setActiveTab('HOMEROOM'); setCounselingRec('NONE'); setHomeroomMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'HOMEROOM' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><User className="h-4 w-4" /> Pembinaan Wali Kelas</span></button>)}
             {showBkTab && (<button onClick={() => { setActiveTab('BK_COUNSELING'); setCounselingRec('NONE'); setBkMode('CASE'); setSelectedCounselingRecords([]); }} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'BK_COUNSELING' ? 'border-violet-600 text-violet-700' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><HeartHandshake className="h-4 w-4" /> Bimbingan Konseling</span></button>)}
-            {shouldShowSanctionPanel && (<button onClick={() => setActiveTab('SANCTIONS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><Gavel className="h-4 w-4" /> Panel Sanksi</span></button>)}
+            {shouldShowSanctionPanel && (<button onClick={() => setActiveTab('SANCTIONS')} className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium ${activeTab === 'SANCTIONS' ? 'border-red-500 text-red-600' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}><span className="flex items-center gap-2"><Gavel className="h-4 w-4" /> Panel Kesiswaan</span></button>)}
          </nav>
       </div>
 
@@ -467,12 +487,14 @@ const StudentProfile: React.FC = () => {
                       const isCompleted = record.bkStatus === 'COMPLETED';
                       const isRequired = record.bkStatus === 'REQUIRED';
                       const isReferred = record.bkStatus === 'REFERRED';
+                      const isReturned = record.bkStatus === 'RETURNED_TO_BK';
                       
                       return (
                         <div key={record.id} onClick={() => handleOpenDetail(record)} className={`bg-white p-3 rounded-lg border shadow-sm transition-all cursor-pointer group relative overflow-hidden ${isCompleted ? 'border-emerald-200 bg-emerald-50/50' : isReferred ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'}`}>
                           {isCompleted && (<div className="absolute top-0 right-0 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-emerald-200 flex items-center gap-1"><Check className="h-3 w-3" /> KASUS SELESAI</div>)}
                           {isReferred && (<div className="absolute top-0 right-0 bg-orange-100 text-orange-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-orange-200 flex items-center gap-1"><ArrowRight className="h-3 w-3" /> DI KESISWAAN</div>)}
-                          {isRequired && (<div className="absolute top-0 right-0 bg-blue-100 text-blue-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-blue-200 flex items-center gap-1 animate-pulse"><ArrowRight className="h-3 w-3" /> DIRUJUK KE BK</div>)}
+                          {isReturned && (<div className="absolute top-0 right-0 bg-red-100 text-red-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-red-200 flex items-center gap-1"><ArrowLeft className="h-3 w-3" /> DIKEMBALIKAN</div>)}
+                          {isRequired && !isReturned && (<div className="absolute top-0 right-0 bg-blue-100 text-blue-700 px-2 py-1 rounded-bl-lg text-[10px] font-bold border-l border-b border-blue-200 flex items-center gap-1 animate-pulse"><ArrowRight className="h-3 w-3" /> DIRUJUK KE BK</div>)}
                           <div className="flex justify-between items-start mb-1 pr-24"><div className="flex-1"><h4 className={`font-bold text-sm line-clamp-1 ${isCompleted ? 'text-emerald-900' : 'text-slate-800 group-hover:text-indigo-600'}`}>{incName}</h4><p className="text-xs text-slate-500 mt-0.5">{new Date(record.date).toLocaleDateString()} • {record.recordedBy}</p></div></div>
                           <div className="flex justify-between items-center mt-2"><div className="flex items-center gap-2">{getStatusBadge(record.status)}<span className={`text-[10px] font-bold px-2 py-1 rounded border border-transparent ${record.typeSnapshot === 'VIOLATION' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{record.typeSnapshot === 'VIOLATION' ? `+${record.pointSnapshot}` : record.pointSnapshot} Pt</span></div><div className="flex items-center gap-1 text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Lihat Detail <ArrowLeft className="h-3 w-3 rotate-180" /></div></div>
                         </div>
@@ -555,7 +577,24 @@ const StudentProfile: React.FC = () => {
            <>
              {canInputBk && (
                 <div className="lg:col-span-2 space-y-6">
-                    {activeHomeroomReferral && (
+                    {/* ALERT FOR RETURNED CASES */}
+                    {hasReturnedCase && (
+                        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex gap-3 animate-fade-in shadow-sm mb-4">
+                            <div className="bg-red-100 p-2 rounded-full h-fit"><AlertTriangle className="h-6 w-6 text-red-600" /></div>
+                            <div className="flex-1">
+                                <h3 className="font-bold text-red-800 text-sm">Kasus Dikembalikan Kesiswaan</h3>
+                                <p className="text-xs text-red-700 mt-1">
+                                    Kasus ini telah dikembalikan oleh Kesiswaan untuk penanganan lebih lanjut oleh BK. 
+                                    Harap lakukan konseling tambahan sebelum menutup kasus atau merujuk kembali.
+                                </p>
+                                <div className="mt-3 flex gap-2">
+                                    <button onClick={() => { setBkMode('CASE'); setSelectedCounselingRecords(returnedCaseRecords.map(r => r.id)); window.scrollTo({top: 400, behavior:'smooth'}); }} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded font-bold hover:bg-red-700 flex items-center gap-1 shadow-sm"><Check className="h-3 w-3" /> Tangani Sekarang</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeHomeroomReferral && !hasReturnedCase && (
                         <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 flex gap-3 animate-fade-in shadow-sm">
                             <div className="bg-blue-100 p-2 rounded-full h-fit"><AlertTriangle className="h-6 w-6 text-blue-600" /></div>
                             <div className="flex-1">
@@ -576,7 +615,21 @@ const StudentProfile: React.FC = () => {
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">Pilih Kasus / Pelanggaran Terkait</label>
                                     <div className="bg-slate-50 border border-slate-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
-                                        {activeViolationRecordsForForm.length === 0 ? (<p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif yang butuh penanganan.</p>) : (activeViolationRecordsForForm.map(record => {
+                                        {activeViolationRecordsForForm.length === 0 && returnedCaseRecords.length === 0 ? (<p className="text-xs text-slate-400 italic p-4 text-center">Tidak ada pelanggaran aktif yang butuh penanganan.</p>) : (
+                                            <>
+                                            {/* Returned Cases First */}
+                                            {returnedCaseRecords.map(record => {
+                                                const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
+                                                const isSelected = selectedCounselingRecords.includes(record.id);
+                                                return (
+                                                    <div key={record.id} onClick={() => toggleCounselingRecord(record.id)} className={`p-3 rounded-lg border cursor-pointer text-xs flex items-center gap-3 transition-all ${isSelected ? 'bg-red-50 border-red-300 text-red-900' : 'bg-red-50/50 border-red-200 hover:bg-red-50'}`}>
+                                                        <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-red-500 border-red-500' : 'bg-white border-slate-300'}`}>{isSelected && <CheckCircle2 className="h-4 w-4 text-white" />}</div>
+                                                        <div className="flex-1"><div className="flex justify-between"><span className="font-bold text-sm">{incidentName}</span><span className="font-bold text-red-600">+{record.pointSnapshot} Poin</span></div><div className="flex items-center gap-2 mt-1"><span className="text-slate-500">{new Date(record.date).toLocaleDateString()}</span><span className="bg-red-600 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">DIKEMBALIKAN</span></div></div>
+                                                    </div>
+                                                )
+                                            })}
+                                            {/* Active Violations */}
+                                            {activeViolationRecordsForForm.map(record => {
                                                 const incidentName = incidents.find(i => i.id === record.incidentTypeId)?.name || 'Unknown';
                                                 const isSelected = selectedCounselingRecords.includes(record.id);
                                                 const isRequired = record.bkStatus === 'REQUIRED';
@@ -586,7 +639,8 @@ const StudentProfile: React.FC = () => {
                                                         <div className="flex-1"><div className="flex justify-between"><span className="font-bold text-sm">{incidentName}</span><span className="font-bold text-red-600">+{record.pointSnapshot} Poin</span></div><div className="flex items-center gap-2 mt-1"><span className="text-slate-500">{new Date(record.date).toLocaleDateString()}</span>{isRequired && <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">WAJIB</span>}</div></div>
                                                     </div>
                                                 )
-                                            })
+                                            })}
+                                            </>
                                         )}
                                     </div>
                                 </div>
@@ -639,7 +693,7 @@ const StudentProfile: React.FC = () => {
              <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <div className={`p-6 border-b border-slate-100 flex justify-between items-center ${editingSanctionId ? 'bg-orange-50' : 'bg-red-50'}`}>
-                     <h2 className={`font-bold flex items-center gap-2 ${editingSanctionId ? 'text-orange-800' : 'text-slate-800'}`}>{editingSanctionId ? <PenSquare className="h-5 w-5" /> : <Gavel className="h-5 w-5 text-red-600" />}{editingSanctionId ? 'Edit Sanksi / Beri Tugas' : 'Tetapkan Sanksi Baru'}</h2>
+                     <h2 className={`font-bold flex items-center gap-2 ${editingSanctionId ? 'text-orange-800' : 'text-slate-800'}`}>{editingSanctionId ? <PenSquare className="h-5 w-5" /> : <Gavel className="h-5 w-5 text-red-600" />}{editingSanctionId ? 'Edit Sanksi / Beri Tugas' : 'Panel Kesiswaan (Sanksi)'}</h2>
                      {editingSanctionId && <button onClick={cancelEditSanction} className="text-xs text-orange-700 hover:underline font-bold">Batal Edit</button>}
                    </div>
                    <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
@@ -699,11 +753,12 @@ const StudentProfile: React.FC = () => {
                             <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-slate-200 z-0"></div>
                             {storyLine.map((step, idx) => (
                                 <div key={step.id} className="relative z-10 flex gap-4 mb-8 last:mb-0 group">
-                                    <div className={`w-12 h-12 rounded-full border-4 border-slate-50 flex items-center justify-center shrink-0 shadow-sm ${step.type === 'INCIDENT' ? 'bg-white text-slate-600' : step.type === 'APPROVAL' ? 'bg-green-100 text-green-600' : step.type === 'COUNSELING_WALAS' ? 'bg-orange-100 text-orange-600' : step.type === 'COUNSELING_BK' ? 'bg-blue-100 text-blue-600' : 'bg-red-600 text-white'}`}>
+                                    <div className={`w-12 h-12 rounded-full border-4 border-slate-50 flex items-center justify-center shrink-0 shadow-sm ${step.type === 'INCIDENT' ? 'bg-white text-slate-600' : step.type === 'APPROVAL' ? 'bg-green-100 text-green-600' : step.type === 'COUNSELING_WALAS' ? 'bg-orange-100 text-orange-600' : step.type === 'COUNSELING_BK' ? 'bg-blue-100 text-blue-600' : step.type === 'KESISWAAN' ? 'bg-red-600 text-white' : 'bg-red-600 text-white'}`}>
                                         {step.type === 'INCIDENT' && <FileText className="h-5 w-5" />}
                                         {step.type === 'APPROVAL' && <CheckCircle2 className="h-5 w-5" />}
                                         {step.type === 'COUNSELING_WALAS' && <User className="h-5 w-5" />}
                                         {step.type === 'COUNSELING_BK' && <HeartHandshake className="h-5 w-5" />}
+                                        {step.type === 'KESISWAAN' && <Gavel className="h-5 w-5" />}
                                         {step.type === 'SANCTION' && <Gavel className="h-5 w-5" />}
                                     </div>
                                     <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
