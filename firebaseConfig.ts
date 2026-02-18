@@ -1,3 +1,4 @@
+
 import { initializeApp } from "firebase/app";
 import { 
   getFirestore, 
@@ -7,6 +8,7 @@ import {
 } from "firebase/firestore";
 // Fix: Use namespace import to resolve "has no exported member" errors
 import * as FirebaseAuth from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 // --- KONFIGURASI PROFESIONAL (HARDCODED) ---
 // Bagian ini TIDAK AKAN HILANG walau browser di-reset.
@@ -27,6 +29,7 @@ export const isConfigMissing = !firebaseConfig.apiKey || firebaseConfig.apiKey =
 
 let db: any = null;
 let auth: any = null;
+let storage: any = null;
 
 const connectToFirebase = async () => {
     if (isConfigMissing) {
@@ -46,6 +49,9 @@ const connectToFirebase = async () => {
             db = initializeFirestore(app, {
                 localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
             });
+            
+            storage = getStorage(app);
+
             console.log("🔥 Firebase Initialized (Hardcoded Mode)");
         } catch (e) {
             console.error("Firebase Init Error:", e);
@@ -73,4 +79,4 @@ const connectToFirebase = async () => {
     });
 };
 
-export { db, auth, connectToFirebase };
+export { db, auth, storage, connectToFirebase };

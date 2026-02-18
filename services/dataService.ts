@@ -7,6 +7,7 @@ import {
 
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
 import { doc, setDoc, onSnapshot, writeBatch, collection, deleteDoc } from 'firebase/firestore';
+import { StorageService } from './storageService';
 
 // --- CONFIGURATION ---
 // SET TO FALSE AFTER MIGRATION IS 100% COMPLETE & VERIFIED
@@ -427,6 +428,125 @@ export const DataService = {
     
     await batch.commit();
     return { recordsDeleted: recordsToDelete.length, sanctionsDeleted: sanctionsToDelete.length, counselingDeleted: counselingToDelete.length };
+  },
+
+  // --- MIGRATE BASE64 TO STORAGE (SAFE BATCHED VERSION) ---
+  migrateAllBase64ToStorage: async (logCallback: (msg: string) => void) => {
+      if (!db) throw new Error("Database not connected");
+      logCallback("Memulai pemindaian data untuk migrasi gambar...");
+
+      let migratedCount = 0;
+      let errorsCount = 0;
+      const BATCH_SIZE = 5; // Process in small batches for safety
+
+      // === 1. Migrate Records (proofImage) ===
+      // Safety Check: Only process strings starting with 'data:image' (Base64)
+      const recordsToUpdate = store.records.active.filter(r => 
+          r.proofImage && 
+          typeof r.proofImage === 'string' && 
+          r.proofImage.startsWith('data:image')
+      );
+      
+      logCallback(`Ditemukan ${recordsToUpdate.length} records dengan Base64 image.`);
+      
+      // Process in batches
+      for (let i = 0; i < recordsToUpdate.length; i += BATCH_SIZE) {
+          const chunk = recordsToUpdate.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          let batchHasOps = false;
+
+          logCallback(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}...`);
+
+          // Upload Loop (Parallel uploads in chunk)
+          const uploadPromises = chunk.map(async (rec) => {
+              try {
+                  // Deterministic path with timestamp to prevent overwrite
+                  const path = `violations/${rec.id}/proof_${Date.now()}`;
+                  const url = await StorageService.uploadBase64(rec.proofImage!, path);
+                  return { id: rec.id, url, success: true };
+              } catch (e: any) {
+                  logCallback(`❌ Gagal upload record ${rec.id}: ${e.message}`);
+                  errorsCount++;
+                  return { id: rec.id, success: false };
+              }
+          });
+
+          const results = await Promise.all(uploadPromises);
+
+          // Add to WriteBatch
+          results.forEach(res => {
+              if (res.success && res.url) {
+                  const ref = doc(db, "records", res.id);
+                  // Only update the proofImage field
+                  batch.update(ref, { proofImage: res.url });
+                  batchHasOps = true;
+                  migratedCount++;
+              }
+          });
+
+          if (batchHasOps) {
+              try {
+                  await batch.commit();
+                  logCallback(`✅ Batch committed. Saved ${results.filter(r => r.success).length} items.`);
+              } catch (e: any) {
+                  console.error("Batch commit failed", e);
+                  logCallback(`❌ FATAL: Gagal menyimpan batch ke Firestore! File mungkin menjadi orphan.`);
+                  errorsCount += results.filter(r => r.success).length; // Mark these as 'failed' in terms of complete migration
+              }
+          }
+      }
+
+      // === 2. Migrate Counseling (attachmentUrl) ===
+      const counselingToUpdate = store.counseling.active.filter(c => 
+          c.attachmentUrl && 
+          typeof c.attachmentUrl === 'string' && 
+          c.attachmentUrl.startsWith('data:image')
+      );
+      
+      logCallback(`Ditemukan ${counselingToUpdate.length} sesi konseling dengan Base64 image.`);
+
+      for (let i = 0; i < counselingToUpdate.length; i += BATCH_SIZE) {
+          const chunk = counselingToUpdate.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          let batchHasOps = false;
+
+          const uploadPromises = chunk.map(async (sess) => {
+              try {
+                  const path = `counseling/${sess.id}/attachment_${Date.now()}`;
+                  const url = await StorageService.uploadBase64(sess.attachmentUrl!, path);
+                  return { id: sess.id, url, success: true };
+              } catch (e: any) {
+                  logCallback(`❌ Gagal upload konseling ${sess.id}: ${e.message}`);
+                  errorsCount++;
+                  return { id: sess.id, success: false };
+              }
+          });
+
+          const results = await Promise.all(uploadPromises);
+
+          results.forEach(res => {
+              if (res.success && res.url) {
+                  const ref = doc(db, "counseling", res.id);
+                  batch.update(ref, { attachmentUrl: res.url });
+                  batchHasOps = true;
+                  migratedCount++;
+              }
+          });
+
+          if (batchHasOps) {
+              try {
+                  await batch.commit();
+                  logCallback(`✅ Counseling Batch committed.`);
+              } catch (e) {
+                  console.error("Batch commit failed", e);
+                  logCallback(`❌ FATAL: Gagal menyimpan batch konseling!`);
+                  errorsCount += results.filter(r => r.success).length;
+              }
+          }
+      }
+
+      logCallback(`🎉 Migrasi Selesai. Sukses: ${migratedCount}, Gagal/Error: ${errorsCount}`);
+      return { migratedCount, errorsCount };
   },
 
   exportDataJSON: () => {
