@@ -20,16 +20,19 @@ interface StoryStep {
 }
 
 const TeacherDashboard: React.FC = () => {
-  const [records, setRecords] = useState<IncidentRecord[]>([]);
-  const [incidents, setIncidents] = useState<MasterIncidentType[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [myClasses, setMyClasses] = useState<ClassGroup[]>([]);
-  const [allClasses, setAllClasses] = useState<ClassGroup[]>([]);
-  const [currentUser, setCurrentUser] = useState<Teacher | null>(null);
+  // UX OPTIMIZATION: Synchronous State Initialization
+  // Mengambil data langsung dari RAM service saat komponen di-mount.
+  // Karena App.tsx sudah menunggu data siap, ini menjamin tidak ada "Empty State Flash".
   
-  // Data for Detail Modal Logic
-  const [counselingSessions, setCounselingSessions] = useState<CounselingSession[]>([]);
-  const [sanctions, setSanctions] = useState<StudentSanction[]>([]);
+  const [records, setRecords] = useState<IncidentRecord[]>(() => DataService.getRecords());
+  const [incidents, setIncidents] = useState<MasterIncidentType[]>(() => DataService.getIncidentTypes());
+  const [students, setStudents] = useState<Student[]>(() => DataService.getStudents());
+  const [myClasses, setMyClasses] = useState<ClassGroup[]>([]); // Derived state, butuh kalkulasi
+  const [allClasses, setAllClasses] = useState<ClassGroup[]>(() => DataService.getClasses());
+  const [currentUser, setCurrentUser] = useState<Teacher | null>(() => DataService.getCurrentUser());
+  
+  const [counselingSessions, setCounselingSessions] = useState<CounselingSession[]>(() => DataService.getCounselingSessions());
+  const [sanctions, setSanctions] = useState<StudentSanction[]>(() => DataService.getSanctions());
 
   // Approval Specific State
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
@@ -45,7 +48,7 @@ const TeacherDashboard: React.FC = () => {
       activeCounseling: 0,
       mandatoryCases: 0,
       referrals: 0,
-      highRiskCount: 0, // Renamed from approachingSP
+      highRiskCount: 0, 
       monthlySessions: 0
   });
   const [bkMandatoryList, setBkMandatoryList] = useState<any[]>([]);
@@ -53,35 +56,33 @@ const TeacherDashboard: React.FC = () => {
   const [bkRecentActivity, setBkRecentActivity] = useState<CounselingSession[]>([]);
 
   // Kesiswaan Specific State
-  const [allSanctions, setAllSanctions] = useState<StudentSanction[]>([]);
+  const [allSanctions, setAllSanctions] = useState<StudentSanction[]>(() => DataService.getSanctions());
   const [sp1Count, setSp1Count] = useState<number>(0);
   const [sp2Count, setSp2Count] = useState<number>(0);
   const [sp3Count, setSp3Count] = useState<number>(0);
   const [doCount, setDoCount] = useState<number>(0); 
   const [activeRedemptions, setActiveRedemptions] = useState<number>(0);
   const [pendingTaskSanctions, setPendingTaskSanctions] = useState<any[]>([]); 
+  const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession}[]>([]);
   
-  // STATS DETAIL MODAL STATE (General)
+  // STATS DETAIL MODAL STATE
   const [showStatModal, setShowStatModal] = useState(false);
   const [selectedStatType, setSelectedStatType] = useState<string | null>(null); 
   
-  // CLASS DETAIL MODAL STATE (Homeroom Interactive)
+  // CLASS DETAIL MODAL STATE
   const [classDetail, setClassDetail] = useState<{
     isOpen: boolean;
     title: string;
-    type: 'STUDENTS' | 'INCIDENTS'; // Mode tampilan
-    data: any[]; // Data array
+    type: 'STUDENTS' | 'INCIDENTS';
+    data: any[];
   }>({ isOpen: false, title: '', type: 'STUDENTS', data: [] });
-
-  // NEW: BK Referrals for Kesiswaan
-  const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession}[]>([]);
 
   // QUICK TASK MODAL STATE
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [selectedSanction, setSelectedSanction] = useState<any>(null);
   const [taskInput, setTaskInput] = useState('');
 
-  // UNIFIED DETAIL MODAL STATE (Interactive Dashboard)
+  // UNIFIED DETAIL MODAL STATE
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [storyLine, setStoryLine] = useState<StoryStep[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -89,9 +90,10 @@ const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Initial calculation
     refreshDashboard();
     
-    // Subscribe to Realtime Updates
+    // Subscribe to Realtime Updates (for subsequent updates)
     const unsubscribe = DataService.subscribeToDataChanges(() => {
         refreshDashboard();
     });
@@ -115,6 +117,7 @@ const TeacherDashboard: React.FC = () => {
   };
 
   const refreshDashboard = () => {
+    // Re-fetch all data to ensure sync, although useState initializers handled the first paint
     const user = DataService.getCurrentUser();
     setCurrentUser(user);
 
@@ -138,8 +141,8 @@ const TeacherDashboard: React.FC = () => {
     setRecords(recs);
     setIncidents(incs);
     setStudents(stds);
-    setCounselingSessions(counselings); // Saved for modal
-    setSanctions(allSanctionsList); // Saved for modal
+    setCounselingSessions(counselings);
+    setSanctions(allSanctionsList);
     setAllClasses(classes);
     
     if (user) {
@@ -231,7 +234,6 @@ const TeacherDashboard: React.FC = () => {
             // --- REFERRALS (FROM HOMEROOM) ---
             if (latestHomeroom && latestHomeroom.recommendation === 'TO_BK') {
                 const newerBKSession = sSessions.find(c => c.sessionType === 'BK' && new Date(c.date) > new Date(latestHomeroom.date));
-                
                 const relatedIds = latestHomeroom.relatedRecordIds || [];
                 const allRelatedResolved = relatedIds.length > 0 && relatedIds.every(id => {
                     const r = recs.find(rec => rec.id === id);

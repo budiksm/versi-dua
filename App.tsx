@@ -30,37 +30,52 @@ const App: React.FC = () => {
   const [initError, setInitError] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     const initApp = async () => {
       try {
+          // PROMISE GUARD:
+          // App tidak akan merender Routes sampai initializeData selesai.
+          // initializeData di dataService sudah di-desain untuk resolve HANYA setelah
+          // snapshot pertama dari SEMUA koleksi berhasil dimuat ke RAM.
           const success = await DataService.initializeData();
-          if (success) {
-              setTimeout(() => setIsInitializing(false), 2000);
-          } else {
+          
+          if (isMounted) {
+              if (success) {
+                  // Beri sedikit buffer visual agar transisi tidak kasar
+                  setTimeout(() => setIsInitializing(false), 500);
+              } else {
+                  setInitError(true);
+                  setIsInitializing(false);
+              }
+          }
+      } catch (e) {
+          if (isMounted) {
               setInitError(true);
               setIsInitializing(false);
           }
-      } catch (e) {
-          setInitError(true);
-          setIsInitializing(false);
       }
     };
     initApp();
+
+    return () => { isMounted = false; };
   }, []);
 
   if (isInitializing) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6 animate-fade-in">
         <WaterLogoLoader />
-        <div className="mt-8 max-w-xs w-full">
-            <div className="flex items-center justify-center gap-3 text-indigo-600 font-bold mb-2">
+        <div className="mt-8 max-w-xs w-full text-center">
+            <div className="flex items-center justify-center gap-2 text-indigo-600 font-bold mb-3">
                 <Cloud className="h-5 w-5 animate-pulse" />
-                <span>Sinkronisasi Google Cloud</span>
+                <span>Menghubungkan ke Sekolah...</span>
             </div>
-            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            {/* Progress Bar Indeterminate */}
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-2">
                 <div className="h-full bg-indigo-600 animate-progress-indeterminate"></div>
             </div>
-            <p className="text-[10px] text-slate-400 mt-3 text-center leading-relaxed">
-                Mohon tunggu. Kami sedang mengunduh basis data sekolah agar perubahan Anda tidak hilang.
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+                Sedang memuat data terbaru dari Cloud. Mohon tunggu sebentar agar data Anda akurat.
             </p>
         </div>
       </div>
@@ -69,18 +84,18 @@ const App: React.FC = () => {
 
   if (initError || isConfigMissing) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 text-center">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 text-center animate-fade-in">
             <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-red-100">
                 <div className="bg-red-100 p-4 rounded-full mb-4 w-fit mx-auto">
                     <AlertTriangle className="h-10 w-10 text-red-600" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-800 mb-2">Sinkronisasi Gagal</h2>
-                <p className="text-slate-500 text-sm mb-6">Aplikasi tidak bisa menghubungi server Google. Pastikan internet Anda aktif dan stabil.</p>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Gagal Memuat Data</h2>
+                <p className="text-slate-500 text-sm mb-6">Aplikasi tidak dapat terhubung ke server Google. Pastikan koneksi internet Anda stabil.</p>
                 <button 
                     onClick={() => window.location.reload()}
-                    className="w-full px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                    className="w-full px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
                 >
-                    <RotateCcw className="h-4 w-4" /> Coba Hubungkan Lagi
+                    <RotateCcw className="h-4 w-4" /> Coba Lagi
                 </button>
             </div>
         </div>
@@ -93,6 +108,9 @@ const App: React.FC = () => {
         <Route path="/" element={<Login />} />
         
         {/* Protected Routes */}
+        {/* Karena App di-wrap dengan Guard di atas, semua child route di bawah ini
+            dijamin memiliki akses ke data yang SUDAH terisi di DataService. */}
+            
         <Route path="/teacher/*" element={
           <Layout role={Role.TEACHER}>
             <Routes>

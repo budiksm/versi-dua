@@ -123,7 +123,7 @@ const PoeIbu: React.FC = () => {
       )}
 
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div><h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Wallet className="h-6 w-6 text-indigo-600" />Kas "Poe Ibu" - {className}</h1><p className="text-slate-500 text-sm mt-1">Transparansi keuangan kelas berbasis Cloud.</p></div>
+        <div><h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Wallet className="h-6 w-6 text-indigo-600" />Kas Poe Ibu - {className}</h1><p className="text-slate-500 text-sm mt-1">Pencatatan kas Poe Ibu</p></div>
         <div className="bg-white px-6 py-3 rounded-xl border-2 border-indigo-100 text-right"><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Saldo Saat Ini</p><p className="text-3xl font-black text-indigo-600">Rp {balance.toLocaleString('id-ID')}</p></div>
       </div>
 

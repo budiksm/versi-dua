@@ -5,7 +5,7 @@ import {
   persistentLocalCache, 
   persistentMultipleTabManager 
 } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import * as firebaseAuth from "firebase/auth";
 
 // --- KONFIGURASI PROFESIONAL (HARDCODED) ---
 // Bagian ini TIDAK AKAN HILANG walau browser di-reset.
@@ -36,7 +36,7 @@ const connectToFirebase = async () => {
     if (!auth) {
         try {
             const app = firebaseApp.initializeApp(firebaseConfig);
-            auth = getAuth(app);
+            auth = firebaseAuth.getAuth(app);
             
             // Menggunakan Cache Persistence Standar Industri
             // Data akan disimpan di IndexedDB browser agar cepat,
@@ -54,12 +54,12 @@ const connectToFirebase = async () => {
 
     // Auto-Login Anonymous untuk akses baca/tulis database
     return new Promise((resolve) => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (user) => {
             unsubscribe();
             if (user) {
                 resolve(true);
             } else {
-                signInAnonymously(auth)
+                firebaseAuth.signInAnonymously(auth)
                     .then(() => resolve(true))
                     .catch((error) => {
                         console.error("Auth Failed:", error);
