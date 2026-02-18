@@ -1,4 +1,4 @@
-import * as firebaseApp from "firebase/app";
+import { initializeApp } from "firebase/app";
 import { 
   getFirestore, 
   initializeFirestore, 
@@ -35,7 +35,7 @@ const connectToFirebase = async () => {
 
     if (!auth) {
         try {
-            const app = firebaseApp.initializeApp(firebaseConfig);
+            const app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             
             // Menggunakan Cache Persistence Standar Industri
@@ -54,14 +54,14 @@ const connectToFirebase = async () => {
 
     // Auto-Login Anonymous untuk akses baca/tulis database
     return new Promise((resolve) => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = onAuthStateChanged(auth, (user: any) => {
             unsubscribe();
             if (user) {
                 resolve(true);
             } else {
                 signInAnonymously(auth)
                     .then(() => resolve(true))
-                    .catch((error) => {
+                    .catch((error: any) => {
                         console.error("Auth Failed:", error);
                         resolve(false);
                     });

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../../firebaseConfig';
 import { doc, getDoc, writeBatch, collection, getDocs } from 'firebase/firestore';
-import { Database, Play, Loader2 } from 'lucide-react';
+import { Database, Play, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 const MigrationTool: React.FC = () => {
   const [status, setStatus] = useState<string>('IDLE');
@@ -51,11 +51,12 @@ const MigrationTool: React.FC = () => {
             const chunk = chunks[i];
 
             chunk.forEach((item: any) => {
-                if (!item[idField]) {
+                const docId = item[idField]; // Access dynamic property safely
+                if (!docId) {
                     console.warn("Item tanpa ID:", item);
                     return;
                 }
-                const itemRef = doc(db, targetColName, item[idField]);
+                const itemRef = doc(db, targetColName, docId);
                 // Gunakan set dengan merge: true agar aman jika dijalankan ulang
                 batch.set(itemRef, item, { merge: true });
             });
@@ -108,16 +109,17 @@ const MigrationTool: React.FC = () => {
     setProgress(0);
 
     // Urutan Migrasi
-    await migrateCollection('students', 'students');
-    await migrateCollection('teachers', 'teachers');
-    await migrateCollection('classes', 'classes');
+    // Pastikan tidak ada variabel undefined di sini
+    await migrateCollection('students', 'students', 'id');
+    await migrateCollection('teachers', 'teachers', 'id');
+    await migrateCollection('classes', 'classes', 'id');
     
-    await migrateCollection('records', 'records');
-    await migrateCollection('counseling', 'counseling');
-    await migrateCollection('sanctions', 'sanctions');
+    await migrateCollection('records', 'records', 'id');
+    await migrateCollection('counseling', 'counseling', 'id');
+    await migrateCollection('sanctions', 'sanctions', 'id');
     
-    await migrateCollection('cashflow', 'cashflow');
-    await migrateCollection('activity_logs', 'activity_logs');
+    await migrateCollection('cashflow', 'cashflow', 'id');
+    await migrateCollection('activity_logs', 'activity_logs', 'id');
 
     await migrateConfigs();
 
@@ -137,14 +139,17 @@ const MigrationTool: React.FC = () => {
         <p className="text-slate-500 mt-2">
             Tool ini akan memecah "Giant Document" (`school_data/{doc}`) menjadi Collection standar (`students/{id}`, dll).
             <br />
-            <span className="text-red-600 font-bold">Harap backup JSON sebelum menjalankan ini!</span>
+            <span className="text-red-600 font-bold bg-red-50 px-2 py-1 rounded text-xs mt-2 inline-block">
+                <AlertTriangle className="h-3 w-3 inline mr-1" />
+                Harap backup JSON sebelum menjalankan ini!
+            </span>
         </p>
 
         <div className="mt-6 flex gap-4">
             <button 
                 onClick={runMigration} 
                 disabled={status === 'RUNNING'}
-                className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
             >
                 {status === 'RUNNING' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
                 {status === 'RUNNING' ? 'Sedang Migrasi...' : 'Mulai Migrasi'}
@@ -152,15 +157,15 @@ const MigrationTool: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-slate-900 text-green-400 p-6 rounded-xl font-mono text-sm h-96 overflow-y-auto shadow-inner">
+      <div className="bg-slate-900 text-green-400 p-6 rounded-xl font-mono text-xs md:text-sm h-96 overflow-y-auto shadow-inner border border-slate-800">
         {logs.length === 0 ? (
             <p className="text-slate-500 italic">Menunggu perintah...</p>
         ) : (
-            logs.map((log, idx) => <div key={idx} className="mb-1 border-b border-slate-800 pb-1 last:border-0">{log}</div>)
+            logs.map((log, idx) => <div key={idx} className="mb-1 border-b border-slate-800 pb-1 last:border-0 font-mono">{log}</div>)
         )}
         {status === 'COMPLETED' && (
-            <div className="mt-4 p-2 bg-green-900/30 text-green-300 border border-green-800 rounded text-center font-bold">
-                MIGRASI SUKSES
+            <div className="mt-4 p-3 bg-green-900/30 text-green-300 border border-green-800 rounded text-center font-bold flex items-center justify-center gap-2">
+                <CheckCircle className="h-5 w-5" /> MIGRASI SUKSES
             </div>
         )}
       </div>
