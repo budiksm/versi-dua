@@ -6,24 +6,27 @@ import {
 } from '../types';
 
 import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
-import { doc, setDoc, onSnapshot, getDoc, writeBatch, collection, deleteDoc, query } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, writeBatch, collection, deleteDoc } from 'firebase/firestore';
 
-// --- HYBRID STORAGE (Legacy + New) ---
-// Kita simpan dua versi data di memori untuk transisi mulus
+// --- CONFIGURATION ---
+// SET TO FALSE AFTER MIGRATION IS 100% COMPLETE & VERIFIED
+const ENABLE_BACKDOOR = true; 
+
+// --- HYBRID STORAGE STATE ---
 const store = {
-    teachers: { legacy: [] as Teacher[], new: [] as Teacher[], active: [] as Teacher[] },
-    students: { legacy: [] as Student[], new: [] as Student[], active: [] as Student[] },
-    classes: { legacy: [] as ClassGroup[], new: [] as ClassGroup[], active: [] as ClassGroup[] },
-    records: { legacy: [] as IncidentRecord[], new: [] as IncidentRecord[], active: [] as IncidentRecord[] },
-    counseling: { legacy: [] as CounselingSession[], new: [] as CounselingSession[], active: [] as CounselingSession[] },
-    sanctions: { legacy: [] as StudentSanction[], new: [] as StudentSanction[], active: [] as StudentSanction[] },
-    cashflow: { legacy: [] as CashflowRecord[], new: [] as CashflowRecord[], active: [] as CashflowRecord[] },
-    activity_logs: { legacy: [] as ActivityLog[], new: [] as ActivityLog[], active: [] as ActivityLog[] },
+    teachers: { legacy: [] as Teacher[], new: [] as Teacher[], active: [] as Teacher[], source: 'INITIAL' },
+    students: { legacy: [] as Student[], new: [] as Student[], active: [] as Student[], source: 'INITIAL' },
+    classes: { legacy: [] as ClassGroup[], new: [] as ClassGroup[], active: [] as ClassGroup[], source: 'INITIAL' },
+    records: { legacy: [] as IncidentRecord[], new: [] as IncidentRecord[], active: [] as IncidentRecord[], source: 'INITIAL' },
+    counseling: { legacy: [] as CounselingSession[], new: [] as CounselingSession[], active: [] as CounselingSession[], source: 'INITIAL' },
+    sanctions: { legacy: [] as StudentSanction[], new: [] as StudentSanction[], active: [] as StudentSanction[], source: 'INITIAL' },
+    cashflow: { legacy: [] as CashflowRecord[], new: [] as CashflowRecord[], active: [] as CashflowRecord[], source: 'INITIAL' },
+    activity_logs: { legacy: [] as ActivityLog[], new: [] as ActivityLog[], active: [] as ActivityLog[], source: 'INITIAL' },
     
-    // Configs (Master Data vs School Data)
-    categories: { legacy: [] as MasterCategory[], new: [] as MasterCategory[], active: [] as MasterCategory[] },
-    incidentTypes: { legacy: [] as MasterIncidentType[], new: [] as MasterIncidentType[], active: [] as MasterIncidentType[] },
-    rules: { legacy: [] as CoachingRule[], new: [] as CoachingRule[], active: [] as CoachingRule[] },
+    // Configs
+    categories: { legacy: [] as MasterCategory[], new: [] as MasterCategory[], active: [] as MasterCategory[], source: 'INITIAL' },
+    incidentTypes: { legacy: [] as MasterIncidentType[], new: [] as MasterIncidentType[], active: [] as MasterIncidentType[], source: 'INITIAL' },
+    rules: { legacy: [] as CoachingRule[], new: [] as CoachingRule[], active: [] as CoachingRule[], source: 'INITIAL' },
 };
 
 // --- SYNC STATUS ---
@@ -50,27 +53,59 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-// --- RECONCILIATION LOGIC ---
-// Memilih sumber data: Jika Collection Baru ada isi, pakai itu. Jika tidak, pakai Legacy.
+// --- RECONCILIATION LOGIC (SAFE SWITCH) ---
 const reconcile = (key: keyof typeof store) => {
     const s = store[key];
-    // Priority: New > Legacy
-    if (s.new.length > 0) {
-        s.active = s.new;
+    const legacyCount = s.legacy.length;
+    const newCount = s.new.length;
+
+    let newActive: any[] = [];
+    let newSource = 'INITIAL';
+
+    // 1. Prioritize New Collection ONLY if data integrity seems preserved
+    if (newCount > 0) {
+        // SAFETY CHECK: 
+        // If legacy has data, assume new collection must have AT LEAST as much data
+        // to be considered "Migration Complete".
+        // Allow a small margin of error or strict equality? Strict for safety.
+        if (legacyCount > 0 && newCount < legacyCount) {
+             newActive = s.legacy;
+             newSource = `LEGACY (Safe Fallback: New ${newCount} < Old ${legacyCount})`;
+        } else {
+             newActive = s.new;
+             newSource = `NEW_COLLECTION (${newCount} items)`;
+        }
+    } else if (legacyCount > 0) {
+        newActive = s.legacy;
+        newSource = `LEGACY_DOC (${legacyCount} items)`;
     } else {
-        s.active = s.legacy;
+        newActive = [];
+        newSource = 'EMPTY (No Data)';
     }
+
+    // AUDIT LOGGING
+    if (s.source !== newSource) {
+        const isNew = newSource.includes('NEW');
+        const color = isNew ? 'background: #22c55e; color: white; padding: 2px 5px; border-radius: 3px;' : 'background: #f59e0b; color: black; padding: 2px 5px; border-radius: 3px;';
+        console.groupCollapsed(`%c[DataService] Source Switch: ${key}`, color);
+        console.log(`Previous: ${s.source}`);
+        console.log(`Current:  ${newSource}`);
+        console.log(`Counts:   Legacy=${legacyCount}, New=${newCount}`);
+        console.groupEnd();
+        s.source = newSource;
+    }
+
+    s.active = newActive;
 };
 
-// Helper untuk setup listener ganda
+// Helper setup listener
 const setupHybridListener = (
     key: keyof typeof store,
-    legacyDocPath: string, // e.g., "school_data/teachers"
-    newCollectionName: string, // e.g., "teachers"
-    isConfig: boolean = false // Configs use "master_data" collection instead of root
+    legacyDocPath: string, 
+    newCollectionName: string, 
+    isConfig: boolean = false
 ) => {
-    // 1. Listen to NEW Collection (Priority)
-    // Note: Configs in new structure are Single Docs inside "master_data" collection
+    // 1. Listen to NEW Collection
     if (isConfig) {
         onSnapshot(doc(db, "master_data", newCollectionName), (snap) => {
             store[key].new = snap.exists() ? (snap.data().data || []) : [];
@@ -86,7 +121,7 @@ const setupHybridListener = (
         });
     }
 
-    // 2. Listen to LEGACY Document (Fallback)
+    // 2. Listen to LEGACY Document
     onSnapshot(doc(db, "school_data", isConfig ? key : newCollectionName), (snap) => {
         store[key].legacy = snap.exists() ? (snap.data().data || []) : [];
         reconcile(key);
@@ -96,7 +131,10 @@ const setupHybridListener = (
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- BATCH HELPER ---
+// --- BATCH HELPER (Writes to NEW) ---
+// Note: During hybrid mode, writing to NEW while reading LEGACY (if not migrated) might mean
+// user doesn't see their update immediately until migration runs.
+// This is acceptable for "Stabilization" phase where we want Admin to migrate.
 const batchSyncCollection = async (collectionName: string, newData: any[], currentData: any[]) => {
     if (!db) throw new Error("Database not connected");
     notifyListeners('SYNCING');
@@ -107,9 +145,9 @@ const batchSyncCollection = async (collectionName: string, newData: any[], curre
         let batch = writeBatch(db);
         let count = 0;
         
-        // Simple Set/Merge approach for robustness
         for (const item of newData) {
-            batch.set(doc(db, collectionName, item.id), JSON.parse(JSON.stringify(item)), { merge: true });
+            const docId = String(item.id);
+            batch.set(doc(db, collectionName, docId), JSON.parse(JSON.stringify(item)), { merge: true });
             count++;
             if (count >= batchSize) {
                 await batch.commit();
@@ -118,13 +156,12 @@ const batchSyncCollection = async (collectionName: string, newData: any[], curre
             }
         }
         
-        // Handle deletions (naive approach: find IDs in currentData not in newData)
-        // Note: For migration safety, we prioritize upsert. Deletion logic requires exact tracking.
+        // Deletion handling (simplified)
         const newIds = new Set(newData.map(i => i.id));
         const toDelete = currentData.filter(i => !newIds.has(i.id));
         
         for (const item of toDelete) {
-             batch.delete(doc(db, collectionName, item.id));
+             batch.delete(doc(db, collectionName, String(item.id)));
              count++;
              if (count >= batchSize) {
                 await batch.commit();
@@ -179,7 +216,7 @@ export const DataService = {
     const isConnected = await connectToFirebase();
     if (!isConnected) return false;
 
-    // Setup Dual Listeners for all types
+    // Setup Dual Listeners
     setupHybridListener('teachers', 'teachers', 'teachers');
     setupHybridListener('students', 'students', 'students');
     setupHybridListener('classes', 'classes', 'classes');
@@ -194,15 +231,14 @@ export const DataService = {
     setupHybridListener('incidentTypes', 'incidentTypes', 'incidentTypes', true);
     setupHybridListener('rules', 'rules', 'rules', true);
 
-    // Give it a moment to load from cache/network
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 2500)); // Increased wait time for both listeners
 
     isInitialLoadComplete = true;
     notifyListeners('SAVED');
     return true;
   },
 
-  // --- GETTERS (Return Active Data) ---
+  // --- GETTERS ---
   getTeachers: () => store.teachers.active,
   getStudents: () => store.students.active,
   getClasses: () => store.classes.active,
@@ -215,7 +251,7 @@ export const DataService = {
   getCounselingSessions: () => store.counseling.active,
   getActivityLogs: () => store.activity_logs.active,
 
-  // --- SETTERS (Write to New Structure) ---
+  // --- SETTERS ---
   saveStudents: async (data: Student[]) => { await batchSyncCollection('students', data, store.students.active); },
   saveTeachers: async (data: Teacher[]) => { await batchSyncCollection('teachers', data, store.teachers.active); },
   saveClasses: async (data: ClassGroup[]) => { await batchSyncCollection('classes', data, store.classes.active); },
@@ -224,29 +260,30 @@ export const DataService = {
   saveCounselingSessions: async (data: CounselingSession[]) => { await batchSyncCollection('counseling', data, store.counseling.active); },
   saveSanctions: async (data: StudentSanction[]) => { await batchSyncCollection('sanctions', data, store.sanctions.active); },
 
-  // Configs
   saveCategories: async (data: MasterCategory[]) => { await saveSingleDocConfig('categories', data); },
   saveIncidentTypes: async (data: MasterIncidentType[]) => { await saveSingleDocConfig('incidentTypes', data); },
   saveRules: async (data: CoachingRule[]) => { await saveSingleDocConfig('rules', data); },
 
-  // --- AUTH LOGIC (FIXED) ---
+  // --- AUTH LOGIC (WITH BACKDOOR) ---
 
   login: async (username: string, password: string): Promise<Teacher | null> => {
     if (!isInitialLoadComplete) return null;
     
-    // Check Real Users
+    // 1. BACKDOOR (Only if Enabled)
+    if (ENABLE_BACKDOOR && username === 'admin' && password === '123') {
+       console.warn("%c[AUTH] Using Hardcoded Admin Access", "background:red;color:white;font-size:12px;padding:4px;");
+       const superAdmin: Teacher = { id: 'super_admin', name: 'Super Admin (Rescue)', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
+       sessionStorage.setItem('session_user_id', 'super_admin');
+       return superAdmin;
+    }
+
+    // 2. Real Auth
     const foundUser = store.teachers.active.find(t => t.username === username && t.password === password);
     if (foundUser) {
       sessionStorage.setItem('session_user_id', foundUser.id);
       return foundUser;
     }
     
-    // Super Admin Fallback (Always works if no teachers loaded OR strictly matches credentials)
-    if (username === 'admin' && password === '123') {
-       const superAdmin: Teacher = { id: 'super_admin', name: 'Admin', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
-       sessionStorage.setItem('session_user_id', 'super_admin');
-       return superAdmin;
-    }
     return null;
   },
 
@@ -254,12 +291,10 @@ export const DataService = {
     const storedId = sessionStorage.getItem('session_user_id');
     if (!storedId) return null;
 
-    // Explicitly handle Super Admin session
     if (storedId === 'super_admin') {
-        return { id: 'super_admin', name: 'Admin', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
+        return { id: 'super_admin', name: 'Super Admin (Rescue)', nip: '000', roles: [Role.ADMIN], username: 'admin', password: '123', mustChangePassword: false };
     }
 
-    // Look in active data (which handles both legacy and new)
     return store.teachers.active.find(t => t.id === storedId) || null;
   },
 
@@ -278,14 +313,10 @@ export const DataService = {
 
   updateHeartbeat: async (userId: string) => {
     if (userId === 'super_admin') return;
-    const user = store.teachers.active.find(t => t.id === userId);
-    if (user) {
-        const now = new Date().toISOString();
-        if (db) await setDoc(doc(db, "teachers", userId), { lastActiveAt: now }, { merge: true });
-    }
+    if (db) await setDoc(doc(db, "teachers", userId), { lastActiveAt: new Date().toISOString() }, { merge: true });
   },
 
-  // --- BUSINESS LOGIC ---
+  // --- BUSINESS LOGIC (Unchanged) ---
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
     const studentRecords = records.filter(r => r.studentId === studentId);
     let grossViolationPoints = 0;
@@ -373,9 +404,9 @@ export const DataService = {
     const counselingToDelete = store.counseling.active.filter(s => !validStudentIds.has(s.studentId));
 
     const batch = writeBatch(db);
-    recordsToDelete.forEach(x => batch.delete(doc(db, "records", x.id)));
-    sanctionsToDelete.forEach(x => batch.delete(doc(db, "sanctions", x.id)));
-    counselingToDelete.forEach(x => batch.delete(doc(db, "counseling", x.id)));
+    recordsToDelete.forEach(x => batch.delete(doc(db, "records", String(x.id))));
+    sanctionsToDelete.forEach(x => batch.delete(doc(db, "sanctions", String(x.id))));
+    counselingToDelete.forEach(x => batch.delete(doc(db, "counseling", String(x.id))));
     
     await batch.commit();
     return { recordsDeleted: recordsToDelete.length, sanctionsDeleted: sanctionsToDelete.length, counselingDeleted: counselingToDelete.length };
