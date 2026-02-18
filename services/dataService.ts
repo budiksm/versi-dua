@@ -190,6 +190,21 @@ export const DataService = {
 
     await new Promise(r => setTimeout(r, 2500)); 
 
+    // --- AUTO-MIGRATION: CLOSED -> COMPLETED ---
+    // Standardize status for dashboard consistency
+    const closedSessions = store.counseling.active.filter(s => (s.status as any) === 'CLOSED');
+    if (closedSessions.length > 0) {
+        console.warn(`[Auto-Migration] Converting ${closedSessions.length} sessions from CLOSED to COMPLETED...`);
+        const updatedSessions = store.counseling.active.map(s => 
+            (s.status as any) === 'CLOSED' ? { ...s, status: 'COMPLETED' as const } : s
+        );
+        // We use saveCounselingSessions to sync this change back to Firestore
+        // Note: This is an async fire-and-forget operation to not block UI
+        DataService.saveCounselingSessions(updatedSessions).then(() => {
+            console.log("[Auto-Migration] Status standardization complete.");
+        });
+    }
+
     isInitialLoadComplete = true;
     notifyListeners('SAVED');
     return true;
@@ -371,7 +386,7 @@ export const DataService = {
               date: new Date().toISOString(),
               notes: notes,
               recommendation: action === 'CLOSE' ? 'NONE' : 'TO_BK',
-              status: 'CLOSED', // Admin actions are immediate
+              status: 'COMPLETED', // UPDATED: Was CLOSED, now standardized to COMPLETED
               sessionType: 'KESISWAAN',
               relatedRecordIds: recordIds,
               attachmentUrl: attachmentUrl

@@ -115,7 +115,7 @@ export interface CounselingSession {
   notes: string; 
   // Added ROUTINE_MONITORING
   recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK' | 'ROUTINE_MONITORING' | 'COMPLETED';
-  status: 'OPEN' | 'CLOSED';
+  status: 'OPEN' | 'COMPLETED'; // CHANGED: Standardized from CLOSED to COMPLETED
   sessionType?: 'BK' | 'HOMEROOM' | 'KESISWAAN'; 
   relatedRecordIds?: string[]; 
   attachmentUrl?: string; 

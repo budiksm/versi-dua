@@ -391,7 +391,7 @@ const StudentProfile: React.FC = () => {
             date: new Date().toISOString(), 
             notes: counselingNotes, 
             recommendation: counselingRec, 
-            status: counselingRec !== 'NONE' ? 'OPEN' : 'CLOSED', 
+            status: counselingRec !== 'NONE' ? 'OPEN' : 'COMPLETED', // Use COMPLETED
             sessionType: type, 
             relatedRecordIds: finalRelatedRecords,
             attachmentUrl: imageProof // Store Base64 directly

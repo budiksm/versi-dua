@@ -209,7 +209,7 @@ const TeacherInputLog: React.FC = () => {
               title: sess.sessionType === 'BK' ? 'Tindak Lanjut BK' : 'Pembinaan Wali Kelas',
               actor: sess.counselorName,
               description: sess.notes,
-              statusLabel: sess.status === 'CLOSED' ? 'Selesai' : 'Berjalan',
+              statusLabel: sess.status === 'COMPLETED' ? 'Selesai' : 'Berjalan',
               statusColor: 'bg-blue-100 text-blue-700'
           });
       });
