@@ -10,7 +10,7 @@ const MigrationTool: React.FC = () => {
 
   const addLog = (msg: string) => setLogs(p => [...p, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  // Hapus parameter idField untuk menghindari kebingungan/error variabel
+  // Updated: Removed idField parameter completely to prevent TS errors
   const migrateCollection = async (legacyDocName: string, targetColName: string) => {
     addLog(`--- Memulai Migrasi: ${legacyDocName} -> ${targetColName} ---`);
     
@@ -52,15 +52,17 @@ const MigrationTool: React.FC = () => {
             const chunk = chunks[i];
 
             chunk.forEach((item: any) => {
-                // Hardcode akses properti .id karena semua data menggunakan field ini
-                // Menggunakan item.id atau item['id'] aman
+                // EXPLICITLY use .id property or ['id'] string literal
+                // DO NOT use a variable named id here
                 const docId = item.id || item['id']; 
                 
                 if (!docId) {
                     console.warn("Item tanpa ID:", item);
                     return;
                 }
-                const itemRef = doc(db, targetColName, docId);
+                
+                // Construct reference safely
+                const itemRef = doc(db, targetColName, String(docId));
                 // Gunakan set dengan merge: true agar aman jika dijalankan ulang
                 batch.set(itemRef, item, { merge: true });
             });
@@ -112,7 +114,7 @@ const MigrationTool: React.FC = () => {
     setLogs([]);
     setProgress(0);
 
-    // Urutan Migrasi - Sekarang hanya butuh 2 argumen
+    // FIX: Only pass 2 arguments. Ensure no 'id' variable is passed.
     await migrateCollection('students', 'students');
     await migrateCollection('teachers', 'teachers');
     await migrateCollection('classes', 'classes');
