@@ -5,7 +5,8 @@ import {
   persistentLocalCache, 
   persistentMultipleTabManager 
 } from "firebase/firestore";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+// Fix: Use namespace import to resolve "has no exported member" errors
+import * as FirebaseAuth from "firebase/auth";
 
 // --- KONFIGURASI PROFESIONAL (HARDCODED) ---
 // Bagian ini TIDAK AKAN HILANG walau browser di-reset.
@@ -36,7 +37,8 @@ const connectToFirebase = async () => {
     if (!auth) {
         try {
             const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
+            // Use FirebaseAuth namespace to access auth functions
+            auth = FirebaseAuth.getAuth(app);
             
             // Menggunakan Cache Persistence Standar Industri
             // Data akan disimpan di IndexedDB browser agar cepat,
@@ -54,12 +56,13 @@ const connectToFirebase = async () => {
 
     // Auto-Login Anonymous untuk akses baca/tulis database
     return new Promise((resolve) => {
-        const unsubscribe = onAuthStateChanged(auth, (user: any) => {
+        // Use FirebaseAuth namespace
+        const unsubscribe = FirebaseAuth.onAuthStateChanged(auth, (user: any) => {
             unsubscribe();
             if (user) {
                 resolve(true);
             } else {
-                signInAnonymously(auth)
+                FirebaseAuth.signInAnonymously(auth)
                     .then(() => resolve(true))
                     .catch((error: any) => {
                         console.error("Auth Failed:", error);

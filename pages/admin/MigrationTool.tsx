@@ -10,7 +10,8 @@ const MigrationTool: React.FC = () => {
 
   const addLog = (msg: string) => setLogs(p => [...p, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  const migrateCollection = async (legacyDocName: string, targetColName: string, idField: string = 'id') => {
+  // Hapus parameter idField untuk menghindari kebingungan/error variabel
+  const migrateCollection = async (legacyDocName: string, targetColName: string) => {
     addLog(`--- Memulai Migrasi: ${legacyDocName} -> ${targetColName} ---`);
     
     try {
@@ -51,7 +52,10 @@ const MigrationTool: React.FC = () => {
             const chunk = chunks[i];
 
             chunk.forEach((item: any) => {
-                const docId = item[idField]; // Access dynamic property safely
+                // Hardcode akses properti .id karena semua data menggunakan field ini
+                // Menggunakan item.id atau item['id'] aman
+                const docId = item.id || item['id']; 
+                
                 if (!docId) {
                     console.warn("Item tanpa ID:", item);
                     return;
@@ -108,18 +112,17 @@ const MigrationTool: React.FC = () => {
     setLogs([]);
     setProgress(0);
 
-    // Urutan Migrasi
-    // Pastikan tidak ada variabel undefined di sini
-    await migrateCollection('students', 'students', 'id');
-    await migrateCollection('teachers', 'teachers', 'id');
-    await migrateCollection('classes', 'classes', 'id');
+    // Urutan Migrasi - Sekarang hanya butuh 2 argumen
+    await migrateCollection('students', 'students');
+    await migrateCollection('teachers', 'teachers');
+    await migrateCollection('classes', 'classes');
     
-    await migrateCollection('records', 'records', 'id');
-    await migrateCollection('counseling', 'counseling', 'id');
-    await migrateCollection('sanctions', 'sanctions', 'id');
+    await migrateCollection('records', 'records');
+    await migrateCollection('counseling', 'counseling');
+    await migrateCollection('sanctions', 'sanctions');
     
-    await migrateCollection('cashflow', 'cashflow', 'id');
-    await migrateCollection('activity_logs', 'activity_logs', 'id');
+    await migrateCollection('cashflow', 'cashflow');
+    await migrateCollection('activity_logs', 'activity_logs');
 
     await migrateConfigs();
 
