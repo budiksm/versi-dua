@@ -223,6 +223,24 @@ export const DataService = {
     sessionStorage.removeItem('session_user_id');
   },
 
+  // Fungsi baru untuk sinkronisasi terakhir sebelum logout
+  finalizeSession: async (userId: string) => {
+    if (!db) return;
+    notifyListeners('SYNCING');
+    try {
+        // Update heartbeat sebagai penanda aktivitas terakhir
+        await DataService.updateHeartbeat(userId);
+        
+        // Jeda buatan agar UX terasa "menyimpan" dan memastikan network flush
+        await wait(1500); 
+        
+        notifyListeners('SAVED');
+    } catch (error) {
+        console.error("Logout sync error", error);
+        notifyListeners('IDLE'); // Reset ke idle jika gagal, agar logout tetap bisa lanjut
+    }
+  },
+
   updatePassword: async (userId: string, newPass: string) => {
     const updated = _teachers.map(t => t.id === userId ? { ...t, password: newPass, mustChangePassword: false } : t);
     await DataService.saveTeachers(updated);
@@ -231,7 +249,10 @@ export const DataService = {
   updateHeartbeat: async (userId: string) => {
     const now = new Date().toISOString();
     const updated = _teachers.map(t => t.id === userId ? { ...t, lastActiveAt: now } : t);
-    setDoc(doc(db, "school_data", "teachers"), { data: updated });
+    // Kita gunakan setDoc langsung tanpa pushToCloud penuh agar lebih ringan/spesifik untuk background task
+    // Namun untuk konsistensi cache RAM, kita update _teachers juga
+    _teachers = updated;
+    await setDoc(doc(db, "school_data", "teachers"), { data: updated });
   },
 
   calculateStudentPoints: (studentId: string, records: IncidentRecord[], incidents: MasterIncidentType[]) => {
@@ -329,4 +350,3 @@ export const DataService = {
     return { deletedRecords: _records.length - validRecords.length };
   }
 };
-    

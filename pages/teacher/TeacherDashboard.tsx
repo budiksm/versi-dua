@@ -40,19 +40,17 @@ const TeacherDashboard: React.FC = () => {
   const [recentPage, setRecentPage] = useState(0);
   const ITEMS_PER_PAGE = 5;
 
-  // BK Specific State (Refactored)
+  // BK Specific State
   const [bkStats, setBkStats] = useState({
       activeCounseling: 0,
       mandatoryCases: 0,
       referrals: 0,
-      highRiskCount: 0, // Renamed from approachingSP
+      highRiskCount: 0, 
       monthlySessions: 0
   });
   const [bkMandatoryList, setBkMandatoryList] = useState<any[]>([]);
   const [bkReferralList, setBkReferralList] = useState<any[]>([]);
   const [bkRecentActivity, setBkRecentActivity] = useState<CounselingSession[]>([]);
-  const [globalSearchTerm, setGlobalSearchTerm] = useState('');
-  const [globalSearchResults, setGlobalSearchResults] = useState<Student[]>([]);
 
   // Kesiswaan Specific State
   const [allSanctions, setAllSanctions] = useState<StudentSanction[]>([]);
@@ -63,18 +61,10 @@ const TeacherDashboard: React.FC = () => {
   const [activeRedemptions, setActiveRedemptions] = useState<number>(0);
   const [pendingTaskSanctions, setPendingTaskSanctions] = useState<any[]>([]); 
   
-  // STATS DETAIL MODAL STATE (General)
+  // STATS DETAIL MODAL STATE
   const [showStatModal, setShowStatModal] = useState(false);
   const [selectedStatType, setSelectedStatType] = useState<string | null>(null); 
   
-  // CLASS DETAIL MODAL STATE (Homeroom Interactive)
-  const [classDetail, setClassDetail] = useState<{
-    isOpen: boolean;
-    title: string;
-    type: 'STUDENTS' | 'INCIDENTS'; // Mode tampilan
-    data: any[]; // Data array
-  }>({ isOpen: false, title: '', type: 'STUDENTS', data: [] });
-
   // NEW: BK Referrals for Kesiswaan
   const [bkHandledList, setBkHandledList] = useState<{student: Student, score: number, session: CounselingSession}[]>([]);
 
@@ -83,7 +73,7 @@ const TeacherDashboard: React.FC = () => {
   const [selectedSanction, setSelectedSanction] = useState<any>(null);
   const [taskInput, setTaskInput] = useState('');
 
-  // UNIFIED DETAIL MODAL STATE (Interactive Dashboard)
+  // UNIFIED DETAIL MODAL STATE
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [storyLine, setStoryLine] = useState<StoryStep[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -92,12 +82,9 @@ const TeacherDashboard: React.FC = () => {
 
   useEffect(() => {
     refreshDashboard();
-    
-    // Subscribe to Realtime Updates
     const unsubscribe = DataService.subscribeToDataChanges(() => {
         refreshDashboard();
     });
-    
     return () => unsubscribe();
   }, []);
 
@@ -140,8 +127,8 @@ const TeacherDashboard: React.FC = () => {
     setRecords(recs);
     setIncidents(incs);
     setStudents(stds);
-    setCounselingSessions(counselings); // Saved for modal
-    setSanctions(allSanctionsList); // Saved for modal
+    setCounselingSessions(counselings); 
+    setSanctions(allSanctionsList); 
     setAllClasses(classes);
     
     if (user) {
@@ -155,7 +142,7 @@ const TeacherDashboard: React.FC = () => {
 
          const pendings = recs.filter(r => {
             const isMyStudent = myStudentIds.includes(r.studentId);
-            const isPending = r.status === 'PENDING' || (!r.status && false); 
+            const isPending = r.status === 'PENDING'; 
             const isNotAutoAccepted = (now - new Date(r.date).getTime()) < AUTO_ACCEPT_MS;
             return isMyStudent && isPending && isNotAutoAccepted;
          }).map(r => ({
@@ -169,7 +156,6 @@ const TeacherDashboard: React.FC = () => {
       // --- LOGIKA DASHBOARD BK (DINAMIS) ---
       if (user.roles.includes(Role.BK)) {
         const thresholds = getDynamicThresholds(rules);
-        // ... (BK Logic kept same as provided previously)
         let activeCount = 0;
         let mandatoryCount = 0;
         let referralCount = 0;
@@ -315,8 +301,6 @@ const TeacherDashboard: React.FC = () => {
     }
   }
 
-  // ... (Other helper functions remain unchanged)
-  
   const translateRecommendation = (rec: string) => {
     switch(rec) {
       case 'PARENT_CALL': return 'Panggilan Orang Tua';
@@ -327,9 +311,7 @@ const TeacherDashboard: React.FC = () => {
     }
   };
 
-  // ... (Unified story line builder unchanged)
   const handleOpenDetail = (item: IncidentRecord | CounselingSession | StudentSanction) => {
-      // (Implementation same as previous, abbreviated)
       const story: StoryStep[] = [];
       let relatedIncidentIds: string[] = [];
       if ('incidentTypeId' in item) relatedIncidentIds = [item.id];
@@ -351,7 +333,6 @@ const TeacherDashboard: React.FC = () => {
               scoreImpact: inc.pointSnapshot
           });
       });
-      // ... (rest of logic)
       
       const relevantSessions = counselingSessions.filter(s => 
           s.relatedRecordIds?.some(id => relatedIncidentIds.includes(id)) ||
@@ -413,7 +394,6 @@ const TeacherDashboard: React.FC = () => {
       alert("Tugas penebusan berhasil ditetapkan!");
   };
 
-  // ... (Other handlers like handleApprove, etc.)
   const handleApprove = (id: string) => { DataService.resolveIncident(id, 'APPROVED'); const rec = records.find(r => r.id === id); if (rec) DataService.evaluateAndApplySanction(rec.studentId); refreshDashboard(); };
   const handleRejectClick = (id: string) => { setRejectRecordId(id); setRejectReason(''); };
   const confirmReject = () => { if (rejectRecordId && rejectReason) { DataService.resolveIncident(rejectRecordId, 'REJECTED', rejectReason); setRejectRecordId(null); refreshDashboard(); } else { alert("Alasan penolakan wajib diisi."); } };
@@ -434,18 +414,36 @@ const TeacherDashboard: React.FC = () => {
   const handleNextPage = () => { if (recentPage < totalPages - 1) setRecentPage(prev => prev + 1); };
 
   return (
-    <div className="space-y-8">
-      {/* ... (Header and Pending Approvals - same as before) ... */}
-      <div className="flex justify-between items-end">
+    <div className="space-y-8 animate-fade-in">
+      {/* HEADER & APPROVALS */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div><h1 className="text-2xl font-bold text-slate-800">Dashboard Guru</h1><p className="text-slate-500">Selamat datang, <span className="font-semibold text-indigo-600">{currentUser?.name}</span>.</p></div>
       </div>
 
+      {pendingApprovals.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-yellow-800 mb-4 flex items-center gap-2"><Clock className="h-5 w-5" /> Menunggu Persetujuan Anda</h2>
+          <div className="space-y-3">
+            {pendingApprovals.map(r => (
+              <div key={r.id} className="bg-white p-4 rounded-lg border border-yellow-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                   <div className="bg-red-100 p-2 rounded-full text-red-600"><AlertCircle className="h-5 w-5" /></div>
+                   <div><p className="font-bold text-slate-800">{r.studentName}</p><p className="text-sm text-slate-600">{r.incidentName} • {new Date(r.date).toLocaleDateString()}</p><p className="text-xs text-slate-400 mt-1">Pelapor: {r.recordedBy}</p></div>
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                   <button onClick={() => handleRejectClick(r.id)} className="flex-1 md:flex-none px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold hover:bg-red-200">Tolak</button>
+                   <button onClick={() => handleApprove(r.id)} className="flex-1 md:flex-none px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-md">Setujui</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* --- KESISWAAN DASHBOARD --- */}
       {isKesiswaan && (
-        <div className="space-y-6 animate-fade-in">
-            {/* ... (Existing Kesiswaan Stats Tiles) ... */}
+        <div className="space-y-6">
             <div className="bg-slate-800 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-                {/* ... (Top part of dashboard) ... */}
                 <div className="absolute right-0 top-0 opacity-10 pointer-events-none"><Gavel className="h-64 w-64 -mr-16 -mt-16" /></div>
                 <div className="relative z-10">
                     <div className="flex items-center gap-3 mb-6"><div className="p-2 bg-orange-500 rounded-lg"><Gavel className="h-6 w-6 text-white" /></div><div><h2 className="text-xl font-bold">Dashboard Kesiswaan</h2><p className="text-slate-400 text-sm">Pusat kontrol ketertiban dan kedisiplinan sekolah</p></div></div>
@@ -476,13 +474,7 @@ const TeacherDashboard: React.FC = () => {
                                                     <span className="text-red-400 font-bold">{item.level}</span> • Skor: {item.currentScore}
                                                 </div>
                                             </div>
-                                            {/* Z-Index ensured, prevent propagation */}
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleOpenTaskModal(item); }} 
-                                                className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded shadow-sm relative z-10 cursor-pointer"
-                                            >
-                                                Beri Tugas
-                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleOpenTaskModal(item); }} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded shadow-sm cursor-pointer z-10">Beri Tugas</button>
                                         </div>
                                     ))
                                 )}
@@ -508,15 +500,9 @@ const TeacherDashboard: React.FC = () => {
                                                 </div>
                                                 <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded shadow-sm">Proses Sanksi</Link>
                                             </div>
-                                            
-                                            {/* INFO RUJUKAN YANG JELAS */}
                                             <div className="bg-blue-900/30 p-2 rounded border border-blue-500/30 text-xs">
-                                                <div className="flex items-center gap-1 font-bold text-blue-300 mb-1">
-                                                    <ArrowRight className="h-3 w-3" /> RUJUKAN DARI BK:
-                                                </div>
-                                                <div className="text-slate-300">
-                                                    Rek: <span className="text-white font-medium">{translateRecommendation(item.session.recommendation)}</span>
-                                                </div>
+                                                <div className="flex items-center gap-1 font-bold text-blue-300 mb-1"><ArrowRight className="h-3 w-3" /> RUJUKAN DARI BK:</div>
+                                                <div className="text-slate-300">Rek: <span className="text-white font-medium">{translateRecommendation(item.session.recommendation)}</span></div>
                                                 <div className="text-slate-400 italic mt-1">"{item.session.notes}"</div>
                                             </div>
                                         </div>
@@ -528,76 +514,180 @@ const TeacherDashboard: React.FC = () => {
                 </div>
             </div>
         </div>
-    )}
+      )}
 
-    {/* ... (BK Dashboard - Unchanged) ... */}
-    {/* ... (My Classes Grid - Unchanged) ... */}
-    {/* ... (Recent Activity - Unchanged) ... */}
-    
-    {/* ... (Task Modal) ... */}
-    {showTaskModal && selectedSanction && (
+      {/* --- DASHBOARD BK --- */}
+      {isBK && (
+        <div className="space-y-6">
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm"><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Kasus Aktif</p><div className="flex items-end justify-between mt-2"><h3 className="text-3xl font-bold text-indigo-600">{bkStats.activeCounseling}</h3><Activity className="h-6 w-6 text-indigo-200" /></div></div>
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm"><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Wajib Konseling</p><div className="flex items-end justify-between mt-2"><h3 className="text-3xl font-bold text-red-600">{bkStats.mandatoryCases}</h3><AlertCircle className="h-6 w-6 text-red-200" /></div></div>
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm"><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Rujukan Wali Kelas</p><div className="flex items-end justify-between mt-2"><h3 className="text-3xl font-bold text-orange-600">{bkStats.referrals}</h3><Inbox className="h-6 w-6 text-orange-200" /></div></div>
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm"><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sesi Bulan Ini</p><div className="flex items-end justify-between mt-2"><h3 className="text-3xl font-bold text-emerald-600">{bkStats.monthlySessions}</h3><Calendar className="h-6 w-6 text-emerald-200" /></div></div>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-slate-800 flex items-center gap-2"><AlertCircle className="h-5 w-5 text-red-600" /> Kasus Prioritas (Wajib)</h3><Link to="/teacher/bk/active" className="text-xs font-bold text-indigo-600 hover:underline">Lihat Semua</Link></div>
+                 <div className="divide-y divide-slate-100">
+                    {bkMandatoryList.length === 0 ? <div className="p-6 text-center text-slate-500 text-sm">Tidak ada kasus prioritas saat ini.</div> : 
+                       bkMandatoryList.map((item, idx) => (
+                          <div key={idx} className="p-4 hover:bg-slate-50 flex justify-between items-center">
+                             <div><p className="font-bold text-slate-900 text-sm">{item.student.name} <span className="text-slate-500 font-normal">({item.className})</span></p><p className="text-xs text-red-600 font-medium mt-0.5">{item.topIncident} • {new Date(item.incidentDate).toLocaleDateString()}</p></div>
+                             <Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100">Tangani</Link>
+                          </div>
+                       ))
+                    }
+                 </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Inbox className="h-5 w-5 text-orange-600" /> Rujukan Wali Kelas</h3><span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">{bkReferralList.length}</span></div>
+                 <div className="divide-y divide-slate-100">
+                    {bkReferralList.length === 0 ? <div className="p-6 text-center text-slate-500 text-sm">Belum ada rujukan masuk.</div> : 
+                       bkReferralList.map((item, idx) => (
+                          <div key={idx} className="p-4 hover:bg-slate-50">
+                             <div className="flex justify-between items-start mb-2"><div><p className="font-bold text-slate-900 text-sm">{item.student.name}</p><p className="text-xs text-slate-500">Dari: {item.homeroomName}</p></div><Link to={`/teacher/student/${item.student.id}`} className="px-3 py-1.5 bg-orange-50 text-orange-600 text-xs font-bold rounded-lg hover:bg-orange-100">Proses</Link></div>
+                             <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded italic line-clamp-2">"{item.note}"</p>
+                          </div>
+                       ))
+                    }
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* --- DASHBOARD GURU MAPEL / WALI KELAS --- */}
+      {myClasses.length > 0 && !isKesiswaan && !isAdmin && !isBK && (
+        <div className="space-y-4">
+           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users className="h-5 w-5 text-indigo-600" /> Kelas Saya</h2>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myClasses.map(cls => (
+                 <Link key={cls.id} to={`/teacher/classes/${cls.id}`} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all group">
+                    <div className="flex justify-between items-start mb-2"><div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors"><Users className="h-6 w-6" /></div><span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{students.filter(s => s.classId === cls.id).length} Siswa</span></div>
+                    <h3 className="text-lg font-bold text-slate-900">{cls.name}</h3><p className="text-xs text-slate-500 mt-1">Kelola Siswa & Laporan</p>
+                 </Link>
+              ))}
+           </div>
+        </div>
+      )}
+
+      {/* --- RECENT ACTIVITY (GLOBAL) --- */}
+      <div className="space-y-4">
+         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity className="h-5 w-5 text-indigo-600" /> Aktivitas Terbaru Sekolah</h2>
+         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="divide-y divide-slate-100">
+               {currentRecords.length === 0 ? <div className="p-8 text-center text-slate-500">Belum ada aktivitas tercatat.</div> : 
+                  currentRecords.map(r => (
+                     <div key={r.id} onClick={() => handleOpenDetail(r as any)} className="p-4 hover:bg-slate-50 flex items-center justify-between cursor-pointer transition-colors group">
+                        <div className="flex items-center gap-4">
+                           <div className={`p-2 rounded-full shrink-0 ${r.typeSnapshot === 'VIOLATION' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>{r.typeSnapshot === 'VIOLATION' ? <ShieldAlert className="h-5 w-5" /> : <Award className="h-5 w-5" />}</div>
+                           <div><p className="text-sm font-bold text-slate-900"><span className="text-indigo-600">{getStudentName(r.studentId)}</span> - {getIncidentName(r.incidentTypeId)}</p><p className="text-xs text-slate-500">{new Date(r.date).toLocaleDateString()} • Oleh {r.recordedBy}</p></div>
+                        </div>
+                        <div className="text-right"><span className={`text-sm font-bold ${r.typeSnapshot === 'VIOLATION' ? 'text-red-600' : 'text-emerald-600'}`}>{r.typeSnapshot === 'VIOLATION' ? '+' : ''}{r.pointSnapshot} Poin</span><div className="text-[10px] text-slate-400 group-hover:text-indigo-500 transition-colors">Lihat Detail</div></div>
+                     </div>
+                  ))
+               }
+            </div>
+            {currentRecords.length > 0 && (
+               <div className="p-4 border-t border-slate-100 flex justify-between items-center bg-slate-50">
+                  <button onClick={handlePrevPage} disabled={recentPage === 0} className="p-2 hover:bg-slate-200 rounded-lg disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button>
+                  <span className="text-xs text-slate-500 font-medium">Halaman {recentPage + 1}</span>
+                  <button onClick={handleNextPage} disabled={recentPage >= Math.ceil(records.length/ITEMS_PER_PAGE)-1} className="p-2 hover:bg-slate-200 rounded-lg disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button>
+               </div>
+            )}
+         </div>
+      </div>
+
+      {/* --- MODALS --- */}
+      {showTaskModal && selectedSanction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
                 <h3 className="text-lg font-bold mb-2">Beri Tugas Penebusan</h3>
                 <p className="text-sm text-slate-500 mb-4">Siswa: {selectedSanction.student.name} ({selectedSanction.level})</p>
-                <textarea 
-                    className="w-full border p-3 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                    rows={3} 
-                    placeholder="Contoh: Membersihkan perpustakaan selama 3 hari..." 
-                    value={taskInput} 
-                    onChange={e => setTaskInput(e.target.value)} 
-                />
-                <div className="flex justify-end gap-2">
-                    <button onClick={() => setShowTaskModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">Batal</button>
-                    <button onClick={handleSaveTask} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold">Simpan Tugas</button>
-                </div>
+                <textarea className="w-full border p-3 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-indigo-500 outline-none" rows={3} placeholder="Contoh: Membersihkan perpustakaan selama 3 hari..." value={taskInput} onChange={e => setTaskInput(e.target.value)} />
+                <div className="flex justify-end gap-2"><button onClick={() => setShowTaskModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">Batal</button><button onClick={handleSaveTask} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold">Simpan Tugas</button></div>
             </div>
         </div>
-    )}
-    
-    {/* STATS DETAIL MODAL */}
-    {showStatModal && selectedStatType && (
+      )}
+      
+      {showStatModal && selectedStatType && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative">
                  <button onClick={() => setShowStatModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="h-6 w-6" /></button>
-                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <Gavel className="h-5 w-5 text-indigo-600" /> 
-                    Detail Data: {selectedStatType === 'REDEMPTION' ? 'Penebusan Berjalan' : selectedStatType}
-                 </h3>
+                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Gavel className="h-5 w-5 text-indigo-600" /> Detail Data: {selectedStatType === 'REDEMPTION' ? 'Penebusan Berjalan' : selectedStatType}</h3>
                  <div className="max-h-[60vh] overflow-y-auto space-y-2">
                     {(() => {
                         let list: any[] = [];
-                        if (selectedStatType === 'REDEMPTION') {
-                            list = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS);
-                        } else {
-                            list = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed);
-                        }
+                        if (selectedStatType === 'REDEMPTION') list = allSanctions.filter(s => s.redemptionStatus === RedemptionStatus.IN_PROGRESS);
+                        else list = allSanctions.filter(s => s.level === selectedStatType && !s.isRedeemed);
                         
                         if(list.length === 0) return <p className="text-slate-500 italic text-center py-4">Tidak ada data aktif untuk kategori ini.</p>;
                         
                         return list.map((item, idx) => {
                              const st = students.find(s => s.id === item.studentId);
                              const cl = allClasses.find(c => c.id === st?.classId) || DataService.getClasses().find(c => c.id === st?.classId);
-                             return (
-                                <div key={idx} className="p-3 border rounded-lg hover:bg-slate-50 flex justify-between items-center cursor-pointer" onClick={() => navigate(`/teacher/student/${item.studentId}`)}>
-                                    <div>
-                                        <p className="font-bold text-slate-800">{st?.name} <span className="font-normal text-slate-500">({cl?.name || '?'})</span></p>
-                                        <p className="text-xs text-slate-500">Sejak: {new Date(item.assignedDate).toLocaleDateString()}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="px-2 py-1 bg-slate-100 rounded text-xs font-bold">{item.level}</span>
-                                    </div>
-                                </div>
-                             )
+                             return (<div key={idx} className="p-3 border rounded-lg hover:bg-slate-50 flex justify-between items-center cursor-pointer" onClick={() => navigate(`/teacher/student/${item.studentId}`)}><div><p className="font-bold text-slate-800">{st?.name} <span className="font-normal text-slate-500">({cl?.name || '?'})</span></p><p className="text-xs text-slate-500">Sejak: {new Date(item.assignedDate).toLocaleDateString()}</p></div><div className="text-right"><span className="px-2 py-1 bg-slate-100 rounded text-xs font-bold">{item.level}</span></div></div>)
                         })
                     })()}
                  </div>
             </div>
         </div>
-    )}
+      )}
 
-    {/* ... (Rest of Modals) ... */}
-    {/* ... (Detail Modal, Class Detail Modal, etc.) ... */}
+      {/* DETAIL MODAL TIMELINE */}
+      {detailModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0">
+                        <h2 className="font-bold text-lg flex items-center gap-2"><LinkIcon className="h-5 w-5 text-indigo-400" /> Riwayat Kasus Terpadu</h2>
+                        <button onClick={() => setDetailModalOpen(false)} className="text-slate-400 hover:text-white transition-colors"><X className="h-6 w-6" /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                        <div className="space-y-0 relative">
+                            <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-slate-200 z-0"></div>
+                            {storyLine.map((step, idx) => (
+                                <div key={step.id} className="relative z-10 flex gap-4 mb-8 last:mb-0 group">
+                                    <div className={`w-12 h-12 rounded-full border-4 border-slate-50 flex items-center justify-center shrink-0 shadow-sm ${step.type === 'INCIDENT' ? 'bg-white text-slate-600' : step.type === 'APPROVAL' ? 'bg-green-100 text-green-600' : step.type === 'COUNSELING_WALAS' ? 'bg-orange-100 text-orange-600' : step.type === 'COUNSELING_BK' ? 'bg-blue-100 text-blue-600' : 'bg-red-600 text-white'}`}>
+                                        {step.type === 'INCIDENT' && <FileText className="h-5 w-5" />}
+                                        {step.type === 'APPROVAL' && <CheckCircle2 className="h-5 w-5" />}
+                                        {step.type === 'COUNSELING_WALAS' && <User className="h-5 w-5" />}
+                                        {step.type === 'COUNSELING_BK' && <HeartHandshake className="h-5 w-5" />}
+                                        {step.type === 'SANCTION' && <Gavel className="h-5 w-5" />}
+                                    </div>
+                                    <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                        <div className="flex justify-between items-start mb-2"><div><h4 className="font-bold text-slate-800 text-base">{step.title}</h4><p className="text-xs text-slate-500 font-mono mt-0.5">{new Date(step.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} • {new Date(step.date).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</p></div>{step.statusLabel && <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${step.statusColor || 'bg-slate-100 text-slate-600'}`}>{step.statusLabel}</span>}</div>
+                                        <div className="text-xs text-slate-500 mb-3 pb-3 border-b border-slate-100"><span className="font-semibold">Oleh:</span> {step.actor} {step.scoreImpact && <span className="ml-2 font-bold text-red-600">(Bobot: {step.scoreImpact} Poin)</span>}</div>
+                                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-3 rounded-lg border border-slate-100 italic">"{step.description || '-'}"</p>
+                                        {step.attachmentUrl && (<div className="mt-3 flex justify-end"><button onClick={() => setPreviewImage(step.attachmentUrl || null)} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors border border-slate-200"><Paperclip className="h-3 w-3" /> Lampiran Bukti</button></div>)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="bg-white p-4 border-t border-slate-200 flex justify-end"><button onClick={() => setDetailModalOpen(false)} className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg text-sm">Tutup</button></div>
+                </div>
+            </div>
+      )}
+
+      {/* REJECT REASON MODAL */}
+      {rejectRecordId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+              <h3 className="text-lg font-bold mb-4">Alasan Penolakan</h3>
+              <textarea autoFocus className="w-full border p-3 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-red-500 outline-none" rows={3} placeholder="Tulis alasan..." value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
+              <div className="flex justify-end gap-2"><button onClick={() => setRejectRecordId(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Batal</button><button onClick={confirmReject} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold">Tolak Laporan</button></div>
+           </div>
+        </div>
+      )}
+
+      {previewImage && (
+            <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 animate-fade-in" onClick={() => setPreviewImage(null)}>
+                <button className="absolute top-4 right-4 text-white hover:text-gray-300"><X className="h-8 w-8" /></button>
+                <img src={previewImage} alt="Preview Bukti" className="max-w-full max-h-[90vh] rounded shadow-2xl object-contain" onClick={(e) => e.stopPropagation()} />
+            </div>
+      )}
     </div>
   );
 };

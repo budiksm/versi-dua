@@ -25,7 +25,8 @@ import {
   Search,
   Wifi,
   WifiOff,
-  CloudOff
+  CloudOff,
+  Loader2
 } from 'lucide-react';
 import { Role, Teacher } from '../types';
 
@@ -64,6 +65,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isSavingPass, setIsSavingPass] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  
+  // State baru untuk overlay loading saat logout
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -102,7 +106,30 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [currentUser?.id, successMessage]); 
 
   const handleLogoutClick = () => setShowLogoutModal(true);
-  const handleConfirmLogout = () => { DataService.logout(); navigate('/'); };
+  
+  // Update Logic Logout
+  const handleConfirmLogout = async () => { 
+      if (currentUser) {
+          setShowLogoutModal(false);
+          setIsLoggingOut(true); // Tampilkan overlay loading
+          
+          try {
+              // Simpan data terakhir ke cloud
+              await DataService.finalizeSession(currentUser.id);
+          } catch (error) {
+              console.error("Gagal sync logout", error);
+          }
+          
+          // Setelah selesai simpan (atau error), baru logout lokal
+          DataService.logout(); 
+          navigate('/');
+          setIsLoggingOut(false);
+      } else {
+          DataService.logout(); 
+          navigate('/');
+      }
+  };
+  
   const handleResetConnection = () => window.location.reload();
 
   const handlePasswordChangeSubmit = (e: React.FormEvent) => {
@@ -203,6 +230,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-slate-50">
+      
+      {/* OVERLAY LOADING SAAT LOGOUT */}
+      {isLoggingOut && (
+        <div className="fixed inset-0 z-[150] bg-indigo-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
+            <div className="bg-white p-10 rounded-3xl shadow-2xl flex flex-col items-center text-slate-800">
+                <Cloud className="h-16 w-16 text-indigo-600 mb-6 animate-bounce" />
+                <h3 className="text-2xl font-black tracking-tight">Menyimpan Sesi...</h3>
+                <p className="text-slate-500 mt-2 font-medium text-center">Menyinkronkan data terakhir Anda ke Cloud <br/> sebelum keluar.</p>
+                <div className="mt-8 flex items-center gap-2 text-indigo-600 font-bold">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span>Mohon tunggu...</span>
+                </div>
+            </div>
+        </div>
+      )}
+
       {showLogoutModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 animate-fade-in backdrop-blur-sm">
            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -211,10 +254,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <LogOut className="h-8 w-8 text-red-600 ml-1" />
                  </div>
                  <h3 className="text-xl font-bold text-slate-800 mb-2">Konfirmasi Keluar</h3>
-                 <p className="text-slate-600 text-sm">Apakah Anda yakin ingin keluar dari akun ini?</p>
+                 <p className="text-slate-600 text-sm">Apakah Anda yakin ingin keluar dari akun ini? <br/>Pastikan semua input sudah selesai.</p>
                  <div className="flex gap-3 justify-center mt-6">
                     <button onClick={() => setShowLogoutModal(false)} className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">Batal</button>
-                    <button onClick={handleConfirmLogout} className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-md transition-colors flex items-center gap-2">Ya, Keluar</button>
+                    <button onClick={handleConfirmLogout} className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-md transition-colors flex items-center gap-2">Ya, Simpan & Keluar</button>
                  </div>
               </div>
            </div>
