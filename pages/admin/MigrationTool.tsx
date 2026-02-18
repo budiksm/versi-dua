@@ -10,7 +10,6 @@ const MigrationTool: React.FC = () => {
 
   const addLog = (msg: string) => setLogs(p => [...p, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  // Updated: Removed idField parameter completely to prevent TS errors
   const migrateCollection = async (legacyDocName: string, targetColName: string) => {
     addLog(`--- Memulai Migrasi: ${legacyDocName} -> ${targetColName} ---`);
     
@@ -52,8 +51,7 @@ const MigrationTool: React.FC = () => {
             const chunk = chunks[i];
 
             chunk.forEach((item: any) => {
-                // EXPLICITLY use .id property or ['id'] string literal
-                // DO NOT use a variable named id here
+                // Access .id safely from the item object
                 const docId = item.id || item['id']; 
                 
                 if (!docId) {
@@ -61,15 +59,13 @@ const MigrationTool: React.FC = () => {
                     return;
                 }
                 
-                // Construct reference safely
                 const itemRef = doc(db, targetColName, String(docId));
-                // Gunakan set dengan merge: true agar aman jika dijalankan ulang
                 batch.set(itemRef, item, { merge: true });
             });
 
             await batch.commit();
             totalProcessed += chunk.length;
-            setProgress(prev => prev + (100 / (chunks.length * 6))); // Estimasi progress bar
+            setProgress(prev => prev + (100 / (chunks.length * 6))); 
             addLog(`✅ Batch ${i + 1}/${chunks.length} berhasil (${chunk.length} items).`);
         }
 
@@ -93,7 +89,6 @@ const MigrationTool: React.FC = () => {
           const snap = await getDoc(legacyRef);
           if (snap.exists()) {
               const data = snap.data().data || [];
-              // Simpan sebagai dokumen tunggal di dalam collection master_data
               const targetRef = doc(db, "master_data", conf);
               batch.set(targetRef, { data: data });
               addLog(`📄 Config '${conf}' disiapkan (${data.length} items).`);
@@ -114,7 +109,7 @@ const MigrationTool: React.FC = () => {
     setLogs([]);
     setProgress(0);
 
-    // FIX: Only pass 2 arguments. Ensure no 'id' variable is passed.
+    // Call with exactly 2 arguments
     await migrateCollection('students', 'students');
     await migrateCollection('teachers', 'teachers');
     await migrateCollection('classes', 'classes');
@@ -142,7 +137,8 @@ const MigrationTool: React.FC = () => {
             Migration Tool (Legacy to Scalable)
         </h1>
         <p className="text-slate-500 mt-2">
-            Tool ini akan memecah "Giant Document" (`school_data/{doc}`) menjadi Collection standar (`students/{id}`, dll).
+            {/* FIXED: Escaped curly braces to prevent TS from interpreting them as variables */}
+            Tool ini akan memecah "Giant Document" (<code>{'school_data/{doc}'}</code>) menjadi Collection standar (<code>{'students/{id}'}</code>, dll).
             <br />
             <span className="text-red-600 font-bold bg-red-50 px-2 py-1 rounded text-xs mt-2 inline-block">
                 <AlertTriangle className="h-3 w-3 inline mr-1" />
