@@ -445,6 +445,46 @@ const StudentProfile: React.FC = () => {
     } catch (err) { alert("Gagal update status."); } finally { setIsSubmitting(false); }
   };
 
+  const handleKesiswaanAction = async (action: 'RETURN_TO_BK' | 'CLOSE') => {
+      if (!student) return;
+      if (!referralActionNote.trim()) {
+          alert("Mohon isi catatan penanganan terlebih dahulu.");
+          return;
+      }
+      
+      setIsSubmitting(true);
+      try {
+          const pendingReferrals = (records || []).filter(r => r.studentId === student.id && r.bkStatus === 'REFERRED_TO_KESISWAAN');
+
+          if (pendingReferrals.length === 0) {
+              alert("Tidak ada kasus rujukan yang aktif.");
+              setIsSubmitting(false);
+              return;
+          }
+
+          const recordIds = pendingReferrals.map(r => r.id);
+          
+          await DataService.processKesiswaanReferral(
+              recordIds, 
+              action, 
+              referralActionNote, 
+              undefined, 
+              currentUser?.name,
+              currentUser?.id
+          );
+
+          setSuccessMsg(action === 'CLOSE' ? 'Kasus ditutup.' : 'Kasus dikembalikan ke BK.');
+          setReferralActionNote('');
+          setRefreshKey(prev => prev + 1);
+          setTimeout(() => setSuccessMsg(''), 3000);
+      } catch (error) {
+          console.error(error);
+          alert("Gagal memproses tindakan.");
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
+
   const translateRecommendation = (rec: string) => { switch(rec) { case 'PARENT_CALL': return 'Panggilan Orang Tua'; case 'TO_KESISWAAN': return 'Rujuk ke Kesiswaan'; case 'SUSPENSION_REVIEW': return 'Tinjauan Skorsing'; case 'TO_BK': return 'Rujuk ke BK'; case 'ROUTINE_MONITORING': return 'Pantauan Rutin'; case 'COMPLETED': return 'Selesai'; default: return '-'; } };
   
   const getStatusBadge = (status?: IncidentStatus) => {
@@ -473,6 +513,10 @@ const StudentProfile: React.FC = () => {
   const homeroomViolationRecords = violationRecords.filter(r => r.status === 'APPROVED' && r.bkStatus !== 'COMPLETED' && r.bkStatus !== 'REFERRED_TO_KESISWAAN');
   const activeReferralRecords = violationRecords.filter(r => r.bkStatus === 'REFERRED_TO_KESISWAAN');
   
+  const latestReferralSession = counselingSessions
+        .filter(s => (s.recommendation === 'TO_KESISWAAN' || s.recommendation === 'SUSPENSION_REVIEW'))
+        .sort((a,b) => safeDate(b.date).getTime() - safeDate(a.date).getTime())[0];
+
   // SAFE ACCESS
   const bkRule = (rules || []).find(r => (r.statusLabel || '').toUpperCase().includes('BK'));
   const bkThreshold = bkRule ? bkRule.minPoints : 40;
@@ -741,7 +785,7 @@ const StudentProfile: React.FC = () => {
                                 <option value="PARENT_CALL">Perlu Panggilan Orang Tua</option>
                                 <option value="TO_KESISWAAN">Rujuk ke Kesiswaan (Perlu Sanksi Tegas)</option>
                                 <option value="SUSPENSION_REVIEW">Tinjauan Skorsing</option>
-                                <option value="COMPLETED">Kasus Selesai (Tutup Kasus)</option>
+                                <option value="COMPLETED">Kasus Selesai (Tutup)</option>
                             </select>
                         </div>
 
@@ -796,7 +840,129 @@ const StudentProfile: React.FC = () => {
            </>
         )}
 
-        {/* DETAIL MODAL TIMELINE */}
+        {/* TAB 4: SANCTIONS / KESISWAAN PANEL */}
+        {activeTab === 'SANCTIONS' && shouldShowSanctionPanel && (
+           <>
+             <div className="lg:col-span-2 space-y-6">
+                
+                {/* NEW: PANEL TINDAKAN RUJUKAN BK */}
+                {hasReferralToKesiswaan && (
+                    <div className="bg-red-50 border-2 border-red-100 rounded-xl overflow-hidden shadow-sm animate-fade-in">
+                        <div className="p-4 bg-red-100 border-b border-red-200 flex justify-between items-center">
+                            <h2 className="text-red-800 font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> Kotak Masuk: Rujukan dari BK</h2>
+                            <span className="bg-white text-red-600 px-2 py-0.5 rounded text-xs font-bold">{activeReferralRecords.length} Kasus</span>
+                        </div>
+                        <div className="p-6">
+                            {/* NEW: DISPLAY BK NOTES */}
+                            {latestReferralSession && (
+                                <div className="mb-6 bg-white p-4 rounded-lg border border-red-200 shadow-sm relative">
+                                    <div className="absolute top-0 right-0 px-2 py-1 bg-red-100 text-red-700 text-[10px] font-bold rounded-bl-lg border-l border-b border-red-200">
+                                        Rujukan Terbaru
+                                    </div>
+                                    <div className="flex items-center gap-2 mb-2 text-xs text-slate-500 border-b border-slate-100 pb-2">
+                                        <User className="h-3 w-3" /> <b>{latestReferralSession.counselorName}</b> (BK)
+                                        <span>•</span>
+                                        <span>{new Date(latestReferralSession.date).toLocaleDateString()}</span>
+                                    </div>
+                                    <p className="text-sm text-slate-800 italic">"{latestReferralSession.notes}"</p>
+                                    
+                                    {latestReferralSession.attachmentUrl && (
+                                        <div className="mt-3 flex justify-end">
+                                            <button 
+                                                onClick={() => setPreviewImage(latestReferralSession.attachmentUrl || null)}
+                                                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded transition-colors"
+                                            >
+                                                <Paperclip className="h-3 w-3" /> Lihat Lampiran BK
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <p className="text-sm text-slate-600 mb-4">
+                                Silakan tentukan apakah perlu sanksi tegas (SP), dikembalikan ke BK, atau ditutup.
+                            </p>
+                            
+                            <div className="space-y-4">
+                                <textarea 
+                                    className="w-full p-3 border rounded-lg text-sm" 
+                                    rows={3} 
+                                    placeholder="Catatan penanganan Kesiswaan..."
+                                    value={referralActionNote}
+                                    onChange={(e) => setReferralActionNote(e.target.value)}
+                                />
+                                <div className="flex gap-3">
+                                    <button 
+                                        onClick={() => handleKesiswaanAction('RETURN_TO_BK')}
+                                        disabled={isSubmitting}
+                                        className="flex-1 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg font-bold hover:bg-slate-50 text-sm"
+                                    >
+                                        Kembalikan ke BK
+                                    </button>
+                                    <button 
+                                        onClick={() => handleKesiswaanAction('CLOSE')}
+                                        disabled={isSubmitting}
+                                        className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 text-sm"
+                                    >
+                                        Tutup Kasus (Tanpa Sanksi)
+                                    </button>
+                                </div>
+                                <div className="text-center text-xs text-slate-400 font-medium my-2">- ATAU -</div>
+                                <p className="text-xs text-center text-red-600 font-bold">Gunakan Form "Tetapkan Sanksi Baru" di bawah jika ingin memberi SP.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className={`p-6 border-b border-slate-100 flex justify-between items-center ${editingSanctionId ? 'bg-orange-50' : 'bg-red-50'}`}>
+                     <h2 className={`font-bold flex items-center gap-2 ${editingSanctionId ? 'text-orange-800' : 'text-slate-800'}`}>{editingSanctionId ? <PenSquare className="h-5 w-5" /> : <Gavel className="h-5 w-5 text-red-600" />}{editingSanctionId ? 'Edit Sanksi / Beri Tugas' : 'Tetapkan Sanksi Baru'}</h2>
+                     {editingSanctionId && <button onClick={cancelEditSanction} className="text-xs text-orange-700 hover:underline font-bold">Batal Edit</button>}
+                   </div>
+                   <form onSubmit={handleAssignSanction} className="p-6 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div>
+                             <label className="block text-sm font-medium text-slate-700 mb-2">Tingkat Sanksi</label>
+                             <select value={sanctionLevel} onChange={(e) => setSanctionLevel(e.target.value as any)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900">
+                                {availableSanctionOptions.length > 0 ? (
+                                    availableSanctionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)
+                                ) : (
+                                    <option value="" disabled>Semua Sanksi Sudah Diberikan</option>
+                                )}
+                             </select>
+                             <p className="text-[10px] text-slate-500 mt-1">*Opsi disesuaikan dengan poin ({stats.effectiveViolationScore}) dan riwayat sanksi siswa.</p>
+                         </div>
+                         <div><label className="block text-sm font-medium text-slate-700 mb-2">Tugas Penebusan</label><input type="text" value={sanctionRedemptionTask} onChange={(e) => setSanctionRedemptionTask(e.target.value)} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900" placeholder="Contoh: Membersihkan Masjid..." /></div>
+                      </div>
+                      <div><label className="block text-sm font-medium text-slate-700 mb-2">Alasan</label><textarea required value={sanctionNotes} onChange={(e) => setSanctionNotes(e.target.value)} rows={4} className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white text-slate-900" placeholder="Dasar penetapan..." /></div>
+                      <button type="submit" disabled={isSubmitting} className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-semibold py-4 rounded-xl shadow-md">{editingSanctionId ? <Save className="h-5 w-5" /> : <Gavel className="h-5 w-5" />} {isSubmitting ? 'Menyimpan...' : 'Simpan'}</button>
+                   </form>
+                </div>
+             </div>
+             <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-lg mb-2"><Gavel className="h-5 w-5" /> Riwayat Sanksi</div>
+                <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
+                  {sanctions.length === 0 ? <div className="text-slate-500 text-sm italic">Belum ada sanksi.</div> : 
+                    sanctions.map(item => (
+                      <div key={item.id} onClick={() => handleOpenDetail(item)} className={`bg-white p-5 rounded-xl border shadow-sm relative overflow-hidden transition-all hover:shadow-md cursor-pointer ${editingSanctionId === item.id ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`}>
+                         <div className="flex justify-between items-start mb-2"><div className="text-xs font-semibold text-slate-500">{safeDate(item.assignedDate).toLocaleDateString()}</div><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${item.redemptionStatus === RedemptionStatus.COMPLETED ? 'bg-green-100 text-green-700 border-green-200' : item.redemptionStatus === RedemptionStatus.IN_PROGRESS ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{item.redemptionStatus === RedemptionStatus.COMPLETED ? 'Selesai' : item.redemptionStatus === RedemptionStatus.IN_PROGRESS ? 'Sedang Jalan' : 'Belum Dikerjakan'}</span></div>
+                         <div className="flex items-center justify-between mb-2"><span className="text-lg font-bold text-red-600">{item.level}</span>{item.redemptionStatus === RedemptionStatus.NONE && <button onClick={(e) => { e.stopPropagation(); startEditSanction(item); }} className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg font-bold z-10 relative"><PenSquare className="h-3 w-3" /> Edit</button>}</div>
+                         <p className="text-sm text-slate-700 mb-3 bg-slate-50 p-2 rounded">"{item.notes}"</p>
+                         {item.redemptionTask && <div className="text-xs bg-yellow-50 p-2 rounded border border-yellow-100 text-yellow-800 mb-3"><b>Tugas:</b> {item.redemptionTask}</div>}
+                         <div className="flex gap-2 justify-end mt-2">
+                            {item.redemptionStatus === RedemptionStatus.ASSIGNED && item.redemptionTask && (<button onClick={(e) => { e.stopPropagation(); updateRedemptionStatus(item.id, RedemptionStatus.IN_PROGRESS); }} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm flex items-center gap-1 z-10 relative"><Play className="h-3 w-3" /> Mulai Penebusan</button>)}
+                            {item.redemptionStatus === RedemptionStatus.IN_PROGRESS && (<button onClick={(e) => { e.stopPropagation(); updateRedemptionStatus(item.id, RedemptionStatus.COMPLETED); }} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 shadow-sm flex items-center gap-1 z-10 relative"><Check className="h-3 w-3" /> Selesai</button>)}
+                         </div>
+                         <div className="mt-2 text-[10px] text-slate-400 text-right flex items-center justify-end gap-1">Oleh: {item.assignedBy} <span className="text-indigo-500 font-bold ml-2">Detail</span></div>
+                      </div>
+                    ))
+                  }
+                </div>
+             </div>
+           </>
+        )}
+
+        {/* --- UNIFIED DETAIL MODAL (TIMELINE) --- */}
         {detailModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in backdrop-blur-sm">
                 <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
