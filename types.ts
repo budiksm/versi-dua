@@ -74,8 +74,9 @@ export interface MasterIncidentType {
 }
 
 export type IncidentStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
-// UPDATED: Added 'REFERRED_TO_KESISWAAN' to prevent premature closing
-export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED' | 'REFERRED' | 'RETURNED_TO_BK' | 'REFERRED_TO_KESISWAAN'; 
+
+// UPDATED: Added 'MONITORING' for routine checks
+export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED' | 'REFERRED' | 'RETURNED_TO_BK' | 'REFERRED_TO_KESISWAAN' | 'MONITORING'; 
 
 export interface IncidentRecord {
   id: string;
@@ -89,11 +90,12 @@ export interface IncidentRecord {
   typeSnapshot: IncidentTypeCategory;
   
   // Approval Logic
-  status?: IncidentStatus; // Optional for backward compatibility (default APPROVED)
+  status?: IncidentStatus; 
   rejectionReason?: string;
 
   // BK Logic (New)
-  bkStatus?: BkCounselingStatus; 
+  bkStatus?: BkCounselingStatus;
+  nextEvaluationDate?: string; // NEW: For Routine Monitoring Target
 }
 
 export interface CoachingRule {
@@ -111,11 +113,12 @@ export interface CounselingSession {
   counselorName: string;
   date: string;
   notes: string; 
-  recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK';
+  // Added ROUTINE_MONITORING
+  recommendation: 'NONE' | 'PARENT_CALL' | 'TO_KESISWAAN' | 'SUSPENSION_REVIEW' | 'TO_BK' | 'ROUTINE_MONITORING' | 'COMPLETED';
   status: 'OPEN' | 'CLOSED';
-  sessionType?: 'BK' | 'HOMEROOM' | 'KESISWAAN'; // Added KESISWAAN for logging decisions
-  relatedRecordIds?: string[]; // LINK TO SPECIFIC INCIDENTS (CASE BASED)
-  attachmentUrl?: string; // NEW: Mandatory proof for counseling
+  sessionType?: 'BK' | 'HOMEROOM' | 'KESISWAAN'; 
+  relatedRecordIds?: string[]; 
+  attachmentUrl?: string; 
 }
 
 export enum SanctionLevel {
@@ -127,10 +130,10 @@ export enum SanctionLevel {
 }
 
 export enum RedemptionStatus {
-  NONE = 'NONE',         // Belum ada tugas penebusan / belum dikerjakan
-  ASSIGNED = 'ASSIGNED', // Tugas diberikan
-  IN_PROGRESS = 'IN_PROGRESS', // Sedang dikerjakan
-  COMPLETED = 'COMPLETED' // Selesai
+  NONE = 'NONE',         
+  ASSIGNED = 'ASSIGNED', 
+  IN_PROGRESS = 'IN_PROGRESS', 
+  COMPLETED = 'COMPLETED' 
 }
 
 export interface StudentSanction {
@@ -139,13 +142,12 @@ export interface StudentSanction {
   level: SanctionLevel; 
   assignedBy: string; 
   assignedDate: string;
-  notes: string; // Alasan SP
+  notes: string; 
   
-  // Redemption Logic
   redemptionStatus: RedemptionStatus;
-  redemptionTask?: string; // e.g. "Membersihkan Perpustakaan selama 3 hari"
-  redemptionDate?: string; // Tanggal selesai
-  isRedeemed?: boolean; // Backward compatibility
+  redemptionTask?: string; 
+  redemptionDate?: string; 
+  isRedeemed?: boolean; 
 }
 
 // --- POE IBU (CASHFLOW) TYPES ---
@@ -159,17 +161,17 @@ export interface CashflowRecord {
   amount: number;
   date: string;
   description: string;
-  recipient?: string; // Wajib jika OUT
+  recipient?: string; 
   
-  recordedBy: string; // Nama Penginput
+  recordedBy: string; 
   recordedById: string;
   recordedByRole: Role;
   
   status: CashflowStatus;
   
-  verifiedBy?: string; // Nama Wali Kelas
+  verifiedBy?: string; 
   verifiedDate?: string;
   
-  isCorrection?: boolean; // Menandakan ini data pengganti
-  originalRecordId?: string; // ID data yang dikoreksi (jika ada)
+  isCorrection?: boolean; 
+  originalRecordId?: string; 
 }
