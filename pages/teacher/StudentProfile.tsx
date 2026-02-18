@@ -190,7 +190,7 @@ const StudentProfile: React.FC = () => {
         if (foundStudent) {
             setStudent(foundStudent);
             
-            // Safe Loaders
+            // Safe Loaders using Fallbacks
             const allRecords = DataService.getRecords() || [];
             setRecords(allRecords.filter((r: any) => r && r.studentId === studentId));
             
@@ -200,10 +200,18 @@ const StudentProfile: React.FC = () => {
             setClasses(DataService.getClasses() || []);
             
             const allSessions = DataService.getCounselingSessions() || [];
-            setCounselingSessions(allSessions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+            setCounselingSessions(
+                allSessions
+                .filter((s: any) => s.studentId === studentId)
+                .sort((a:any,b:any) => safeDate(b.date).getTime() - safeDate(a.date).getTime())
+            );
 
             const allSanctions = DataService.getSanctions() || [];
-            setSanctions(allSanctions.filter((s: any) => s.studentId === studentId).sort((a:any,b:any) => new Date(b.assignedDate).getTime() - new Date(a.assignedDate).getTime()));
+            setSanctions(
+                allSanctions
+                .filter((s: any) => s.studentId === studentId)
+                .sort((a:any,b:any) => safeDate(b.assignedDate).getTime() - safeDate(a.assignedDate).getTime())
+            );
         } else {
             setStudent(null);
         }

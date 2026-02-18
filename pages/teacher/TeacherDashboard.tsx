@@ -87,13 +87,14 @@ const TeacherDashboard: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // --- HELPER UNTUK MENDAPATKAN AMBANG BATAS DINAMIS (SAFE GUARDED) ---
   const getDynamicThresholds = (rules: CoachingRule[]) => {
       const getRuleMin = (keyword: string, defaultVal: number) => {
-          // SAFE GUARD: Ensure rules exist and statusLabel is safe
           if (!rules || !Array.isArray(rules)) return defaultVal;
-          const r = rules.find(x => (x.statusLabel || '').toUpperCase().includes(keyword));
+          const r = rules.find(x => x && x.statusLabel && x.statusLabel.toUpperCase().includes(keyword));
           return r ? r.minPoints : defaultVal;
       };
+      
       return {
           bk: getRuleMin('BK', 40),
           sp1: getRuleMin('SP 1', 80),
@@ -115,7 +116,7 @@ const TeacherDashboard: React.FC = () => {
         return;
     }
     
-    // SAFE FALLBACKS
+    // SAFE FALLBACKS: Ensure arrays are never null/undefined
     const recs = DataService.getRecords() || [];
     const incs = DataService.getIncidentTypes() || [];
     const stds = DataService.getStudents() || [];
