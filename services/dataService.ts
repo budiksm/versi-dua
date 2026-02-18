@@ -13,21 +13,21 @@ import { StorageService } from './storageService';
 // ... existing configuration ...
 const ENABLE_BACKDOOR = true; 
 
-// ... existing store definition ...
+// STORE DEFINITION - SINGLE SOURCE OF TRUTH (NO LEGACY)
 const store = {
-    teachers: { legacy: [] as Teacher[], new: [] as Teacher[], active: [] as Teacher[], source: 'INITIAL' },
-    students: { legacy: [] as Student[], new: [] as Student[], active: [] as Student[], source: 'INITIAL' },
-    classes: { legacy: [] as ClassGroup[], new: [] as ClassGroup[], active: [] as ClassGroup[], source: 'INITIAL' },
-    records: { legacy: [] as IncidentRecord[], new: [] as IncidentRecord[], active: [] as IncidentRecord[], source: 'INITIAL' },
-    counseling: { legacy: [] as CounselingSession[], new: [] as CounselingSession[], active: [] as CounselingSession[], source: 'INITIAL' },
-    sanctions: { legacy: [] as StudentSanction[], new: [] as StudentSanction[], active: [] as StudentSanction[], source: 'INITIAL' },
-    cashflow: { legacy: [] as CashflowRecord[], new: [] as CashflowRecord[], active: [] as CashflowRecord[], source: 'INITIAL' },
-    activity_logs: { legacy: [] as ActivityLog[], new: [] as ActivityLog[], active: [] as ActivityLog[], source: 'INITIAL' },
+    teachers: { active: [] as Teacher[] },
+    students: { active: [] as Student[] },
+    classes: { active: [] as ClassGroup[] },
+    records: { active: [] as IncidentRecord[] },
+    counseling: { active: [] as CounselingSession[] },
+    sanctions: { active: [] as StudentSanction[] },
+    cashflow: { active: [] as CashflowRecord[] },
+    activity_logs: { active: [] as ActivityLog[] },
     
     // Configs
-    categories: { legacy: [] as MasterCategory[], new: [] as MasterCategory[], active: [] as MasterCategory[], source: 'INITIAL' },
-    incidentTypes: { legacy: [] as MasterIncidentType[], new: [] as MasterIncidentType[], active: [] as MasterIncidentType[], source: 'INITIAL' },
-    rules: { legacy: [] as CoachingRule[], new: [] as CoachingRule[], active: [] as CoachingRule[], source: 'INITIAL' },
+    categories: { active: [] as MasterCategory[] },
+    incidentTypes: { active: [] as MasterIncidentType[] },
+    rules: { active: [] as CoachingRule[] },
 };
 
 // ... existing sync state ...
@@ -54,71 +54,26 @@ const notifyDataChange = () => {
   dataChangeListeners.forEach(cb => cb());
 };
 
-const reconcile = (key: keyof typeof store) => {
-    const s = store[key];
-    const legacyCount = s.legacy.length;
-    const newCount = s.new.length;
-
-    let newActive: any[] = [];
-    let newSource = 'INITIAL';
-
-    if (newCount > 0) {
-        if (legacyCount > 0 && newCount < legacyCount) {
-             newActive = s.legacy;
-             newSource = `LEGACY (Safe Fallback: New ${newCount} < Old ${legacyCount})`;
-        } else {
-             newActive = s.new;
-             newSource = `NEW_COLLECTION (${newCount} items)`;
-        }
-    } else if (legacyCount > 0) {
-        newActive = s.legacy;
-        newSource = `LEGACY_DOC (${legacyCount} items)`;
-    } else {
-        newActive = [];
-        newSource = 'EMPTY (No Data)';
-    }
-
-    if (s.source !== newSource) {
-        const isNew = newSource.includes('NEW');
-        const color = isNew ? 'background: #22c55e; color: white; padding: 2px 5px; border-radius: 3px;' : 'background: #f59e0b; color: black; padding: 2px 5px; border-radius: 3px;';
-        console.groupCollapsed(`%c[DataService] Source Switch: ${key}`, color);
-        console.log(`Previous: ${s.source}`);
-        console.log(`Current:  ${newSource}`);
-        console.log(`Counts:   Legacy=${legacyCount}, New=${newCount}`);
-        console.groupEnd();
-        s.source = newSource;
-    }
-
-    s.active = newActive;
-};
-
-// ... existing setupHybridListener ...
-const setupHybridListener = (
+// --- NEW SINGLE SOURCE LISTENER (NO FALLBACK) ---
+const setupCollectionListener = (
     key: keyof typeof store,
-    legacyDocPath: string, 
-    newCollectionName: string, 
+    collectionName: string, 
     isConfig: boolean = false
 ) => {
     if (isConfig) {
-        onSnapshot(doc(db, "master_data", newCollectionName), (snap) => {
-            store[key].new = snap.exists() ? (snap.data().data || []) : [];
-            reconcile(key);
+        // Listen to master_data configuration document
+        onSnapshot(doc(db, "master_data", collectionName), (snap) => {
+            store[key].active = snap.exists() ? (snap.data().data || []) : [];
             notifyDataChange();
         });
     } else {
-        onSnapshot(collection(db, newCollectionName), (snap) => {
+        // Listen to standard collections
+        onSnapshot(collection(db, collectionName), (snap) => {
             const data = snap.docs.map(d => d.data() as any);
-            store[key].new = data;
-            reconcile(key);
+            store[key].active = data;
             notifyDataChange();
         });
     }
-
-    onSnapshot(doc(db, "school_data", isConfig ? key : newCollectionName), (snap) => {
-        store[key].legacy = snap.exists() ? (snap.data().data || []) : [];
-        reconcile(key);
-        notifyDataChange();
-    });
 };
 
 // ... existing timeoutPromise ...
@@ -218,18 +173,20 @@ export const DataService = {
     const isConnected = await connectToFirebase();
     if (!isConnected) return false;
 
-    setupHybridListener('teachers', 'teachers', 'teachers');
-    setupHybridListener('students', 'students', 'students');
-    setupHybridListener('classes', 'classes', 'classes');
-    setupHybridListener('records', 'records', 'records');
-    setupHybridListener('counseling', 'counseling', 'counseling');
-    setupHybridListener('sanctions', 'sanctions', 'sanctions');
-    setupHybridListener('cashflow', 'cashflow', 'cashflow');
-    setupHybridListener('activity_logs', 'activity_logs', 'activity_logs');
+    // DIRECT CONNECTION TO NEW COLLECTIONS (NO FALLBACK)
+    setupCollectionListener('teachers', 'teachers');
+    setupCollectionListener('students', 'students');
+    setupCollectionListener('classes', 'classes');
+    setupCollectionListener('records', 'records');
+    setupCollectionListener('counseling', 'counseling');
+    setupCollectionListener('sanctions', 'sanctions');
+    setupCollectionListener('cashflow', 'cashflow');
+    setupCollectionListener('activity_logs', 'activity_logs');
 
-    setupHybridListener('categories', 'categories', 'categories', true);
-    setupHybridListener('incidentTypes', 'incidentTypes', 'incidentTypes', true);
-    setupHybridListener('rules', 'rules', 'rules', true);
+    // DIRECT CONNECTION TO CONFIGS
+    setupCollectionListener('categories', 'categories', true);
+    setupCollectionListener('incidentTypes', 'incidentTypes', true);
+    setupCollectionListener('rules', 'rules', true);
 
     await new Promise(r => setTimeout(r, 2500)); 
 
@@ -388,7 +345,7 @@ export const DataService = {
       action: 'CLOSE' | 'RETURN_TO_BK', 
       notes: string, 
       attachmentUrl?: string, 
-      officerName?: string,
+      officerName?: string, 
       officerId?: string
   ) => {
       const statusMap = {
