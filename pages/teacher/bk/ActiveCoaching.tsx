@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../../../services/dataService';
 import { Student, Role } from '../../../types';
-import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, User, AlertTriangle, Archive, ExternalLink } from 'lucide-react';
+import { HeartHandshake, Search, AlertCircle, CheckCircle2, MessageSquare, ArrowUpRight, User, AlertTriangle, Archive, ExternalLink, BookOpen } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const ActiveCoaching: React.FC = () => {
@@ -117,28 +117,31 @@ const ActiveCoaching: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Manajemen Kasus & Konseling</h1>
-          <p className="text-slate-500">Pusat kontrol penanganan masalah siswa dan rujukan.</p>
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <BookOpen className="h-7 w-7 text-purple-600" />
+            Manajemen Kasus BK
+          </h1>
+          <p className="text-slate-500">Pusat kontrol konseling dan penanganan masalah siswa.</p>
         </div>
       </div>
 
-      {/* NEW SIMPLIFIED TABS */}
-      <div className="flex border-b border-slate-200 overflow-x-auto">
+      {/* NEW SIMPLIFIED TABS - PURPLE THEME */}
+      <div className="flex border-b border-purple-200 overflow-x-auto">
          <button 
             onClick={() => setActiveTab('PRIORITY')} 
-            className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'PRIORITY' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'PRIORITY' ? 'border-purple-600 text-purple-700 bg-purple-50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
          >
             <AlertTriangle className="h-4 w-4" /> 
             Prioritas Penanganan 
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${activeTab === 'PRIORITY' ? 'bg-red-200 text-red-800' : 'bg-slate-200 text-slate-600'}`}>{priorityCases.length}</span>
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${activeTab === 'PRIORITY' ? 'bg-purple-200 text-purple-800' : 'bg-slate-200 text-slate-600'}`}>{priorityCases.length}</span>
          </button>
          <button 
             onClick={() => setActiveTab('MONITORING')} 
-            className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'MONITORING' ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            className={`px-6 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${activeTab === 'MONITORING' ? 'border-fuchsia-500 text-fuchsia-600 bg-fuchsia-50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
          >
             <Search className="h-4 w-4" /> 
             Pantauan Rutin
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${activeTab === 'MONITORING' ? 'bg-blue-200 text-blue-800' : 'bg-slate-200 text-slate-600'}`}>{monitoringCases.length}</span>
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${activeTab === 'MONITORING' ? 'bg-fuchsia-200 text-fuchsia-800' : 'bg-slate-200 text-slate-600'}`}>{monitoringCases.length}</span>
          </button>
          <button 
             onClick={() => setActiveTab('HISTORY')} 
@@ -149,23 +152,23 @@ const ActiveCoaching: React.FC = () => {
          </button>
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-purple-100">
           <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input type="text" placeholder="Cari nama siswa atau NIS..." className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-400" />
+              <input type="text" placeholder="Cari nama siswa atau NIS..." className="w-full pl-9 pr-4 py-2 bg-purple-50/30 border border-purple-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none text-slate-800" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         {displayedCases.length === 0 ? (
-           <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-500">
-               <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
-               <p className="font-bold text-slate-700">Tidak ada kasus.</p>
-               <p className="text-sm">Saat ini tidak ada siswa dalam kategori ini.</p>
+           <div className="bg-white p-12 text-center rounded-xl border border-dashed border-purple-200 text-slate-500">
+               <CheckCircle2 className="h-12 w-12 text-purple-300 mx-auto mb-4" />
+               <p className="font-bold text-slate-700">Tidak ada kasus dalam daftar ini.</p>
+               <p className="text-sm">Situasi kondusif.</p>
            </div>
         ) : (
           displayedCases.map((item, idx) => (
-            <div key={idx} className={`bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-all ${activeTab === 'PRIORITY' ? 'border-red-200' : 'border-slate-200'}`}>
+            <div key={idx} className={`bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-all ${activeTab === 'PRIORITY' ? 'border-l-4 border-l-red-500 border-slate-200' : 'border-slate-200 hover:border-purple-300'}`}>
               <div className="p-5 flex flex-col md:flex-row gap-4 justify-between">
                 
                 {/* Bagian Kiri: Info Siswa & Status */}
@@ -211,14 +214,14 @@ const ActiveCoaching: React.FC = () => {
                 {/* Bagian Kanan: Aksi Langsung */}
                 <div className="flex flex-col gap-2 justify-center min-w-[180px] border-l border-slate-100 pl-4 md:pl-6">
                     {item.latestSession && item.hasOpenSession && (
-                        <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded text-center font-bold mb-1">
+                        <div className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded text-center font-bold mb-1 border border-purple-200">
                             Sesi Terakhir: {new Date(item.latestSession.date).toLocaleDateString()}
                         </div>
                     )}
                     
                     <Link 
                         to={`/teacher/student/${item.student.id}`} 
-                        className={`w-full py-2.5 px-4 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-95 ${activeTab === 'PRIORITY' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                        className={`w-full py-2.5 px-4 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-95 ${activeTab === 'PRIORITY' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-fuchsia-600 hover:bg-fuchsia-700'}`}
                     >
                         <HeartHandshake className="h-4 w-4" />
                         {activeTab === 'PRIORITY' ? 'Tangani Kasus' : 'Lihat & Konseling'}

@@ -74,8 +74,8 @@ export interface MasterIncidentType {
 }
 
 export type IncidentStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
-// UPDATED: Added 'RETURNED_TO_BK'
-export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED' | 'REFERRED' | 'RETURNED_TO_BK'; 
+// UPDATED: Added 'REFERRED_TO_KESISWAAN' to prevent premature closing
+export type BkCounselingStatus = 'NONE' | 'REQUIRED' | 'COMPLETED' | 'REFERRED' | 'RETURNED_TO_BK' | 'REFERRED_TO_KESISWAAN'; 
 
 export interface IncidentRecord {
   id: string;
