@@ -17,6 +17,7 @@ import KesiswaanPoeMonitoring from './pages/teacher/KesiswaanPoeMonitoring';
 import ManageStudents from './pages/admin/ManageStudents';
 import AccountManagement from './pages/admin/AccountManagement';
 import PointConfiguration from './pages/admin/PointConfiguration';
+import MigrationTool from './pages/admin/MigrationTool'; // IMPORT BARU
 import OsisInput from './pages/osis/OsisInput';
 import StudentInput from './pages/student/StudentInput';
 import { Role } from './types';
@@ -34,15 +35,10 @@ const App: React.FC = () => {
 
     const initApp = async () => {
       try {
-          // PROMISE GUARD:
-          // App tidak akan merender Routes sampai initializeData selesai.
-          // initializeData di dataService sudah di-desain untuk resolve HANYA setelah
-          // snapshot pertama dari SEMUA koleksi berhasil dimuat ke RAM.
           const success = await DataService.initializeData();
           
           if (isMounted) {
               if (success) {
-                  // Beri sedikit buffer visual agar transisi tidak kasar
                   setTimeout(() => setIsInitializing(false), 500);
               } else {
                   setInitError(true);
@@ -70,7 +66,6 @@ const App: React.FC = () => {
                 <Cloud className="h-5 w-5 animate-pulse" />
                 <span>Menghubungkan ke Sekolah...</span>
             </div>
-            {/* Progress Bar Indeterminate */}
             <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mb-2">
                 <div className="h-full bg-indigo-600 animate-progress-indeterminate"></div>
             </div>
@@ -107,10 +102,6 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<Login />} />
         
-        {/* Protected Routes */}
-        {/* Karena App di-wrap dengan Guard di atas, semua child route di bawah ini
-            dijamin memiliki akses ke data yang SUDAH terisi di DataService. */}
-            
         <Route path="/teacher/*" element={
           <Layout role={Role.TEACHER}>
             <Routes>
@@ -138,6 +129,8 @@ const App: React.FC = () => {
               <Route path="students" element={<ManageStudents />} />
               <Route path="accounts" element={<AccountManagement />} />
               <Route path="config" element={<PointConfiguration />} />
+              {/* ROUTE MIGRASI SEMENTARA */}
+              <Route path="migrate" element={<MigrationTool />} /> 
               <Route path="*" element={<Navigate to="students" />} />
             </Routes>
           </Layout>
