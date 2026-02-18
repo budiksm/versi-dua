@@ -86,9 +86,10 @@ export const StorageService = {
     // Helper: Convert Base64 string to Blob (untuk migrasi)
     base64ToBlob: (base64: string): Blob => {
         try {
+            if (!base64.includes(',')) throw new Error("Format Base64 tidak valid (missing comma).");
             const arr = base64.split(',');
             const mimeMatch = arr[0].match(/:(.*?);/);
-            if (!mimeMatch) throw new Error("Invalid Base64 format");
+            if (!mimeMatch) throw new Error("Invalid Base64 MIME type");
             
             const mime = mimeMatch[1];
             const bstr = atob(arr[1]);
@@ -99,14 +100,14 @@ export const StorageService = {
             }
             return new Blob([u8arr], { type: mime });
         } catch (e) {
-            console.error("Base64 decoding failed", e);
+            console.error("Base64 decoding failed:", e);
             throw e;
         }
     },
 
     // Upload Blob/File ke Storage
     uploadFile: async (file: File, path: string): Promise<string> => {
-        if (!storage) throw new Error("Storage belum diinisialisasi");
+        if (!storage) throw new Error("Firebase Storage belum diinisialisasi. Pastikan koneksi internet stabil.");
         
         let fileToUpload: Blob = file;
 
@@ -133,21 +134,29 @@ export const StorageService = {
 
     // Wrapper khusus untuk migrasi Base64
     uploadBase64: async (base64String: string, path: string): Promise<string> => {
+        if (!storage) throw new Error("Firebase Storage belum diinisialisasi.");
+
         try {
+            console.log(`[Storage] Converting Base64 to Blob for ${path}...`);
             const blob = StorageService.base64ToBlob(base64String);
             
             // Tentukan ekstensi dari MIME type untuk nama file
             let ext = 'jpg'; // default
             if (blob.type === 'image/png') ext = 'png';
+            if (blob.type === 'image/webp') ext = 'webp';
             
             const finalPath = `${path}.${ext}`;
             const storageRef = ref(storage, finalPath);
             
+            console.log(`[Storage] Starting uploadBytes to ${finalPath}...`);
             const snapshot = await uploadBytes(storageRef, blob);
-            return await getDownloadURL(snapshot.ref);
-        } catch (error) {
-            console.error("Base64 Upload Error:", error);
-            throw error;
+            console.log(`[Storage] Upload complete. Fetching URL...`);
+            
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            return downloadURL;
+        } catch (error: any) {
+            console.error("Base64 Upload Critical Error:", error);
+            throw new Error(`Storage Error: ${error.message}`);
         }
     }
 };

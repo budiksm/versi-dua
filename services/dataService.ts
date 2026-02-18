@@ -5,7 +5,7 @@ import {
   CashflowRecord, ActivityLog, BkCounselingStatus, SanctionLevel, RedemptionStatus, CashflowStatus
 } from '../types';
 
-import { db, connectToFirebase, isConfigMissing } from '../firebaseConfig';
+import { db, storage, connectToFirebase, isConfigMissing } from '../firebaseConfig';
 import { doc, setDoc, onSnapshot, writeBatch, collection, deleteDoc } from 'firebase/firestore';
 import { StorageService } from './storageService';
 
@@ -123,6 +123,20 @@ const setupHybridListener = (
 };
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// HELPER: Timeout Promise for Uploads to prevent hanging
+const timeoutPromise = <T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> => {
+    let timer: any = null;
+    const timeout = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+            reject(new Error(errorMessage));
+        }, ms);
+    });
+    return Promise.race([
+        promise.then(res => { clearTimeout(timer); return res; }),
+        timeout
+    ]);
+};
 
 const batchSyncCollection = async (collectionName: string, newData: any[], currentData: any[]) => {
     if (!db) throw new Error("Database not connected");
@@ -426,14 +440,16 @@ export const DataService = {
     return { recordsDeleted: recordsToDelete.length, sanctionsDeleted: sanctionsToDelete.length, counselingDeleted: counselingToDelete.length };
   },
 
-  // --- MIGRATE BASE64 TO STORAGE (STRICT ASYNC & LOGGING) ---
+  // --- MIGRATE BASE64 TO STORAGE (ROBUST & VERBOSE) ---
   migrateAllBase64ToStorage: async (logCallback: (msg: string) => void) => {
-      if (!db) throw new Error("Database not connected");
-      logCallback("🚀 Memulai proses migrasi storage...");
+      if (!db || !storage) throw new Error("Database/Storage not connected");
+      logCallback("🚀 Memulai proses migrasi storage (ROBUST MODE)...");
 
       let migratedCount = 0;
       let errorsCount = 0;
       const BATCH_SIZE = 5;
+      // TIMEOUT per upload set to 45 seconds to prevent hanging indefinitely
+      const UPLOAD_TIMEOUT = 45000; 
 
       // --- RECORDS ---
       const recordsToUpdate = store.records.active.filter(r => 
@@ -444,20 +460,32 @@ export const DataService = {
       logCallback(`📊 Ditemukan ${recordsToUpdate.length} record pelanggaran dengan Base64.`);
 
       for (let i = 0; i < recordsToUpdate.length; i += BATCH_SIZE) {
-          logCallback(`⏳ Memproses batch Record ${Math.floor(i / BATCH_SIZE) + 1}...`);
           const chunk = recordsToUpdate.slice(i, i + BATCH_SIZE);
+          const chunkIndex = Math.floor(i / BATCH_SIZE) + 1;
+          const totalChunks = Math.ceil(recordsToUpdate.length / BATCH_SIZE);
+          logCallback(`⏳ Processing Batch Records [${chunkIndex}/${totalChunks}] (${chunk.length} items)...`);
+          
           const batch = writeBatch(db);
           let batchHasOps = false;
 
-          const uploadPromises = chunk.map(async (rec) => {
+          const uploadPromises = chunk.map(async (rec, idx) => {
+              const itemNum = i + idx + 1;
               try {
-                  logCallback(`⬆️ Uploading Record: ${rec.id} ...`);
+                  logCallback(`[${itemNum}/${recordsToUpdate.length}] Uploading Record ID: ${rec.id}...`);
+                  
                   const path = `violations/${rec.id}/proof_${Date.now()}`;
-                  const url = await StorageService.uploadBase64(rec.proofImage!, path);
-                  logCallback(`✅ Upload Selesai: ${rec.id}`);
+                  
+                  // Wrap upload in timeout race
+                  const url = await timeoutPromise(
+                      StorageService.uploadBase64(rec.proofImage!, path),
+                      UPLOAD_TIMEOUT,
+                      `Upload Timeout (> ${UPLOAD_TIMEOUT}ms)`
+                  );
+
+                  logCallback(`[${itemNum}/${recordsToUpdate.length}] ✅ Upload Sukses: ${rec.id}`);
                   return { id: rec.id, url, success: true };
               } catch (e: any) {
-                  logCallback(`❌ Upload Gagal ${rec.id}: ${e.message}`);
+                  logCallback(`[${itemNum}/${recordsToUpdate.length}] ❌ Upload Gagal ${rec.id}: ${e.message}`);
                   errorsCount++;
                   return { id: rec.id, success: false };
               }
@@ -467,7 +495,6 @@ export const DataService = {
 
           results.forEach(res => {
               if (res.success && res.url) {
-                  // Use set with merge to be safe against missing docs
                   const ref = doc(db, "records", res.id);
                   batch.set(ref, { proofImage: res.url }, { merge: true });
                   batchHasOps = true;
@@ -477,12 +504,16 @@ export const DataService = {
 
           if (batchHasOps) {
               try {
+                  logCallback(`💾 Committing Batch Records [${chunkIndex}] to Firestore...`);
                   await batch.commit();
-                  logCallback(`💾 Batch Record Commit Sukses!`);
+                  logCallback(`✅ Batch Records [${chunkIndex}] Committed Successfully.`);
               } catch (e: any) {
-                  logCallback(`❌ Batch Commit Error: ${e.message}`);
+                  logCallback(`❌ FATAL: Batch Commit Error [${chunkIndex}]: ${e.message}`);
+                  // If commit fails, technically migration failed for these items
                   errorsCount += results.filter(r => r.success).length;
               }
+          } else {
+              logCallback(`ℹ️ Batch [${chunkIndex}] skipped (no successful uploads).`);
           }
       }
 
@@ -495,20 +526,32 @@ export const DataService = {
       logCallback(`📊 Ditemukan ${counselingToUpdate.length} sesi konseling dengan Base64.`);
 
       for (let i = 0; i < counselingToUpdate.length; i += BATCH_SIZE) {
-          logCallback(`⏳ Memproses batch Konseling ${Math.floor(i / BATCH_SIZE) + 1}...`);
           const chunk = counselingToUpdate.slice(i, i + BATCH_SIZE);
+          const chunkIndex = Math.floor(i / BATCH_SIZE) + 1;
+          const totalChunks = Math.ceil(counselingToUpdate.length / BATCH_SIZE);
+          logCallback(`⏳ Processing Batch Counseling [${chunkIndex}/${totalChunks}] (${chunk.length} items)...`);
+
           const batch = writeBatch(db);
           let batchHasOps = false;
 
-          const uploadPromises = chunk.map(async (sess) => {
+          const uploadPromises = chunk.map(async (sess, idx) => {
+              const itemNum = i + idx + 1;
               try {
-                  logCallback(`⬆️ Uploading Konseling: ${sess.id} ...`);
+                  logCallback(`[${itemNum}/${counselingToUpdate.length}] Uploading Counseling ID: ${sess.id}...`);
+                  
                   const path = `counseling/${sess.id}/attachment_${Date.now()}`;
-                  const url = await StorageService.uploadBase64(sess.attachmentUrl!, path);
-                  logCallback(`✅ Upload Selesai: ${sess.id}`);
+                  
+                  // Wrap upload in timeout race
+                  const url = await timeoutPromise(
+                      StorageService.uploadBase64(sess.attachmentUrl!, path),
+                      UPLOAD_TIMEOUT,
+                      `Upload Timeout (> ${UPLOAD_TIMEOUT}ms)`
+                  );
+
+                  logCallback(`[${itemNum}/${counselingToUpdate.length}] ✅ Upload Sukses: ${sess.id}`);
                   return { id: sess.id, url, success: true };
               } catch (e: any) {
-                  logCallback(`❌ Upload Gagal ${sess.id}: ${e.message}`);
+                  logCallback(`[${itemNum}/${counselingToUpdate.length}] ❌ Upload Gagal ${sess.id}: ${e.message}`);
                   errorsCount++;
                   return { id: sess.id, success: false };
               }
@@ -527,12 +570,15 @@ export const DataService = {
 
           if (batchHasOps) {
               try {
+                  logCallback(`💾 Committing Batch Counseling [${chunkIndex}] to Firestore...`);
                   await batch.commit();
-                  logCallback(`💾 Batch Konseling Commit Sukses!`);
+                  logCallback(`✅ Batch Counseling [${chunkIndex}] Committed Successfully.`);
               } catch (e: any) {
-                  logCallback(`❌ Batch Commit Error: ${e.message}`);
+                  logCallback(`❌ FATAL: Batch Commit Error [${chunkIndex}]: ${e.message}`);
                   errorsCount += results.filter(r => r.success).length;
               }
+          } else {
+              logCallback(`ℹ️ Batch [${chunkIndex}] skipped (no successful uploads).`);
           }
       }
 

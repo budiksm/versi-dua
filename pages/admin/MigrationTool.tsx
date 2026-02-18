@@ -91,17 +91,23 @@ const MigrationTool: React.FC = () => {
   const runMigration = async () => {
     if (!confirm("PERINGATAN: Pastikan tidak ada user lain yang sedang menginput data. Lanjutkan?")) return;
     setStatus('RUNNING'); setLogs([]); setProgress(0);
-    await migrateCollection('students', 'students');
-    await migrateCollection('teachers', 'teachers');
-    await migrateCollection('classes', 'classes');
-    await migrateCollection('records', 'records');
-    await migrateCollection('counseling', 'counseling');
-    await migrateCollection('sanctions', 'sanctions');
-    await migrateCollection('cashflow', 'cashflow');
-    await migrateCollection('activity_logs', 'activity_logs');
-    await migrateConfigs();
-    setProgress(100); setStatus('COMPLETED');
-    addLog("🏁 --- MIGRASI DB SELESAI --- 🏁");
+    try {
+        await migrateCollection('students', 'students');
+        await migrateCollection('teachers', 'teachers');
+        await migrateCollection('classes', 'classes');
+        await migrateCollection('records', 'records');
+        await migrateCollection('counseling', 'counseling');
+        await migrateCollection('sanctions', 'sanctions');
+        await migrateCollection('cashflow', 'cashflow');
+        await migrateCollection('activity_logs', 'activity_logs');
+        await migrateConfigs();
+        setProgress(100); 
+        setStatus('COMPLETED');
+        addLog("🏁 --- MIGRASI DB SELESAI --- 🏁");
+    } catch (e: any) {
+        addLog(`❌ Migration Error: ${e.message}`);
+        setStatus('ERROR');
+    }
   };
 
   const runStorageMigration = async () => {
@@ -117,6 +123,9 @@ const MigrationTool: React.FC = () => {
       } catch (e: any) {
           addLog(`❌ Fatal Error: ${e.message}`);
           setStatus('ERROR');
+      } finally {
+          // Ensure status is updated even if unknown error occurs
+          if (status === 'RUNNING') setStatus('ERROR');
       }
   };
 
@@ -165,6 +174,11 @@ const MigrationTool: React.FC = () => {
         {status === 'COMPLETED' && (
             <div className="mt-4 p-3 bg-green-900/30 text-green-300 border border-green-800 rounded text-center font-bold flex items-center justify-center gap-2">
                 <CheckCircle className="h-5 w-5" /> PROSES SELESAI
+            </div>
+        )}
+        {status === 'ERROR' && (
+            <div className="mt-4 p-3 bg-red-900/30 text-red-300 border border-red-800 rounded text-center font-bold flex items-center justify-center gap-2">
+                <AlertTriangle className="h-5 w-5" /> TERJADI ERROR
             </div>
         )}
       </div>
